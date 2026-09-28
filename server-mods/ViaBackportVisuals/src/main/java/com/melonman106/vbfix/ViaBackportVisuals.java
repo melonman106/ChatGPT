@@ -10,7 +10,7 @@ import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.minecraft.network.chat.Component;
 import net.minecraft.commands.Commands;
-import net.minecraft.commands.Permissions;
+import net.minecraft.server.permissions.Permissions;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.level.block.Block;
