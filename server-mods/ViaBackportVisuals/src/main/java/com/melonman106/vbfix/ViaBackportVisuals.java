@@ -8,7 +8,7 @@ import com.viaversion.viaversion.api.protocol.version.ProtocolVersion;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.Property;
@@ -182,7 +182,7 @@ public final class ViaBackportVisuals implements ModInitializer {
     }
 
     private static Block getBlock(String id) {
-        ResourceLocation key = ResourceLocation.parse(id);
+        Identifier key = Identifier.parse(id);
         return BuiltInRegistries.BLOCK.getValue(key);
     }
 
