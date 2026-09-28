@@ -1569,6 +1569,14 @@ cushion -> text_display
 
 Missing exact destination blockstates: 0
 
+=== VIA BACKWARDS ITEM CUSTOM MODEL DATA ===
+26.3 item registry id 1589: NO itemdata entry
+
+=== IDENTIFIER TABLE ITEM CHECK ===
+485: quartz_stairs
+689: smooth_quartz_stairs
+1589: white_wool_stairs
+
 === COMPACT NBT STRUCTURE ===
 blockstates: {'mappedSize': 32366, 'id': 1, 'size': 35723, 'val': '<ByteArray 386 bytes>'}
 blocks: {'mappedSize': 1196, 'id': 1, 'size': 1286, 'val': '<ByteArray 315 bytes>'}
