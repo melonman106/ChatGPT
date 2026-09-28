@@ -10,29 +10,21 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Java 21
-        uses: actions/setup-java@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '21'
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '9.5.1'
-
-      - name: Compile plugin
+          gradle-version: '9.6.0'
+      - name: Build Fabric 26.3 mod
         working-directory: server-mods/ViaBackportVisuals
         run: gradle build --no-daemon
-
-      - name: Upload plugin JAR
+      - name: Upload mod JAR
         uses: actions/upload-artifact@v4
         with:
-          name: ViaBackportVisuals
+          name: ViaBackportVisuals-Fabric-26.3
           path: server-mods/ViaBackportVisuals/build/libs/*.jar
           if-no-files-found: error
