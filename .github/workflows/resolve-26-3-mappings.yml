@@ -2,6 +2,9 @@ name: Resolve 26.3 to 26.2 block and blockstate mappings
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/resolve-26-3-mappings.yml"
 
 permissions:
   contents: write
@@ -157,6 +160,20 @@ jobs:
               return int(tag) if isinstance(tag, (nbtlib.tag.Byte, nbtlib.tag.Short, nbtlib.tag.Int, nbtlib.tag.Long)) else str(tag)
 
           lines = []
+          lines.append("")
+          lines.append("=== VIA BACKWARDS ITEM CUSTOM MODEL DATA ===")
+          itemdata = m.get("itemdata")
+          for item_id in [1589]:
+              key = str(item_id)
+              if itemdata is not None and key in itemdata:
+                  lines.append(f"26.3 item registry id {item_id}: {itemdata[key]}")
+              else:
+                  lines.append(f"26.3 item registry id {item_id}: NO itemdata entry")
+          lines.append("")
+          lines.append("=== IDENTIFIER TABLE ITEM CHECK ===")
+          for i, n in enumerate([str(x) for x in ids["items"]]):
+              if "white_wool_stairs" in n or "quartz_stairs" in n:
+                  lines.append(f"{i}: {n}")
           lines.append("")
           lines.append("=== COMPACT NBT STRUCTURE ===")
           lines.append(f"blockstates: {show(m['blockstates'], maxdepth=3)}")
