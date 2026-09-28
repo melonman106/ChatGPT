@@ -5,11 +5,5 @@ pluginManagement {
         mavenCentral()
     }
 }
-dependencyResolutionManagement {
-    repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
-    repositories {
-        mavenCentral()
-        maven { url = 'https://maven.fabricmc.net/' }
-    }
-}
+
 rootProject.name = 'ViaBackportVisuals'
