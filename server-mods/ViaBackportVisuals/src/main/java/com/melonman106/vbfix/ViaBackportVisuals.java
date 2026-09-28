@@ -183,9 +183,7 @@ public final class ViaBackportVisuals implements ModInitializer {
 
     private static Block getBlock(String id) {
         ResourceLocation key = ResourceLocation.parse(id);
-        Block block = BuiltInRegistries.BLOCK.getValue(key);
-        return block == BuiltInRegistries.BLOCK.get(BuiltInRegistries.BLOCK.getId(block))
-                ? block : block;
+        return BuiltInRegistries.BLOCK.getValue(key);
     }
 
     private static String stateKey(BlockState state) {
