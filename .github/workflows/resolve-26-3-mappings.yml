@@ -1,4 +1,4 @@
-name: Resolve 26.3 to 26.2 block mappings
+name: Resolve 26.3 to 26.2 block and blockstate mappings
 
 on:
   workflow_dispatch:
@@ -20,129 +20,82 @@ jobs:
       - name: Install NBT parser
         run: pip install nbtlib
 
-      - name: Resolve exact mappings
+      - name: Inspect mappings
         run: |
-          cat > resolve.py <<'PY'
+          cat > inspect.py <<'PY'
           import nbtlib
 
           m = nbtlib.load("mapping.nbt", gzipped=False)
           ids = nbtlib.load("identifiers.nbt", gzipped=False)
 
-          def decode(tag):
-              strategy = int(tag["id"])
-              size = int(tag["size"])
-              vals = tag.get("val")
-              raw = bytes(vals) if vals is not None else b""
+          def show(tag, depth=0, maxdepth=4):
+              if depth > maxdepth:
+                  return "<...>"
+              if isinstance(tag, nbtlib.tag.Compound):
+                  return {str(k): show(v, depth+1, maxdepth) for k,v in tag.items()}
+              if isinstance(tag, nbtlib.tag.List):
+                  return [show(v, depth+1, maxdepth) for v in tag]
+              if isinstance(tag, nbtlib.tag.ByteArray):
+                  return f"<ByteArray {len(tag)} bytes>"
+              if isinstance(tag, nbtlib.tag.IntArray):
+                  return [int(x) for x in tag]
+              if isinstance(tag, nbtlib.tag.LongArray):
+                  return [int(x) for x in tag]
+              return int(tag) if isinstance(tag, (nbtlib.tag.Byte, nbtlib.tag.Short, nbtlib.tag.Int, nbtlib.tag.Long)) else str(tag)
 
-              # Via mappings strategy 0/1/2 are compact formats. Strategy 1
-              # stores an int-array payload with a variable-length header;
-              # do not assume val contains size*4 bytes.
-              if strategy == 1:
-                  # Some Via mapping files expose strategy 1 as a Compound
-                  # containing "at" and "to" arrays. Decode the ranges.
-                  if "at" in tag and "to" in tag:
-                      at = [int(x) for x in tag["at"]]
-                      to = [int(x) for x in tag["to"]]
-                      out = list(range(size))
-                      for i, start in enumerate(at):
-                          end = at[i+1] if i+1 < len(at) else size
-                          mapped = to[i] if i < len(to) else start
-                          for old in range(max(0, start), min(size, end)):
-                              out[old] = mapped + (old - start)
-                      return out
+          lines=[]
+          lines.append("ViaBackwards 5.12.0 — 26.3 -> 26.2 mapping inspection")
+          lines.append("")
 
-                  # Otherwise inspect the raw payload as big-endian ints,
-                  # using every complete int available and leaving unmapped
-                  # entries as identity mappings.
-                  out = list(range(size))
-                  usable = min(size, len(raw) // 4)
-                  for i in range(usable):
-                      out[i] = int.from_bytes(raw[i*4:i*4+4], "big", signed=True)
-                  return out
+          # First dump the structure of blockstates so we know its exact format.
+          bs=m["blockstates"]
+          lines.append("BLOCKSTATES STRUCTURE:")
+          lines.append(str(show(bs, maxdepth=3)))
+          lines.append("")
 
-              if strategy == 0:
-                  out = list(range(size))
-                  pos = 0
-                  prev = 0
-                  def varint(data, pos):
-                      value = 0
-                      shift = 0
-                      while True:
-                          b = data[pos]; pos += 1
-                          value |= (b & 0x7f) << shift
-                          if not b & 0x80:
-                              return value, pos
-                          shift += 7
-                  while pos < len(raw) and sum(1 for _ in [0]) and len(out) > 0:
-                      if pos >= len(raw): break
-                      v, pos = varint(raw, pos)
-                      delta = (v >> 1) ^ -(v & 1)
-                      prev += delta
-                      idx = min(sum(1 for _ in []), size-1)
-                      # strategy 0 in these files is normally direct varint
-                      # sequence; decode sequentially.
-                      out.pop(0)
-                      out.append(prev)
-                  return out
+          # Dump the raw relevant identifier names. Depending on Via's format,
+          # blockstate identifiers may be represented separately from block IDs.
+          for key in ("blocks","blockstates","items"):
+              if key in ids:
+                  lines.append(f"IDENTIFIER TABLE: {key}")
+                  vals=[str(x) for x in ids[key]]
+                  for i,n in enumerate(vals):
+                      if any(x in n for x in ("wool_stair","wool_slab","straw_bed","poplar","cushion")):
+                          lines.append(f"{i}: {n}")
+                  lines.append("")
 
-              if strategy == 2:
-                  out = list(range(size))
-                  pos = 0
-                  index = -1
-                  value = 0
-                  def varint(data, pos):
-                      value = 0; shift = 0
-                      while True:
-                          b=data[pos]; pos+=1
-                          value |= (b & 127) << shift
-                          if not b & 128: return value,pos
-                          shift += 7
-                  while pos < len(raw):
-                      di,pos = varint(raw,pos)
-                      dv,pos = varint(raw,pos)
-                      index += 1 + di
-                      value += (dv >> 1) ^ -(dv & 1)
-                      if 0 <= index < size: out[index]=value
-                  return out
-
-              return list(range(size))
-
-          def names(tag):
-              return [str(x) for x in tag]
-
-          block_names = names(ids["blocks"])
-          block_map = decode(m["blocks"])
-
-          lookup = {n:i for i,n in enumerate(block_names)}
-          targets = ["minecraft:white_wool_stairs","minecraft:white_wool_slab","minecraft:straw_bed","minecraft:cushion","minecraft:poplar"]
-          lines = ["ViaBackwards 5.12.0 mapping inspection", ""]
-          for target in targets:
-              key = target.split("minecraft:",1)[-1]
-              if key not in lookup:
-                  lines.append(f"{target}: NOT FOUND")
+          # Print every mapping compound's immediate keys/types and values,
+          # plus compact array sizes. This is intentionally diagnostic rather
+          # than assuming a strategy format.
+          for key in ("blocks","blockstates","items"):
+              tag=m[key]
+              lines.append(f"MAPPING {key}:")
+              if isinstance(tag, nbtlib.tag.Compound):
+                  for k,v in tag.items():
+                      if isinstance(v, nbtlib.tag.Compound):
+                          lines.append(f"  {k}: Compound keys={list(v.keys())}")
+                          for kk,vv in v.items():
+                              if isinstance(vv,(nbtlib.tag.ByteArray,nbtlib.tag.IntArray,nbtlib.tag.LongArray,nbtlib.tag.List)):
+                                  lines.append(f"    {kk}: {type(vv).__name__} length={len(vv)}")
+                              else:
+                                  lines.append(f"    {kk}: {vv}")
+                      elif isinstance(v,(nbtlib.tag.ByteArray,nbtlib.tag.IntArray,nbtlib.tag.LongArray,nbtlib.tag.List)):
+                          lines.append(f"  {k}: {type(v).__name__} length={len(v)}")
+                      else:
+                          lines.append(f"  {k}: {v}")
               else:
-                  src=lookup[key]
-                  dst=block_map[src] if src < len(block_map) else -1
-                  dn=block_names[dst] if 0 <= dst < len(block_names) else "UNKNOWN"
-                  lines.append(f"{target}: {src} -> {dst} -> {dn}")
+                  lines.append(str(show(tag,maxdepth=2)))
+              lines.append("")
 
-          lines += ["", "Relevant entries:"]
-          for i,n in enumerate(block_names):
-              if any(x in n for x in ("wool_stair","wool_slab","straw_bed","cushion","poplar")):
-                  dst=block_map[i] if i<len(block_map) else -1
-                  dn=block_names[dst] if 0<=dst<len(block_names) else "UNKNOWN"
-                  lines.append(f"{i}: {n} -> {dst}: {dn}")
-
-          result="\n".join(lines)+"\n"
-          print(result)
-          open("mapping-results.txt","w").write(result)
+          open("mapping-results.txt","w").write("\n".join(lines)+"\n")
+          print("\n".join(lines))
           PY
-          python resolve.py
+          python inspect.py
 
       - name: Commit result
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add mapping-results.txt
-          git commit -m "Resolve exact 26.3 to 26.2 block mappings" || exit 0
+          git commit -m "Inspect 26.3 blockstate mappings" || exit 0
           git push
