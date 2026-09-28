@@ -1,0 +1,39 @@
+name: Extract ViaBackwards JAR
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Extract ViaBackwards JAR
+        run: |
+          rm -rf viabackwards-extracted
+          mkdir viabackwards-extracted
+
+          unzip -q ViaBackwards-5.12.0.jar -d viabackwards-extracted
+
+          echo "Extracted files:"
+          find viabackwards-extracted -type f | sort
+
+      - name: Commit extracted files
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add viabackwards-extracted
+
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "Extract ViaBackwards 5.12.0"
+            git push
+          fi
