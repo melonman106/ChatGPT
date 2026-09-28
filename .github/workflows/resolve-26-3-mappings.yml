@@ -1,9 +1,6 @@
 name: Resolve 26.3 to 26.2 block mappings
 
 on:
-  push:
-    paths:
-      - ".github/workflows/resolve-26-3-mappings.yml"
   workflow_dispatch:
 
 permissions:
@@ -15,7 +12,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download ViaBackwards mapping and ViaVersion identifier table
+      - name: Download mapping files
         run: |
           curl -L --fail -o mapping.nbt https://raw.githubusercontent.com/melonman106/ChatGPT/main/viabackwards-extracted/assets/viabackwards/data/mappings-26.3to26.2.nbt
           curl -L --fail -o identifiers.nbt https://raw.githubusercontent.com/ViaVersion/ViaVersion/master/common/src/main/resources/assets/viaversion/data/identifier-table.nbt
@@ -23,7 +20,7 @@ jobs:
       - name: Install NBT parser
         run: pip install nbtlib
 
-      - name: Resolve mappings
+      - name: Resolve exact block mappings
         run: |
           cat > resolve.py <<'PY'
           import nbtlib
@@ -31,79 +28,91 @@ jobs:
           m = nbtlib.load("mapping.nbt", gzipped=False)
           ids = nbtlib.load("identifiers.nbt", gzipped=False)
 
-          def decode_zigzag_varint(data, pos):
+          def varint(data, pos):
               value = 0
               shift = 0
               while True:
                   b = data[pos]; pos += 1
                   value |= (b & 0x7f) << shift
-                  if not (b & 0x80):
-                      break
-                  shift += 7
-              return ((value >> 1) ^ -(value & 1)), pos
-
-          def decode_pairs(data):
-              at=[]; vals=[]; pos=0; prev_at=-1; prev_val=0
-              while pos < len(data):
-                  delta, pos = decode_varint(data, pos)
-                  prev_at += 1 + delta
-                  delta_val, pos = decode_zigzag_varint(data, pos)
-                  prev_val += delta_val
-                  at.append(prev_at); vals.append(prev_val)
-              return at, vals
-
-          def decode_varint(data,pos):
-              value=0; shift=0
-              while True:
-                  b=data[pos]; pos+=1
-                  value |= (b & 0x7f) << shift
-                  if not (b & 0x80): return value,pos
+                  if not b & 0x80:
+                      return value, pos
                   shift += 7
 
-          def mapping(comp):
-              tag=comp
-              strategy=int(tag["id"])
-              size=int(tag["size"])
-              mapped=int(tag["mappedSize"])
-              raw=bytes(tag["val"])
+          def zigzag(data, pos):
+              v, pos = varint(data, pos)
+              return (v >> 1) ^ -(v & 1), pos
+
+          def decode(tag):
+              strategy = int(tag["id"])
+              size = int(tag["size"])
+              raw = bytes(tag["val"])
+              out = [-1] * size
+              pos = 0
+
+              if strategy == 1:
+                  if len(raw) != size * 4:
+                      raise RuntimeError(f"strategy 1 length {len(raw)} != {size*4}")
+                  for i in range(size):
+                      n = i * 4
+                      out[i] = int.from_bytes(raw[n:n+4], "big", signed=True)
+                  return out
+
               if strategy == 0:
-                  out=[]; pos=0; prev=0
-                  for _ in range(size):
-                      v,pos=decode_zigzag_varint(raw,pos)
-                      prev+=v; out.append(prev)
-                  return out,mapped
+                  prev = 0
+                  for i in range(size):
+                      delta, pos = zigzag(raw, pos)
+                      prev += delta
+                      out[i] = prev
+                  return out
+
               if strategy == 2:
-                  ats,vals=decode_pairs(raw)
-                  out=list(range(size))
-                  if "nofill" in tag:
-                      out=[-1]*size
-                      for a,v in zip(ats,vals): out[a]=v
-                  else:
-                      for a,v in zip(ats,vals): out[a]=v
-                  return out,mapped
+                  index = -1
+                  value = 0
+                  while pos < len(raw):
+                      di, pos = varint(raw, pos)
+                      dv, pos = zigzag(raw, pos)
+                      index += 1 + di
+                      value += dv
+                      if index >= size:
+                          raise RuntimeError("sparse mapping index out of range")
+                      out[index] = value
+                  return out
+
               raise RuntimeError(f"unsupported strategy {strategy}")
 
-          block_map,_=mapping(m["blocks"])
-          state_map,_=mapping(m["blockstates"])
+          block_map = decode(m["blocks"])
 
-          block_names=list(ids["blocks"])
-          item_names=list(ids["items"])
+          block_names = [str(x) for x in ids["blocks"]]
 
-          targets=[
-              "white_wool_stairs",
-              "white_wool_slab",
-              "straw_bed",
-          ]
+          targets = ["white_wool_stairs", "white_wool_slab", "straw_bed"]
 
-          lines=[]
-          lines.append("ViaBackwards 5.12.0 — 26.3 -> 26.2 exact mappings")
+          lookup = {}
+          for i, n in enumerate(block_names):
+              lookup[n] = i
+              lookup["minecraft:" + n] = i
+
+          lines = ["ViaBackwards 5.12.0 — exact 26.3 -> 26.2 block mappings", ""]
+
+          for target in targets:
+              if target not in lookup:
+                  lines.append(f"{target}: NOT FOUND in identifier table")
+                  continue
+              src = lookup[target]
+              dst = block_map[src]
+              dst_name = block_names[dst] if 0 <= dst < len(block_names) else "UNKNOWN"
+              lines.append(f"{target}: source block id {src} -> target block id {dst} -> {dst_name}")
+
           lines.append("")
-          for name in targets:
-              src=block_names.index(name)
-              dst=block_map[src]
-              lines.append(f"{name}: source block id {src} -> target block id {dst} -> {block_names[dst] if 0 <= dst < len(block_names) else 'UNKNOWN'}")
-          open("mapping-results.txt","w").write("\n".join(lines)+"\n")
-          print("\n".join(lines))
+          lines.append("Relevant identifier entries:")
+          for i, n in enumerate(block_names):
+              if any(x in n for x in ("wool_stair", "wool_slab", "straw_bed", "cushion", "poplar")):
+                  dst = block_map[i] if i < len(block_map) else -1
+                  dn = block_names[dst] if 0 <= dst < len(block_names) else "UNKNOWN"
+                  lines.append(f"{i}: {n} -> {dst}: {dn}")
+
+          result = "\n".join(lines) + "\n"
+          print(result)
+          open("mapping-results.txt", "w").write(result)
           PY
           python resolve.py
 
