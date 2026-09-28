@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "id": "viabackportvisuals",
+  "version": "${version}",
+  "name": "ViaBackportVisuals",
+  "description": "Server-side visual compatibility helpers for ViaBackwards 26.3 to 26.2 clients.",
+  "authors": ["melonman106"],
+  "environment": "server",
+  "entrypoints": {"main": ["com.melonman106.vbfix.ViaBackportVisuals"]},
+  "depends": {"fabricloader": ">=0.19.5", "minecraft": "~26.3", "java": ">=25", "fabric-api": "*"}
+}
