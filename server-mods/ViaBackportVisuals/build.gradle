@@ -1,19 +1,50 @@
-plugins { id 'java' }
-group='com.melonman106'
-version='1.0.0'
-java { toolchain { languageVersion = JavaLanguageVersion.of(21) } }
-repositories { mavenCentral(); maven { url = uri('https://repo.papermc.io/repository/maven-public/') }; maven { url = uri('https://repo.viaversion.com') } }
-dependencies { compileOnly 'io.papermc.paper:paper-api:26.3-R0.1-SNAPSHOT'; compileOnly 'com.viaversion:viaversion-api:5.12.0' }
-tasks.register('downloadBedAssets') {
-    def dir=file('src/main/resources/bed'); outputs.dir(dir)
-    doLast {
-        dir.mkdirs()
-        def base='https://raw.githubusercontent.com/ViaVersionAddons/ViaBackwards-Plus/master/backport_to_26_2/assets/minecraft/'
-        ['models/block/straw_bed_foot.json','models/block/straw_bed_head.json','textures/block/straw_bed.png','textures/block/straw_bed_particle.png'].each { rel ->
-            def out=file('src/main/resources/bed/'+rel.substring(rel.lastIndexOf('/')+1))
-            new URL(base+rel).withInputStream { input -> out.bytes=input.bytes }
+plugins {
+    id 'net.fabricmc.fabric-loom' version '1.17.21'
+    id 'maven-publish'
+}
+
+group = 'com.melonman106'
+version = '1.0.0'
+base {
+    archivesName = 'ViaBackportVisuals'
+}
+
+repositories {
+    mavenCentral()
+}
+
+loom {
+    splitEnvironmentSourceSets()
+    mods {
+        "viabackportvisuals" {
+            sourceSet sourceSets.main
         }
     }
 }
-processResources.dependsOn(downloadBedAssets)
-jar { archiveBaseName='ViaBackportVisuals' }
+
+dependencies {
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+    implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+}
+
+processResources {
+    inputs.property "version", project.version
+    filesMatching("fabric.mod.json") {
+        expand "version": project.version
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    it.options.release = 25
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_25
+    targetCompatibility = JavaVersion.VERSION_25
+    withSourcesJar()
+}
+
+jar {
+    archiveBaseName = 'ViaBackportVisuals'
+}
