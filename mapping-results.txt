@@ -1,0 +1,65 @@
+ViaBackwards 5.12.0 mapping inspection
+
+minecraft:white_wool_stairs: 1226 -> 1226 -> white_wool_stairs
+minecraft:white_wool_slab: 1242 -> 1242 -> white_wool_slab
+minecraft:straw_bed: 1273 -> 1273 -> straw_bed
+minecraft:cushion: NOT FOUND
+minecraft:poplar: NOT FOUND
+
+Relevant entries:
+1216: poplar_planks -> 1216: poplar_planks
+1217: poplar_sapling -> 1217: poplar_sapling
+1218: poplar_log -> 1218: poplar_log
+1219: stripped_poplar_log -> 1219: stripped_poplar_log
+1220: poplar_wood -> 1220: poplar_wood
+1221: stripped_poplar_wood -> 1221: stripped_poplar_wood
+1222: red_poplar_leaves -> 1222: red_poplar_leaves
+1223: orange_poplar_leaves -> 1223: orange_poplar_leaves
+1224: yellow_poplar_leaves -> 1224: yellow_poplar_leaves
+1226: white_wool_stairs -> 1226: white_wool_stairs
+1227: orange_wool_stairs -> 1227: orange_wool_stairs
+1228: magenta_wool_stairs -> 1228: magenta_wool_stairs
+1229: light_blue_wool_stairs -> 1229: light_blue_wool_stairs
+1230: yellow_wool_stairs -> 1230: yellow_wool_stairs
+1231: lime_wool_stairs -> 1231: lime_wool_stairs
+1232: pink_wool_stairs -> 1232: pink_wool_stairs
+1233: gray_wool_stairs -> 1233: gray_wool_stairs
+1234: light_gray_wool_stairs -> 1234: light_gray_wool_stairs
+1235: cyan_wool_stairs -> 1235: cyan_wool_stairs
+1236: purple_wool_stairs -> 1236: purple_wool_stairs
+1237: blue_wool_stairs -> 1237: blue_wool_stairs
+1238: brown_wool_stairs -> 1238: brown_wool_stairs
+1239: green_wool_stairs -> 1239: green_wool_stairs
+1240: red_wool_stairs -> 1240: red_wool_stairs
+1241: black_wool_stairs -> 1241: black_wool_stairs
+1242: white_wool_slab -> 1242: white_wool_slab
+1243: orange_wool_slab -> 1243: orange_wool_slab
+1244: magenta_wool_slab -> 1244: magenta_wool_slab
+1245: light_blue_wool_slab -> 1245: light_blue_wool_slab
+1246: yellow_wool_slab -> 1246: yellow_wool_slab
+1247: lime_wool_slab -> 1247: lime_wool_slab
+1248: pink_wool_slab -> 1248: pink_wool_slab
+1249: gray_wool_slab -> 1249: gray_wool_slab
+1250: light_gray_wool_slab -> 1250: light_gray_wool_slab
+1251: cyan_wool_slab -> 1251: cyan_wool_slab
+1252: purple_wool_slab -> 1252: purple_wool_slab
+1253: blue_wool_slab -> 1253: blue_wool_slab
+1254: brown_wool_slab -> 1254: brown_wool_slab
+1255: green_wool_slab -> 1255: green_wool_slab
+1256: red_wool_slab -> 1256: red_wool_slab
+1257: black_wool_slab -> 1257: black_wool_slab
+1258: poplar_shelf -> 1258: poplar_shelf
+1259: poplar_sign -> 1259: poplar_sign
+1260: poplar_wall_sign -> 1260: poplar_wall_sign
+1261: poplar_hanging_sign -> 1261: poplar_hanging_sign
+1262: poplar_wall_hanging_sign -> 1262: poplar_wall_hanging_sign
+1263: poplar_pressure_plate -> 1263: poplar_pressure_plate
+1264: poplar_trapdoor -> 1264: poplar_trapdoor
+1266: potted_poplar_sapling -> 1266: potted_poplar_sapling
+1267: poplar_button -> 1267: poplar_button
+1268: poplar_stairs -> 1268: poplar_stairs
+1269: poplar_slab -> 1269: poplar_slab
+1270: poplar_fence_gate -> 1270: poplar_fence_gate
+1271: poplar_fence -> 1271: poplar_fence
+1272: poplar_door -> 1272: poplar_door
+1273: straw_bed -> 1273: straw_bed
