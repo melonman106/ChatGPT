@@ -16,3 +16,11 @@ Included:
 - Straw Bed support from the server mapping/companion pack
 
 The placeholder approach means the selected 26.2 placeholder can share the replacement appearance while the pack is active.
+
+
+Emergency visual-mapping commands (operator level 2+):
+/vbv status
+/vbv disable
+/vbv enable
+
+/vbv disable restores the original ViaBackwards block-state mappings in memory. Reconnect clients after using it so their chunk visuals refresh. It does not delete or replace world blocks.
