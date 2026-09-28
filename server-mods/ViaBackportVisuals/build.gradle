@@ -1,20 +1,18 @@
 plugins {
-    id 'net.fabricmc.fabric-loom' version '1.17.21'
+    id 'net.fabricmc.fabric-loom' version "${project.loom_version}"
     id 'maven-publish'
 }
 
-group = 'com.melonman106'
-version = '1.0.0'
-base {
-    archivesName = 'ViaBackportVisuals'
-}
+version = project.mod_version
+group = project.maven_group
 
-repositories {
-    mavenCentral()
+base {
+    archivesName = project.archives_base_name
 }
 
 loom {
     splitEnvironmentSourceSets()
+
     mods {
         "viabackportvisuals" {
             sourceSet sourceSets.main
@@ -46,5 +44,5 @@ java {
 }
 
 jar {
-    archiveBaseName = 'ViaBackportVisuals'
+    archiveBaseName = project.archives_base_name
 }
