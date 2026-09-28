@@ -1,0 +1,116 @@
+name: Resolve 26.3 to 26.2 block mappings
+
+on:
+  push:
+    paths:
+      - ".github/workflows/resolve-26-3-mappings.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download ViaBackwards mapping and ViaVersion identifier table
+        run: |
+          curl -L --fail -o mapping.nbt https://raw.githubusercontent.com/melonman106/ChatGPT/main/viabackwards-extracted/assets/viabackwards/data/mappings-26.3to26.2.nbt
+          curl -L --fail -o identifiers.nbt https://raw.githubusercontent.com/ViaVersion/ViaVersion/master/common/src/main/resources/assets/viaversion/data/identifier-table.nbt
+
+      - name: Install NBT parser
+        run: pip install nbtlib
+
+      - name: Resolve mappings
+        run: |
+          cat > resolve.py <<'PY'
+          import nbtlib
+
+          m = nbtlib.load("mapping.nbt", gzipped=False)
+          ids = nbtlib.load("identifiers.nbt", gzipped=False)
+
+          def decode_zigzag_varint(data, pos):
+              value = 0
+              shift = 0
+              while True:
+                  b = data[pos]; pos += 1
+                  value |= (b & 0x7f) << shift
+                  if not (b & 0x80):
+                      break
+                  shift += 7
+              return ((value >> 1) ^ -(value & 1)), pos
+
+          def decode_pairs(data):
+              at=[]; vals=[]; pos=0; prev_at=-1; prev_val=0
+              while pos < len(data):
+                  delta, pos = decode_varint(data, pos)
+                  prev_at += 1 + delta
+                  delta_val, pos = decode_zigzag_varint(data, pos)
+                  prev_val += delta_val
+                  at.append(prev_at); vals.append(prev_val)
+              return at, vals
+
+          def decode_varint(data,pos):
+              value=0; shift=0
+              while True:
+                  b=data[pos]; pos+=1
+                  value |= (b & 0x7f) << shift
+                  if not (b & 0x80): return value,pos
+                  shift += 7
+
+          def mapping(comp):
+              tag=comp
+              strategy=int(tag["id"])
+              size=int(tag["size"])
+              mapped=int(tag["mappedSize"])
+              raw=bytes(tag["val"])
+              if strategy == 0:
+                  out=[]; pos=0; prev=0
+                  for _ in range(size):
+                      v,pos=decode_zigzag_varint(raw,pos)
+                      prev+=v; out.append(prev)
+                  return out,mapped
+              if strategy == 2:
+                  ats,vals=decode_pairs(raw)
+                  out=list(range(size))
+                  if "nofill" in tag:
+                      out=[-1]*size
+                      for a,v in zip(ats,vals): out[a]=v
+                  else:
+                      for a,v in zip(ats,vals): out[a]=v
+                  return out,mapped
+              raise RuntimeError(f"unsupported strategy {strategy}")
+
+          block_map,_=mapping(m["blocks"])
+          state_map,_=mapping(m["blockstates"])
+
+          block_names=list(ids["blocks"])
+          item_names=list(ids["items"])
+
+          targets=[
+              "white_wool_stairs",
+              "white_wool_slab",
+              "straw_bed",
+          ]
+
+          lines=[]
+          lines.append("ViaBackwards 5.12.0 — 26.3 -> 26.2 exact mappings")
+          lines.append("")
+          for name in targets:
+              src=block_names.index(name)
+              dst=block_map[src]
+              lines.append(f"{name}: source block id {src} -> target block id {dst} -> {block_names[dst] if 0 <= dst < len(block_names) else 'UNKNOWN'}")
+          open("mapping-results.txt","w").write("\n".join(lines)+"\n")
+          print("\n".join(lines))
+          PY
+          python resolve.py
+
+      - name: Commit result
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add mapping-results.txt
+          git commit -m "Resolve exact 26.3 to 26.2 block mappings" || exit 0
+          git push
