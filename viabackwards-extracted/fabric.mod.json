@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "id": "viabackwards",
+  "name": "ViaBackwards",
+  "version": "5.12.0",
+  "description": "Allows the connection of older clients to newer server versions for Minecraft servers.",
+  "license": "GPL-3.0",
+  "contact": {
+    "homepage": "https://viaversion.com/backwards",
+    "issues": "https://github.com/ViaVersion/ViaBackwards/issues",
+    "sources": "https://github.com/ViaVersion/ViaBackwards"
+  },
+  "icon": "assets/viabackwards/textures/squarelogo.png",
+  "environment": "*",
+  "authors": [
+    "Matsv",
+    "kennytv",
+    "Gerrygames",
+    "creeper123123321",
+    "ForceUpdate1",
+    "EnZaXD"
+  ],
+  "entrypoints": {
+    "viafabric:via_api_initialized": [
+      "com.viaversion.viabackwards.ViaFabricAddon"
+    ]
+  },
+  "depends": {
+    "viafabric": ">=0.4.14"
+  },
+    "custom": {
+        "modmenu:api": true,
+        "modmenu": {
+            "badges": [ "library" ],
+            "parent": "viafabric"
+        }
+    }
+}
