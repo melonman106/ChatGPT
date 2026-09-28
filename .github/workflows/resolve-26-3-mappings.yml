@@ -22,7 +22,7 @@ jobs:
 
       - name: Inspect mappings
         run: |
-          cat > inspect.py <<'PY'
+          cat > vb_state_dump.py <<'PY'
           import nbtlib
 
           m = nbtlib.load("mapping.nbt", gzipped=False)
@@ -47,15 +47,12 @@ jobs:
           lines.append("ViaBackwards 5.12.0 — 26.3 -> 26.2 mapping inspection")
           lines.append("")
 
-          # First dump the structure of blockstates so we know its exact format.
           bs=m["blockstates"]
           lines.append("BLOCKSTATES STRUCTURE:")
           lines.append(str(show(bs, maxdepth=3)))
           lines.append("")
 
-          # Dump the raw relevant identifier names. Depending on Via's format,
-          # blockstate identifiers may be represented separately from block IDs.
-          for key in ("blocks","blockstates","items"):
+          for key in ("blocks","blockstates","items","entities"):
               if key in ids:
                   lines.append(f"IDENTIFIER TABLE: {key}")
                   vals=[str(x) for x in ids[key]]
@@ -64,16 +61,15 @@ jobs:
                           lines.append(f"{i}: {n}")
                   lines.append("")
 
-          # Print every mapping compound's immediate keys/types and values,
-          # plus compact array sizes. This is intentionally diagnostic rather
-          # than assuming a strategy format.
-          for key in ("blocks","blockstates","items"):
+          for key in ("blocks","blockstates","items","entities"):
+              if key not in m:
+                  continue
               tag=m[key]
               lines.append(f"MAPPING {key}:")
               if isinstance(tag, nbtlib.tag.Compound):
                   for k,v in tag.items():
                       if isinstance(v, nbtlib.tag.Compound):
-                          lines.append(f"  {k}: Compound keys={list(v.keys())}")
+                          lines.append(f"  {k}: Compound keys={[str(x) for x in v.keys()]}")
                           for kk,vv in v.items():
                               if isinstance(vv,(nbtlib.tag.ByteArray,nbtlib.tag.IntArray,nbtlib.tag.LongArray,nbtlib.tag.List)):
                                   lines.append(f"    {kk}: {type(vv).__name__} length={len(vv)}")
@@ -90,7 +86,7 @@ jobs:
           open("mapping-results.txt","w").write("\n".join(lines)+"\n")
           print("\n".join(lines))
           PY
-          python inspect.py
+          python vb_state_dump.py
 
       - name: Commit result
         run: |
