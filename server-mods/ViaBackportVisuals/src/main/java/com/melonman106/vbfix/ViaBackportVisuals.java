@@ -7,6 +7,9 @@ import com.viaversion.viaversion.api.protocol.Protocol;
 import com.viaversion.viaversion.api.protocol.version.ProtocolVersion;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
+import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
+import net.minecraft.network.chat.Component;
+import net.minecraft.commands.Commands;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.level.block.Block;
@@ -107,30 +110,24 @@ public final class ViaBackportVisuals implements ModInitializer {
             {"yellow_poplar_leaves", "jungle_leaves"},
             {"red_shrub", "dead_bush"},
             {"shelf_mushroom", "brown_mushroom"},
-            {"white_cushion", "white_carpet"},
-            {"orange_cushion", "orange_carpet"},
-            {"magenta_cushion", "magenta_carpet"},
-            {"light_blue_cushion", "light_blue_carpet"},
-            {"yellow_cushion", "yellow_carpet"},
-            {"lime_cushion", "lime_carpet"},
-            {"pink_cushion", "pink_carpet"},
-            {"gray_cushion", "gray_carpet"},
-            {"light_gray_cushion", "light_gray_carpet"},
-            {"cyan_cushion", "cyan_carpet"},
-            {"purple_cushion", "purple_carpet"},
-            {"blue_cushion", "blue_carpet"},
-            {"brown_cushion", "brown_carpet"},
-            {"green_cushion", "green_carpet"},
-            {"red_cushion", "red_carpet"},
-            {"black_cushion", "black_carpet"}
     };
 
     private static final String STRAW_BED_PLACEHOLDER = "black_bed";
+
+    private static final Map<Integer, Integer> ORIGINAL_MAPPINGS = new HashMap<>();
+    private static Mappings activeMappings;
+    private static boolean mappingsEnabled = true;
 
     @Override
     public void onInitialize() {
         LOGGER.info("ViaBackportVisuals loaded for Minecraft 26.3.");
         ServerLifecycleEvents.SERVER_STARTED.register(server -> installMappings());
+        CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) ->
+                dispatcher.register(Commands.literal("vbv")
+                        .requires(source -> source.hasPermission(2))
+                        .then(Commands.literal("disable").executes(context -> disableMappings(context.getSource())))
+                        .then(Commands.literal("enable").executes(context -> enableMappings(context.getSource())))
+                        .then(Commands.literal("status").executes(context -> status(context.getSource())))));
     }
 
     private static void installMappings() {
@@ -155,6 +152,8 @@ public final class ViaBackportVisuals implements ModInitializer {
             }
 
             Mappings mappings = mappingData.getBlockStateMappings();
+            activeMappings = mappings;
+            mappingsEnabled = true;
 
             int woolStairs = 0;
             int woolSlabs = 0;
@@ -260,11 +259,45 @@ public final class ViaBackportVisuals implements ModInitializer {
                 continue;
             }
 
+            ORIGINAL_MAPPINGS.putIfAbsent(sourceStateId, mappings.getNewId(sourceStateId));
             mappings.setNewId(sourceStateId, clientStateId);
             changed++;
         }
 
         return changed;
+    }
+
+    private static int disableMappings(net.minecraft.commands.CommandSourceStack source) {
+        if (activeMappings == null) {
+            source.sendFailure(Component.literal("ViaBackportVisuals has not installed its mappings yet."));
+            return 0;
+        }
+
+        for (Map.Entry<Integer, Integer> entry : ORIGINAL_MAPPINGS.entrySet()) {
+            activeMappings.setNewId(entry.getKey(), entry.getValue());
+        }
+        mappingsEnabled = false;
+        source.sendSuccess(() -> Component.literal("ViaBackportVisuals mappings disabled. Reconnect clients to refresh chunk visuals."), true);
+        return 1;
+    }
+
+    private static int enableMappings(net.minecraft.commands.CommandSourceStack source) {
+        if (activeMappings == null) {
+            source.sendFailure(Component.literal("ViaBackportVisuals has not installed its mappings yet."));
+            return 0;
+        }
+
+        installMappings();
+        mappingsEnabled = true;
+        source.sendSuccess(() -> Component.literal("ViaBackportVisuals mappings enabled. Reconnect clients to refresh chunk visuals."), true);
+        return 1;
+    }
+
+    private static int status(net.minecraft.commands.CommandSourceStack source) {
+        source.sendSuccess(() -> Component.literal(
+                "ViaBackportVisuals mappings are " + (mappingsEnabled ? "enabled" : "disabled") +
+                        " (" + ORIGINAL_MAPPINGS.size() + " states tracked)."), false);
+        return 1;
     }
 
     private static Block getBlock(String id) {
