@@ -1,0 +1,19 @@
+{
+  "pack": {
+    "description": "White Wool Stairs item fix for Eagler 26.2",
+    "pack_format": 98,
+    "supported_formats": {"min_inclusive": 43, "max_inclusive": 999},
+    "min_format": 43,
+    "max_format": 999
+  },
+  "overlays": {
+    "entries": [
+      {
+        "directory": "26_2",
+        "formats": {"min_inclusive": 43, "max_inclusive": 88},
+        "min_format": 43,
+        "max_format": 88
+      }
+    ]
+  }
+}
