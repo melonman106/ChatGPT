@@ -10,6 +10,7 @@ import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.minecraft.network.chat.Component;
 import net.minecraft.commands.Commands;
+import net.minecraft.commands.Permissions;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.level.block.Block;
@@ -124,7 +125,7 @@ public final class ViaBackportVisuals implements ModInitializer {
         ServerLifecycleEvents.SERVER_STARTED.register(server -> installMappings());
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) ->
                 dispatcher.register(Commands.literal("vbv")
-                        .requires(source -> source.hasPermission(2))
+                        .requires(source -> source.permissions().hasPermission(Permissions.COMMANDS_MODERATOR))
                         .then(Commands.literal("disable").executes(context -> disableMappings(context.getSource())))
                         .then(Commands.literal("enable").executes(context -> enableMappings(context.getSource())))
                         .then(Commands.literal("status").executes(context -> status(context.getSource())))));
