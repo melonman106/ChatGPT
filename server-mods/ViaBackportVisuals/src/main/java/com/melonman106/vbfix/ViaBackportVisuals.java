@@ -133,6 +133,14 @@ public final class ViaBackportVisuals implements ModInitializer {
 
     private static final String STRAW_BED_PLACEHOLDER = "yellow_bed";
 
+    private static final String[] MARKER_INSTRUMENTS = {"banjo","basedrum","bass","bell","bit","chime","cow_bell","creeper","custom_head","didgeridoo","dragon","flute","guitar","harp","hat","iron_xylophone","piglin","pling","skeleton","snare","wither_skeleton","xylophone","zombie"};
+    private static final String[] STAIR_FACINGS = {"east","north","south","west"};
+    private static final String[] STAIR_HALVES = {"bottom","top"};
+    private static final String[] STAIR_SHAPES = {"inner_left","inner_right","outer_left","outer_right","straight"};
+    private static final String[] SLAB_TYPES = {"bottom","double","top"};
+    private static final int NOTE_MARKER_CAPACITY = 1150;
+
+
     private static final Map<Integer, Integer> ORIGINAL_MAPPINGS = new HashMap<>();
     static final Map<Integer, BlockState> PLACEHOLDER_OF = new HashMap<>();
     static final Map<Integer, Integer> APPLIED = new HashMap<>();
@@ -209,22 +217,14 @@ public final class ViaBackportVisuals implements ModInitializer {
 
             for (int i = 0; i < WOOL_COLORS.length; i++) {
                 String color = WOOL_COLORS[i];
-                woolStairs += remapBlockStates(mappings,
-                        "minecraft:" + color + "_wool_stairs",
-                        "minecraft:" + WOOL_STAIR_PLACEHOLDERS[i]);
-                woolSlabs += remapBlockStates(mappings,
-                        "minecraft:" + color + "_wool_slab",
-                        "minecraft:" + WOOL_SLAB_PLACEHOLDERS[i]);
+                woolStairs += remapBlockStates(mappings, "minecraft:" + color + "_wool_stairs", "minecraft:note_block", ViaBackportVisuals::markerState);
+                woolSlabs += remapBlockStates(mappings, "minecraft:" + color + "_wool_slab", "minecraft:note_block", ViaBackportVisuals::markerState);
             }
 
             for (int i = 0; i < WOOL_COLORS.length; i++) {
                 String color = WOOL_COLORS[i];
-                concreteStairs += remapBlockStates(mappings,
-                        "minecraft:" + color + "_concrete_stairs",
-                        "minecraft:" + CONCRETE_STAIR_PLACEHOLDERS[i]);
-                concreteSlabs += remapBlockStates(mappings,
-                        "minecraft:" + color + "_concrete_slab",
-                        "minecraft:" + CONCRETE_SLAB_PLACEHOLDERS[i]);
+                concreteStairs += remapBlockStates(mappings, "minecraft:" + color + "_concrete_stairs", "minecraft:redstone_wire", ViaBackportVisuals::markerState);
+                concreteSlabs += remapBlockStates(mappings, "minecraft:" + color + "_concrete_slab", "minecraft:redstone_wire", ViaBackportVisuals::markerState);
             }
 
             for (String[] mapping : BLOCK_MAPPINGS) {
@@ -307,6 +307,62 @@ public final class ViaBackportVisuals implements ModInitializer {
         }
 
         return changed;
+    }
+
+    private static BlockState markerState(BlockState src, BlockState ignored) {
+        String id = BuiltInRegistries.BLOCK.getKey(src.getBlock()).toString();
+        int slot = markerSlot(id, src);
+        Block marker = slot < NOTE_MARKER_CAPACITY ? getBlock("minecraft:note_block") : getBlock("minecraft:redstone_wire");
+        if (marker == null) return ignored;
+        BlockState state = marker.defaultBlockState();
+        if (slot < NOTE_MARKER_CAPACITY) {
+            int within = slot % 575;
+            state = setProperty(state, "instrument", MARKER_INSTRUMENTS[within / 25]);
+            state = setProperty(state, "note", Integer.toString(within % 25));
+            state = setProperty(state, "powered", Boolean.toString(slot >= 575));
+        } else {
+            int r = slot - NOTE_MARKER_CAPACITY, ci = r / 16, power = r % 16;
+            state = setProperty(state, "power", Integer.toString(power));
+            state = setProperty(state, "east", redstoneSide(ci % 3));
+            state = setProperty(state, "north", redstoneSide((ci / 3) % 3));
+            state = setProperty(state, "south", redstoneSide((ci / 9) % 3));
+            state = setProperty(state, "west", redstoneSide((ci / 27) % 3));
+        }
+        return state;
+    }
+
+    private static int markerSlot(String id, BlockState state) {
+        int color=-1; boolean wool=false, concrete=false, stairs=false, slab=false;
+        for(int i=0;i<WOOL_COLORS.length;i++){
+            if(id.equals("minecraft:"+WOOL_COLORS[i]+"_wool_stairs")){color=i;wool=true;stairs=true;break;}
+            if(id.equals("minecraft:"+WOOL_COLORS[i]+"_wool_slab")){color=i;wool=true;slab=true;break;}
+            if(id.equals("minecraft:"+WOOL_COLORS[i]+"_concrete_stairs")){color=i;concrete=true;stairs=true;break;}
+            if(id.equals("minecraft:"+WOOL_COLORS[i]+"_concrete_slab")){color=i;concrete=true;slab=true;break;}
+        }
+        if(color<0)return 0;
+        int base;
+        if(wool&&stairs)base=color*40;
+        else if(wool)base=16*40+color*6;
+        else if(concrete&&stairs)base=16*40+16*6+color*40;
+        else base=16*40+16*6+16*40+color*6;
+        int local;
+        if(stairs){
+            int f=indexOf(STAIR_FACINGS,propertyString(state,"facing")), h=indexOf(STAIR_HALVES,propertyString(state,"half")), s=indexOf(STAIR_SHAPES,propertyString(state,"shape"));
+            local=((f*2)+h)*5+s;
+        }else{
+            int t=indexOf(SLAB_TYPES,propertyString(state,"type")), w="true".equals(propertyString(state,"waterlogged"))?1:0;
+            local=t*2+w;
+        }
+        return base+local;
+    }
+
+    private static int indexOf(String[] a,String v){for(int i=0;i<a.length;i++)if(a[i].equals(v))return i;return 0;}
+    private static String propertyString(BlockState s,String n){for(Property<?> p:s.getProperties())if(p.getName().equals(n))return String.valueOf(s.getValue(p));return "";}
+    private static String redstoneSide(int v){return v==0?"none":v==1?"side":"up";}
+    @SuppressWarnings({"rawtypes","unchecked"})
+    private static BlockState setProperty(BlockState s,String n,String v){
+        for(Property p:s.getProperties())if(p.getName().equals(n)){java.util.Optional x=p.getValue(v);if(x.isPresent())return s.setValue(p,x.get());}
+        return s;
     }
 
     private static BlockState redPoplarLeafMarker(BlockState src, BlockState ph) {
