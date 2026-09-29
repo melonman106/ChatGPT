@@ -47,41 +47,45 @@ public final class ViaBackportVisuals implements ModInitializer {
     };
 
     private static final String[] WOOL_STAIR_PLACEHOLDERS = {
-            "smooth_quartz_stairs", "smooth_red_sandstone_stairs",
-            "smooth_sandstone_stairs", "brick_stairs",
-            "nether_brick_stairs", "red_nether_brick_stairs",
-            "sandstone_stairs", "smooth_stone_stairs",
-            "end_stone_brick_stairs", "pale_oak_stairs",
-            "tuff_stairs", "polished_tuff_stairs",
-            "granite_stairs", "diorite_stairs",
-            "mossy_stone_brick_stairs", "stone_brick_stairs"
+            "waxed_cut_copper_stairs", "waxed_exposed_cut_copper_stairs",
+            "waxed_weathered_cut_copper_stairs", "waxed_oxidized_cut_copper_stairs",
+            "cut_copper_stairs", "exposed_cut_copper_stairs",
+            "weathered_cut_copper_stairs", "oxidized_cut_copper_stairs",
+            "mud_brick_stairs", "tuff_brick_stairs",
+            "polished_tuff_stairs", "bamboo_mosaic_stairs",
+            "end_stone_brick_stairs", "resin_brick_stairs",
+            "cinnabar_brick_stairs", "sulfur_brick_stairs"
     };
 
     private static final String[] WOOL_SLAB_PLACEHOLDERS = {
-            "smooth_quartz_slab", "smooth_red_sandstone_slab",
-            "smooth_sandstone_slab", "smooth_stone_slab",
-            "brick_slab", "nether_brick_slab",
-            "red_nether_brick_slab", "sandstone_slab",
-            "granite_slab", "diorite_slab",
-            "end_stone_brick_slab", "pale_oak_slab",
-            "tuff_slab", "polished_tuff_slab",
-            "mossy_stone_brick_slab", "stone_brick_slab"
+            "waxed_cut_copper_slab", "waxed_exposed_cut_copper_slab",
+            "waxed_weathered_cut_copper_slab", "waxed_oxidized_cut_copper_slab",
+            "cut_copper_slab", "exposed_cut_copper_slab",
+            "weathered_cut_copper_slab", "oxidized_cut_copper_slab",
+            "mud_brick_slab", "tuff_brick_slab",
+            "polished_tuff_slab", "bamboo_mosaic_slab",
+            "end_stone_brick_slab", "resin_brick_slab",
+            "cinnabar_brick_slab", "sulfur_brick_slab"
     };
 
     private static final String[] CONCRETE_STAIR_PLACEHOLDERS = {
-            "quartz_stairs", "red_sandstone_stairs", "stone_stairs",
-            "cobblestone_stairs", "mossy_cobblestone_stairs", "oak_stairs",
-            "spruce_stairs", "birch_stairs", "jungle_stairs", "acacia_stairs",
-            "dark_oak_stairs", "mangrove_stairs", "cherry_stairs",
-            "bamboo_stairs", "crimson_stairs", "warped_stairs"
+            "pale_oak_stairs", "cut_copper_stairs", "exposed_cut_copper_stairs",
+            "weathered_cut_copper_stairs", "oxidized_cut_copper_stairs",
+            "waxed_cut_copper_stairs", "waxed_exposed_cut_copper_stairs",
+            "waxed_weathered_cut_copper_stairs", "waxed_oxidized_cut_copper_stairs",
+            "mud_brick_stairs", "tuff_brick_stairs", "polished_tuff_stairs",
+            "bamboo_mosaic_stairs", "resin_brick_stairs", "cinnabar_brick_stairs",
+            "sulfur_brick_stairs", "end_stone_brick_stairs"
     };
 
     private static final String[] CONCRETE_SLAB_PLACEHOLDERS = {
-            "quartz_slab", "red_sandstone_slab", "stone_slab",
-            "cobblestone_slab", "mossy_cobblestone_slab", "oak_slab",
-            "spruce_slab", "birch_slab", "jungle_slab", "acacia_slab",
-            "dark_oak_slab", "mangrove_slab", "cherry_slab",
-            "bamboo_slab", "crimson_slab", "warped_slab"
+            "pale_oak_slab", "cut_copper_slab", "exposed_cut_copper_slab",
+            "weathered_cut_copper_slab", "oxidized_cut_copper_slab",
+            "waxed_cut_copper_slab", "waxed_exposed_cut_copper_slab",
+            "waxed_weathered_cut_copper_slab", "waxed_oxidized_cut_copper_slab",
+            "mud_brick_slab", "tuff_brick_slab", "polished_tuff_slab",
+            "bamboo_mosaic_slab", "resin_brick_slab", "cinnabar_brick_slab",
+            "sulfur_brick_slab", "end_stone_brick_slab"
     };
 
     /*
