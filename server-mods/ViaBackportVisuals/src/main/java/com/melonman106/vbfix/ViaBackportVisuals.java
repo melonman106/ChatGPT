@@ -94,7 +94,7 @@ public final class ViaBackportVisuals implements ModInitializer {
             "mossy_stone_brick_stairs", "stone_brick_stairs", "brick_stairs"
     };
 
-    ate static final String[] CONCRETE_SLAB_PLACEHOLDERS = {
+    private static final String[] CONCRETE_SLAB_PLACEHOLDERS = {
             "pale_oak_slab", "deepslate_brick_slab", "deepslate_tile_slab",
             "polished_deepslate_slab", "polished_blackstone_brick_slab",
             "polished_blackstone_slab", "blackstone_slab", "cobbled_deepslate_slab",
