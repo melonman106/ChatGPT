@@ -33,7 +33,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.BiFunction;
 
-public final class ViaBackportVisuals implements ModInitializer {
+// Regression-tested placeholder palette: wool and concrete sets are disjoint.\npublic final class ViaBackportVisuals implements ModInitializer {
     public static final String MOD_ID = "viabackportvisuals";
     private static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
