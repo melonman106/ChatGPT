@@ -30,6 +30,7 @@ dependencies {
     implementation "net.fabricmc:fabric-loader:${project.loader_version}"
     implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
     compileOnly "com.viaversion:viaversion-api:${project.viaversion_api_version}"
+    compileOnly "com.viaversion:viabackwards:${project.viabackwards_version}"
 }
 
 processResources {
