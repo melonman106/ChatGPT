@@ -6,6 +6,7 @@ import net.minecraft.world.entity.ai.attributes.AttributeInstance;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.core.BlockPos;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -17,7 +18,7 @@ public final class VbvMining {
 
     private VbvMining() {}
 
-    public static void apply(ServerPlayer player, BlockState sourceState) {
+    public static void apply(ServerPlayer player, BlockState sourceState, BlockPos pos) {
         clear(player);
         if (!ViaBackportVisuals.isMappingsEnabled()) return;
 
@@ -25,8 +26,8 @@ public final class VbvMining {
         BlockState placeholder = ViaBackportVisuals.getPlaceholderState(sourceState);
         if (reference == null || placeholder == null) return;
 
-        float placeholderProgress = placeholder.getDestroyProgress(player, player.level(), player.blockPosition());
-        float referenceProgress = reference.getDestroyProgress(player, player.level(), player.blockPosition());
+        float placeholderProgress = placeholder.getDestroyProgress(player, player.level(), pos);
+        float referenceProgress = reference.getDestroyProgress(player, player.level(), pos);
         if (!(placeholderProgress > 0.0F) || !(referenceProgress > 0.0F)) return;
 
         float factor = referenceProgress / placeholderProgress;
@@ -51,7 +52,8 @@ public final class VbvMining {
         FACTOR.remove(player.getUUID());
     }
 
-    public static void clearAll() {
+    public static void clearAll(Iterable<ServerPlayer> players) {
+        for (ServerPlayer player : players) clear(player);
         FACTOR.clear();
     }
 }
