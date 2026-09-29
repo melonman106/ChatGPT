@@ -21,7 +21,8 @@
       "uvlock": true
     },
     "facing=east,half=bottom,shape=straight": {
-      "model": "minecraft:block/polished_deepslate_stairs"
+      "model": "minecraft:block/polished_deepslate_stairs",
+      "uvlock": true
     },
     "facing=east,half=top,shape=inner_left": {
       "model": "minecraft:block/polished_deepslate_stairs_inner",
@@ -133,8 +134,7 @@
     },
     "facing=south,half=top,shape=inner_right": {
       "model": "minecraft:block/polished_deepslate_stairs_inner",
-      "x": 180,
-      "uvlock": true
+      "x": 180
     },
     "facing=south,half=top,shape=outer_left": {
       "model": "minecraft:block/polished_deepslate_stairs_outer",
@@ -143,8 +143,7 @@
     },
     "facing=south,half=top,shape=outer_right": {
       "model": "minecraft:block/polished_deepslate_stairs_outer",
-      "x": 180,
-      "uvlock": true
+      "x": 180
     },
     "facing=south,half=top,shape=straight": {
       "model": "minecraft:block/polished_deepslate_stairs",

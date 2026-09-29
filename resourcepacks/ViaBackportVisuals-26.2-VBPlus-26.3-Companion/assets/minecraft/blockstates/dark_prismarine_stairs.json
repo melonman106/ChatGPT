@@ -6,7 +6,9 @@
       "uvlock": true
     },
     "facing=east,half=bottom,shape=inner_right": {
-      "model": "minecraft:block/dark_prismarine_stairs_inner"
+      "model": "minecraft:block/dark_prismarine_stairs_inner",
+      "y": 270,
+      "uvlock": true
     },
     "facing=east,half=bottom,shape=outer_left": {
       "model": "minecraft:block/dark_prismarine_stairs_outer",
@@ -14,10 +16,13 @@
       "uvlock": true
     },
     "facing=east,half=bottom,shape=outer_right": {
-      "model": "minecraft:block/dark_prismarine_stairs_outer"
+      "model": "minecraft:block/dark_prismarine_stairs_outer",
+      "y": 270,
+      "uvlock": true
     },
     "facing=east,half=bottom,shape=straight": {
-      "model": "minecraft:block/dark_prismarine_stairs"
+      "model": "minecraft:block/dark_prismarine_stairs",
+      "uvlock": true
     },
     "facing=east,half=top,shape=inner_left": {
       "model": "minecraft:block/dark_prismarine_stairs_inner",
@@ -28,6 +33,7 @@
     "facing=east,half=top,shape=inner_right": {
       "model": "minecraft:block/dark_prismarine_stairs_inner",
       "x": 180,
+      "y": 270,
       "uvlock": true
     },
     "facing=east,half=top,shape=outer_left": {
@@ -39,6 +45,7 @@
     "facing=east,half=top,shape=outer_right": {
       "model": "minecraft:block/dark_prismarine_stairs_outer",
       "x": 180,
+      "y": 270,
       "uvlock": true
     },
     "facing=east,half=top,shape=straight": {
@@ -53,7 +60,7 @@
     },
     "facing=north,half=bottom,shape=inner_right": {
       "model": "minecraft:block/dark_prismarine_stairs_inner",
-      "y": 270,
+      "y": 180,
       "uvlock": true
     },
     "facing=north,half=bottom,shape=outer_left": {
@@ -63,7 +70,7 @@
     },
     "facing=north,half=bottom,shape=outer_right": {
       "model": "minecraft:block/dark_prismarine_stairs_outer",
-      "y": 270,
+      "y": 180,
       "uvlock": true
     },
     "facing=north,half=bottom,shape=straight": {
@@ -80,7 +87,7 @@
     "facing=north,half=top,shape=inner_right": {
       "model": "minecraft:block/dark_prismarine_stairs_inner",
       "x": 180,
-      "y": 270,
+      "y": 180,
       "uvlock": true
     },
     "facing=north,half=top,shape=outer_left": {
@@ -92,7 +99,7 @@
     "facing=north,half=top,shape=outer_right": {
       "model": "minecraft:block/dark_prismarine_stairs_outer",
       "x": 180,
-      "y": 270,
+      "y": 180,
       "uvlock": true
     },
     "facing=north,half=top,shape=straight": {
@@ -106,18 +113,14 @@
       "uvlock": true
     },
     "facing=south,half=bottom,shape=inner_right": {
-      "model": "minecraft:block/dark_prismarine_stairs_inner",
-      "y": 90,
-      "uvlock": true
+      "model": "minecraft:block/dark_prismarine_stairs_inner"
     },
     "facing=south,half=bottom,shape=outer_left": {
       "model": "minecraft:block/dark_prismarine_stairs_outer",
       "uvlock": true
     },
     "facing=south,half=bottom,shape=outer_right": {
-      "model": "minecraft:block/dark_prismarine_stairs_outer",
-      "y": 90,
-      "uvlock": true
+      "model": "minecraft:block/dark_prismarine_stairs_outer"
     },
     "facing=south,half=bottom,shape=straight": {
       "model": "minecraft:block/dark_prismarine_stairs",
@@ -131,9 +134,7 @@
     },
     "facing=south,half=top,shape=inner_right": {
       "model": "minecraft:block/dark_prismarine_stairs_inner",
-      "x": 180,
-      "y": 90,
-      "uvlock": true
+      "x": 180
     },
     "facing=south,half=top,shape=outer_left": {
       "model": "minecraft:block/dark_prismarine_stairs_outer",
@@ -142,9 +143,7 @@
     },
     "facing=south,half=top,shape=outer_right": {
       "model": "minecraft:block/dark_prismarine_stairs_outer",
-      "x": 180,
-      "y": 90,
-      "uvlock": true
+      "x": 180
     },
     "facing=south,half=top,shape=straight": {
       "model": "minecraft:block/dark_prismarine_stairs",
@@ -159,7 +158,7 @@
     },
     "facing=west,half=bottom,shape=inner_right": {
       "model": "minecraft:block/dark_prismarine_stairs_inner",
-      "y": 180,
+      "y": 90,
       "uvlock": true
     },
     "facing=west,half=bottom,shape=outer_left": {
@@ -169,7 +168,7 @@
     },
     "facing=west,half=bottom,shape=outer_right": {
       "model": "minecraft:block/dark_prismarine_stairs_outer",
-      "y": 180,
+      "y": 90,
       "uvlock": true
     },
     "facing=west,half=bottom,shape=straight": {
@@ -186,7 +185,7 @@
     "facing=west,half=top,shape=inner_right": {
       "model": "minecraft:block/dark_prismarine_stairs_inner",
       "x": 180,
-      "y": 180,
+      "y": 90,
       "uvlock": true
     },
     "facing=west,half=top,shape=outer_left": {
@@ -198,7 +197,7 @@
     "facing=west,half=top,shape=outer_right": {
       "model": "minecraft:block/dark_prismarine_stairs_outer",
       "x": 180,
-      "y": 180,
+      "y": 90,
       "uvlock": true
     },
     "facing=west,half=top,shape=straight": {
