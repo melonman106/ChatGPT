@@ -44,7 +44,7 @@ public final class ViaBackportVisuals implements ModInitializer {
             "smooth_sandstone_stairs", "brick_stairs",
             "nether_brick_stairs", "red_nether_brick_stairs",
             "sandstone_stairs", "smooth_stone_stairs",
-            "cobbled_deepslate_stairs", "polished_deepslate_stairs",
+            "end_stone_brick_stairs", "polished_deepslate_stairs",
             "tuff_stairs", "polished_tuff_stairs",
             "granite_stairs", "diorite_stairs",
             "mossy_stone_brick_stairs", "stone_brick_stairs"
@@ -56,7 +56,7 @@ public final class ViaBackportVisuals implements ModInitializer {
             "brick_slab", "nether_brick_slab",
             "red_nether_brick_slab", "sandstone_slab",
             "granite_slab", "diorite_slab",
-            "cobbled_deepslate_slab", "polished_deepslate_slab",
+            "end_stone_brick_slab", "polished_deepslate_slab",
             "tuff_slab", "polished_tuff_slab",
             "mossy_stone_brick_slab", "stone_brick_slab"
     };
