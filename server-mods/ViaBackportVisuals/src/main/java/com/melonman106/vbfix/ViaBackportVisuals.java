@@ -242,7 +242,7 @@ public final class ViaBackportVisuals implements ModInitializer {
                     "minecraft:jungle_leaves", ViaBackportVisuals::yellowPoplarLeafMarker);
 
             strawBed = remapBlockStates(mappings, "minecraft:straw_bed",
-                    "minecraft:" + STRAW_BED_PLACEHOLDER, ViaBackportVisuals::strawBedMarker);
+                    "minecraft:redstone_wire", ViaBackportVisuals::strawBedMarker);
 
             mappingsEnabled = true;
 
@@ -395,9 +395,23 @@ public final class ViaBackportVisuals implements ModInitializer {
     }
 
     private static BlockState strawBedMarker(BlockState src, BlockState ph) {
-        return ph.setValue(BedBlock.FACING, src.getValue(BedBlock.FACING))
-                .setValue(BedBlock.PART, src.getValue(BedBlock.PART))
-                .setValue(BedBlock.OCCUPIED, true);
+        /*
+         * A bed has no block entity, so arbitrary NBT cannot reach the 26.2
+         * block-model system. Use a reserved redstone-wire state as the
+         * client-visible placement marker instead. Power 0..7 encodes:
+         * facing (4) x bed part (2). The server still contains the real
+         * 26.3 straw bed; only the ViaBackwards client representation changes.
+         */
+        int facing = indexOf(STAIR_FACINGS,
+                propertyString(src, BedBlock.FACING.getName()));
+        int part = "head".equals(propertyString(src, BedBlock.PART.getName())) ? 1 : 0;
+        BlockState marker = ph;
+        marker = setProperty(marker, "east", "up");
+        marker = setProperty(marker, "north", "up");
+        marker = setProperty(marker, "south", "up");
+        marker = setProperty(marker, "west", "up");
+        marker = setProperty(marker, "power", Integer.toString(facing * 2 + part));
+        return marker;
     }
 
     private static int disableMappings(net.minecraft.commands.CommandSourceStack source) {
