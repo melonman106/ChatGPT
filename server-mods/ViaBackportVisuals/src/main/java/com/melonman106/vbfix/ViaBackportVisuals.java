@@ -7,6 +7,7 @@ import com.viaversion.viaversion.api.data.MappingData;
 import com.viaversion.viaversion.api.data.Mappings;
 import com.viaversion.viaversion.api.protocol.Protocol;
 import com.viaversion.viaversion.api.protocol.version.ProtocolVersion;
+import com.viaversion.viabackwards.api.data.MappedItem;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
@@ -244,6 +245,20 @@ public final class ViaBackportVisuals implements ModInitializer {
                     "minecraft:" + STRAW_BED_PLACEHOLDER, ViaBackportVisuals::strawBedMarker);
 
             mappingsEnabled = true;
+
+            MappedItem strawBedItem = ViaBackwardsItemBridge.findMappedItem("minecraft:straw_bed");
+            if (strawBedItem != null) {
+                LOGGER.info(
+                        "ViaBackwards item identity verified: minecraft:straw_bed -> 26.2 item id {} with custom_model_data {}. " +
+                                "The companion pack can safely select it by the injected original identifier.",
+                        strawBedItem.id(), strawBedItem.customModelData()
+                );
+            } else {
+                LOGGER.warn(
+                        "ViaBackwards did not expose a mapped-item entry for minecraft:straw_bed. " +
+                                "Item identity checks will not be available until ViaBackwards mapping data is loaded."
+                );
+            }
 
             LOGGER.info(
                     "Installed ViaBackportVisuals mappings: wool stairs={}, wool slabs={}, concrete stairs={}, concrete slabs={}, other={}, leaves={}, straw bed={}.",
