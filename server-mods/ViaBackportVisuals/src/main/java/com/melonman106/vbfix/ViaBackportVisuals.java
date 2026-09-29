@@ -131,7 +131,7 @@ public final class ViaBackportVisuals implements ModInitializer {
             if (!mappingsEnabled || !(player instanceof net.minecraft.server.level.ServerPlayer serverPlayer)) {
                 return InteractionResult.PASS;
             }
-            VbvMining.apply(serverPlayer, level.getBlockState(pos));
+            VbvMining.apply(serverPlayer, level.getBlockState(pos), pos);
             return InteractionResult.PASS;
         });
 
@@ -320,7 +320,7 @@ public final class ViaBackportVisuals implements ModInitializer {
             activeMappings.setNewId(entry.getKey(), entry.getValue());
         }
         mappingsEnabled = false;
-        VbvMining.clearAll();
+        VbvMining.clearAll(source.getServer().getPlayerList().getPlayers());
         source.sendSuccess(() -> Component.literal(
                 "ViaBackportVisuals mappings disabled. Reconnect clients to refresh chunk visuals."), true);
         return 1;
@@ -353,9 +353,10 @@ public final class ViaBackportVisuals implements ModInitializer {
 
     private static int dump(net.minecraft.commands.CommandSourceStack source, String id) {
         if (!id.contains(":")) id = "minecraft:" + id;
-        Block block = getBlock(id);
+        final String dumpId = id;
+        Block block = getBlock(dumpId);
         if (block == null) {
-            source.sendFailure(Component.literal("Unknown block: " + id));
+            source.sendFailure(Component.literal("Unknown block: " + dumpId));
             return 0;
         }
         for (BlockState state : block.getStateDefinition().getPossibleStates()) {
@@ -363,7 +364,7 @@ public final class ViaBackportVisuals implements ModInitializer {
             int original = ORIGINAL_MAPPINGS.getOrDefault(stateId, Integer.MIN_VALUE);
             int current = activeMappings == null ? Integer.MIN_VALUE : activeMappings.getNewId(stateId);
             source.sendSuccess(() -> Component.literal(
-                    id + " stateId=" + stateId + " state=" + state +
+                    dumpId + " stateId=" + stateId + " state=" + state +
                             " original=" + original + " current=" + current), false);
         }
         return 1;
