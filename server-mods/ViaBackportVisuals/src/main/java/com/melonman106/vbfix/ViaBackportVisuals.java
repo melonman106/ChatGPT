@@ -361,7 +361,7 @@ public final class ViaBackportVisuals implements ModInitializer {
     private static String redstoneSide(int v){return v==0?"none":v==1?"side":"up";}
     @SuppressWarnings({"rawtypes","unchecked"})
     private static BlockState setProperty(BlockState s,String n,String v){
-        for(Property p:s.getProperties())if(p.getName().equals(n)){java.util.Optional x=p.getValue(v);if(x.isPresent())return s.setValue(p,x.get());}
+        for(Property p:s.getProperties())if(p.getName().equals(n)){java.util.Optional x=p.getValue(v);if(x.isPresent())return s.setValue((Property) p, (Comparable) x.get());}
         return s;
     }
 
