@@ -28,3 +28,5 @@ jobs:
           name: ViaBackportVisuals-Fabric-26.3
           path: server-mods/ViaBackportVisuals/build/libs/*.jar
           if-no-files-found: error
+
+# Build after ViaBackportVisuals state-aware fixes.
