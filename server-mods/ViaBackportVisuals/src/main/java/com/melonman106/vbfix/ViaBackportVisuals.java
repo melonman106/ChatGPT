@@ -61,9 +61,9 @@ public final class ViaBackportVisuals implements ModInitializer {
             "polished_tuff_stairs",
             "bamboo_mosaic_stairs",
             "end_stone_brick_stairs",
-            "deepslate_brick_stairs",
-            "deepslate_tile_stairs",
-            "polished_deepslate_stairs"
+            "resin_brick_stairs",
+            "cinnabar_brick_stairs",
+            "sulfur_brick_stairs"
     };
 
     private static final String[] WOOL_SLAB_PLACEHOLDERS = {
@@ -80,9 +80,9 @@ public final class ViaBackportVisuals implements ModInitializer {
             "polished_tuff_slab",
             "bamboo_mosaic_slab",
             "end_stone_brick_slab",
-            "deepslate_brick_slab",
-            "deepslate_tile_slab",
-            "polished_deepslate_slab"
+            "resin_brick_slab",
+            "cinnabar_brick_slab",
+            "sulfur_brick_slab"
     };
 
     private static final String[] CONCRETE_STAIR_PLACEHOLDERS = {
