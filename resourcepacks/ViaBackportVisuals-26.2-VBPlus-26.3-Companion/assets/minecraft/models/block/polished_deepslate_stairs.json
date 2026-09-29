@@ -1,8 +1,1 @@
-{
-  "parent": "minecraft:block/stairs",
-  "textures": {
-    "bottom": "minecraft:block/cyan_wool",
-    "side": "minecraft:block/cyan_wool",
-    "top": "minecraft:block/cyan_wool"
-  }
-}
+{"parent":"minecraft:block/stairs","textures":{"bottom":"minecraft:block/polished_deepslate","side":"minecraft:block/polished_deepslate","top":"minecraft:block/polished_deepslate"}}
