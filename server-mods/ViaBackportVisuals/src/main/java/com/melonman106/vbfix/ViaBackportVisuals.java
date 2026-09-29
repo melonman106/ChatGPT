@@ -109,24 +109,24 @@ public final class ViaBackportVisuals implements ModInitializer {
      * so they use a rare marker state installed below.
      */
     private static final String[][] BLOCK_MAPPINGS = {
-            {"poplar_log", "birch_log"},
-            {"stripped_poplar_log", "stripped_birch_log"},
-            {"poplar_wood", "birch_wood"},
-            {"stripped_poplar_wood", "stripped_birch_wood"},
-            {"poplar_planks", "birch_planks"},
+            {"poplar_log", "cherry_log"},
+            {"stripped_poplar_log", "stripped_cherry_log"},
+            {"poplar_wood", "cherry_wood"},
+            {"stripped_poplar_wood", "stripped_cherry_wood"},
+            {"poplar_planks", "cherry_planks"},
             {"poplar_stairs", "prismarine_stairs"},
             {"poplar_slab", "prismarine_slab"},
-            {"poplar_fence", "birch_fence"},
-            {"poplar_fence_gate", "birch_fence_gate"},
-            {"poplar_door", "birch_door"},
-            {"poplar_trapdoor", "birch_trapdoor"},
-            {"poplar_button", "birch_button"},
-            {"poplar_pressure_plate", "birch_pressure_plate"},
-            {"poplar_sign", "birch_sign"},
-            {"poplar_wall_sign", "birch_wall_sign"},
-            {"poplar_hanging_sign", "birch_hanging_sign"},
-            {"poplar_wall_hanging_sign", "birch_wall_hanging_sign"},
-            {"poplar_sapling", "birch_sapling"},
+            {"poplar_fence", "cherry_fence"},
+            {"poplar_fence_gate", "cherry_fence_gate"},
+            {"poplar_door", "cherry_door"},
+            {"poplar_trapdoor", "cherry_trapdoor"},
+            {"poplar_button", "cherry_button"},
+            {"poplar_pressure_plate", "cherry_pressure_plate"},
+            {"poplar_sign", "cherry_sign"},
+            {"poplar_wall_sign", "cherry_wall_sign"},
+            {"poplar_hanging_sign", "cherry_hanging_sign"},
+            {"poplar_wall_hanging_sign", "cherry_wall_hanging_sign"},
+            {"poplar_sapling", "cherry_sapling"},
             {"red_shrub", "dead_bush"},
             {"shelf_mushroom", "brown_mushroom"},
     };
@@ -409,9 +409,9 @@ public final class ViaBackportVisuals implements ModInitializer {
             referenceId = "minecraft:white_bed";
         } else if (id.startsWith("minecraft:poplar_")) {
             String suffix = id.substring("minecraft:poplar_".length());
-            referenceId = "minecraft:birch_" + suffix;
+            referenceId = "minecraft:cherry_" + suffix;
         } else if (id.equals("minecraft:stripped_poplar_log") || id.equals("minecraft:stripped_poplar_wood")) {
-            referenceId = "minecraft:stripped_birch_" +
+            referenceId = "minecraft:stripped_cherry_" +
                     id.substring("minecraft:stripped_poplar_".length());
         } else if (id.equals("minecraft:red_poplar_leaves") || id.equals("minecraft:orange_poplar_leaves")
                 || id.equals("minecraft:yellow_poplar_leaves")) {
