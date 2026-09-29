@@ -86,43 +86,22 @@ public final class ViaBackportVisuals implements ModInitializer {
     };
 
     private static final String[] CONCRETE_STAIR_PLACEHOLDERS = {
-            "pale_oak_stairs",
-            "polished_blackstone_brick_stairs",
-            "polished_blackstone_stairs",
-            "blackstone_stairs",
-            "cobbled_deepslate_stairs",
-            "mossy_cobblestone_stairs",
-            "polished_andesite_stairs",
-            "polished_diorite_stairs",
-            "polished_granite_stairs",
-            "quartz_stairs",
-            "red_sandstone_stairs",
-            "sandstone_stairs",
-            "stone_brick_stairs",
-            "brick_stairs",
-            "nether_brick_stairs",
-            "red_nether_brick_stairs"
+            "pale_oak_stairs", "deepslate_brick_stairs", "deepslate_tile_stairs",
+            "polished_deepslate_stairs", "polished_blackstone_brick_stairs",
+            "polished_blackstone_stairs", "blackstone_stairs", "cobbled_deepslate_stairs",
+            "prismarine_brick_stairs", "dark_prismarine_stairs", "purpur_stairs",
+            "nether_brick_stairs", "red_nether_brick_stairs",
+            "mossy_stone_brick_stairs", "stone_brick_stairs", "brick_stairs"
     };
 
-    private static final String[] CONCRETE_SLAB_PLACEHOLDERS = {
-            "pale_oak_slab",
-            "polished_blackstone_brick_slab",
-            "polished_blackstone_slab",
-            "blackstone_slab",
-            "cobbled_deepslate_slab",
-            "mossy_cobblestone_slab",
-            "polished_andesite_slab",
-            "polished_diorite_slab",
-            "polished_granite_slab",
-            "quartz_slab",
-            "red_sandstone_slab",
-            "sandstone_slab",
-            "stone_brick_slab",
-            "brick_slab",
-            "nether_brick_slab",
-            "red_nether_brick_slab"
+    ate static final String[] CONCRETE_SLAB_PLACEHOLDERS = {
+            "pale_oak_slab", "deepslate_brick_slab", "deepslate_tile_slab",
+            "polished_deepslate_slab", "polished_blackstone_brick_slab",
+            "polished_blackstone_slab", "blackstone_slab", "cobbled_deepslate_slab",
+            "prismarine_brick_slab", "dark_prismarine_slab", "purpur_slab",
+            "nether_brick_slab", "red_nether_brick_slab",
+            "mossy_stone_brick_slab", "stone_brick_slab", "brick_slab"
     };
-
     /*
      * These are the non-marker 26.3 blocks. Leaves are intentionally NOT in
      * this list: their vanilla placeholder states are shared with real trees,
