@@ -1,6 +1,7 @@
 package com.melonman106.vbfix;
 
 import com.mojang.brigadier.arguments.StringArgumentType;
+import com.mojang.brigadier.builder.RequiredArgumentBuilder;
 import com.viaversion.viaversion.api.Via;
 import com.viaversion.viaversion.api.data.MappingData;
 import com.viaversion.viaversion.api.data.Mappings;
@@ -152,8 +153,7 @@ public final class ViaBackportVisuals implements ModInitializer {
                         .then(Commands.literal("status")
                                 .executes(context -> status(context.getSource())))
                         .then(Commands.literal("dump")
-                                .then(com.mojang.brigadier.builder.RequiredArgumentBuilder
-                                        .argument("block", StringArgumentType.word())
+                                .then(RequiredArgumentBuilder.<net.minecraft.commands.CommandSourceStack, String>argument("block", StringArgumentType.word())
                                         .executes(context -> dump(context.getSource(),
                                                 StringArgumentType.getString(context, "block")))))));
     }
