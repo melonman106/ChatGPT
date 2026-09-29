@@ -48,45 +48,79 @@ public final class ViaBackportVisuals implements ModInitializer {
     };
 
     private static final String[] WOOL_STAIR_PLACEHOLDERS = {
-            "waxed_cut_copper_stairs", "waxed_exposed_cut_copper_stairs",
-            "waxed_weathered_cut_copper_stairs", "waxed_oxidized_cut_copper_stairs",
-            "cut_copper_stairs", "exposed_cut_copper_stairs",
-            "weathered_cut_copper_stairs", "oxidized_cut_copper_stairs",
-            "mud_brick_stairs", "tuff_brick_stairs",
-            "polished_tuff_stairs", "bamboo_mosaic_stairs",
-            "end_stone_brick_stairs", "resin_brick_stairs",
-            "cinnabar_brick_stairs", "sulfur_brick_stairs"
+            "waxed_cut_copper_stairs",
+            "waxed_exposed_cut_copper_stairs",
+            "waxed_weathered_cut_copper_stairs",
+            "waxed_oxidized_cut_copper_stairs",
+            "cut_copper_stairs",
+            "exposed_cut_copper_stairs",
+            "weathered_cut_copper_stairs",
+            "oxidized_cut_copper_stairs",
+            "mud_brick_stairs",
+            "tuff_brick_stairs",
+            "polished_tuff_stairs",
+            "bamboo_mosaic_stairs",
+            "end_stone_brick_stairs",
+            "deepslate_brick_stairs",
+            "deepslate_tile_stairs",
+            "polished_deepslate_stairs"
     };
 
     private static final String[] WOOL_SLAB_PLACEHOLDERS = {
-            "waxed_cut_copper_slab", "waxed_exposed_cut_copper_slab",
-            "waxed_weathered_cut_copper_slab", "waxed_oxidized_cut_copper_slab",
-            "cut_copper_slab", "exposed_cut_copper_slab",
-            "weathered_cut_copper_slab", "oxidized_cut_copper_slab",
-            "mud_brick_slab", "tuff_brick_slab",
-            "polished_tuff_slab", "bamboo_mosaic_slab",
-            "end_stone_brick_slab", "resin_brick_slab",
-            "cinnabar_brick_slab", "sulfur_brick_slab"
+            "waxed_cut_copper_slab",
+            "waxed_exposed_cut_copper_slab",
+            "waxed_weathered_cut_copper_slab",
+            "waxed_oxidized_cut_copper_slab",
+            "cut_copper_slab",
+            "exposed_cut_copper_slab",
+            "weathered_cut_copper_slab",
+            "oxidized_cut_copper_slab",
+            "mud_brick_slab",
+            "tuff_brick_slab",
+            "polished_tuff_slab",
+            "bamboo_mosaic_slab",
+            "end_stone_brick_slab",
+            "deepslate_brick_slab",
+            "deepslate_tile_slab",
+            "polished_deepslate_slab"
     };
 
     private static final String[] CONCRETE_STAIR_PLACEHOLDERS = {
-            "pale_oak_stairs", "cut_copper_stairs", "exposed_cut_copper_stairs",
-            "weathered_cut_copper_stairs", "oxidized_cut_copper_stairs",
-            "waxed_cut_copper_stairs", "waxed_exposed_cut_copper_stairs",
-            "waxed_weathered_cut_copper_stairs", "waxed_oxidized_cut_copper_stairs",
-            "mud_brick_stairs", "tuff_brick_stairs", "polished_tuff_stairs",
-            "bamboo_mosaic_stairs", "resin_brick_stairs", "cinnabar_brick_stairs",
-            "sulfur_brick_stairs", "end_stone_brick_stairs"
+            "pale_oak_stairs",
+            "polished_blackstone_brick_stairs",
+            "polished_blackstone_stairs",
+            "blackstone_stairs",
+            "cobbled_deepslate_stairs",
+            "mossy_cobblestone_stairs",
+            "polished_andesite_stairs",
+            "polished_diorite_stairs",
+            "polished_granite_stairs",
+            "quartz_stairs",
+            "red_sandstone_stairs",
+            "sandstone_stairs",
+            "stone_brick_stairs",
+            "brick_stairs",
+            "nether_brick_stairs",
+            "red_nether_brick_stairs"
     };
 
     private static final String[] CONCRETE_SLAB_PLACEHOLDERS = {
-            "pale_oak_slab", "cut_copper_slab", "exposed_cut_copper_slab",
-            "weathered_cut_copper_slab", "oxidized_cut_copper_slab",
-            "waxed_cut_copper_slab", "waxed_exposed_cut_copper_slab",
-            "waxed_weathered_cut_copper_slab", "waxed_oxidized_cut_copper_slab",
-            "mud_brick_slab", "tuff_brick_slab", "polished_tuff_slab",
-            "bamboo_mosaic_slab", "resin_brick_slab", "cinnabar_brick_slab",
-            "sulfur_brick_slab", "end_stone_brick_slab"
+            "pale_oak_slab",
+            "polished_blackstone_brick_slab",
+            "polished_blackstone_slab",
+            "blackstone_slab",
+            "cobbled_deepslate_slab",
+            "mossy_cobblestone_slab",
+            "polished_andesite_slab",
+            "polished_diorite_slab",
+            "polished_granite_slab",
+            "quartz_slab",
+            "red_sandstone_slab",
+            "sandstone_slab",
+            "stone_brick_slab",
+            "brick_slab",
+            "nether_brick_slab",
+            "red_nether_brick_slab"
     };
 
     /*
