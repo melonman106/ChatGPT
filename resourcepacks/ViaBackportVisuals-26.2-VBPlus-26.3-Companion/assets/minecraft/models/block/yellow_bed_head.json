@@ -1,1 +1,10 @@
-{"parent":"minecraft:block/template_bed_head","textures":{"east":"minecraft:block/straw_bed","up":"minecraft:block/straw_bed","west":"minecraft:block/straw_bed","particle":"minecraft:block/straw_bed","down":"minecraft:block/bed_down"}}
+{
+  "parent": "minecraft:block/template_bed_head",
+  "textures": {
+    "east": "minecraft:block/yellow_bed",
+    "up": "minecraft:block/yellow_bed",
+    "west": "minecraft:block/yellow_bed",
+    "particle": "minecraft:block/yellow_bed",
+    "down": "minecraft:block/bed_down"
+  }
+}
