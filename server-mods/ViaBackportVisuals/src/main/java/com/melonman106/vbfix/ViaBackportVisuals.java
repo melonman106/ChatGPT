@@ -113,7 +113,7 @@ public final class ViaBackportVisuals implements ModInitializer {
             {"shelf_mushroom", "brown_mushroom"},
     };
 
-    private static final String STRAW_BED_PLACEHOLDER = "black_bed";
+    private static final String STRAW_BED_PLACEHOLDER = "yellow_bed";
 
     private static final Map<Integer, Integer> ORIGINAL_MAPPINGS = new HashMap<>();
     private static Mappings activeMappings;
