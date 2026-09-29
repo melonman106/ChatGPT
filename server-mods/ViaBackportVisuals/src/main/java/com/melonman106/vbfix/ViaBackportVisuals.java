@@ -301,6 +301,33 @@ public final class ViaBackportVisuals implements ModInitializer {
         return 1;
     }
 
+    public static BlockState getMiningReferenceState(BlockState state) {
+        String id = BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();
+        String referenceId = null;
+        if (id.endsWith("_wool_stairs") || id.endsWith("_wool_slab")) {
+            referenceId = "minecraft:white_wool";
+        } else if (id.endsWith("_concrete_stairs") || id.endsWith("_concrete_slab")) {
+            referenceId = "minecraft:white_concrete";
+        } else if (id.equals("minecraft:straw_bed")) {
+            referenceId = "minecraft:white_bed";
+        } else if (id.startsWith("minecraft:poplar_")) {
+            String suffix = id.substring("minecraft:poplar_".length());
+            referenceId = "minecraft:birch_" + suffix;
+        } else if (id.equals("minecraft:stripped_poplar_log") || id.equals("minecraft:stripped_poplar_wood")) {
+            referenceId = "minecraft:stripped_birch_" + id.substring("minecraft:stripped_poplar_".length());
+        } else if (id.equals("minecraft:red_poplar_leaves") || id.equals("minecraft:orange_poplar_leaves")
+                || id.equals("minecraft:yellow_poplar_leaves")) {
+            referenceId = "minecraft:oak_leaves";
+        } else if (id.equals("minecraft:red_shrub")) {
+            referenceId = "minecraft:dead_bush";
+        } else if (id.equals("minecraft:shelf_mushroom")) {
+            referenceId = "minecraft:brown_mushroom";
+        }
+        if (referenceId == null) return null;
+        Block reference = getBlock(referenceId);
+        return reference == null ? null : reference.defaultBlockState();
+    }
+
     private static Block getBlock(String id) {
         return BuiltInRegistries.BLOCK.getValue(Identifier.parse(id));
     }
