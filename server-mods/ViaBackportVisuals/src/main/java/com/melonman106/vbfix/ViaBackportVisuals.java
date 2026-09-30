@@ -139,7 +139,7 @@ public final class ViaBackportVisuals implements ModInitializer {
     private static final String[] STAIR_HALVES = {"bottom","top"};
     private static final String[] STAIR_SHAPES = {"inner_left","inner_right","outer_left","outer_right","straight"};
     private static final String[] SLAB_TYPES = {"bottom","double","top"};
-    private static final int NOTE_MARKER_CAPACITY = 1150;
+    private static final int NOTE_MARKER_CAPACITY = 1200;
 
 
     private static final Map<Integer, Integer> ORIGINAL_MAPPINGS = new HashMap<>();
@@ -217,31 +217,44 @@ public final class ViaBackportVisuals implements ModInitializer {
             int leaves = 0;
 
             /*
-             * Leave wool/concrete stairs and slabs to ViaBackwards.
-             * The old note_block/redstone_wire markers have the wrong collision shape,
-             * which is why the 26.2 client could not walk up the stairs and could get
-             * caught inside slabs. ViaBackwards 5.12.0 already has the native 26.3 -> 26.2
-             * state mappings, so do not replace those states with unrelated marker blocks.
+             * Use isolated client-visible marker states again. Stairs use note_block
+             * states first; slabs use the redstone_wire marker range. The actual server
+             * block remains the real 26.3 wool/concrete stair or slab. A future client
+             * patch can recognize these reserved states and restore the correct 26.3
+             * collision/interaction shape on the 26.2 client.
              */
-            LOGGER.info("Leaving ViaBackwards wool/concrete stair and slab state mappings untouched.");
+            LOGGER.info("Installing isolated note-block stair and redstone-wire slab markers.");
+            for (String color : WOOL_COLORS) {
+                woolStairs += remapBlockStates(mappings, "minecraft:" + color + "_wool_stairs",
+                        "minecraft:" + color + "_wool_stairs", ViaBackportVisuals::markerState);
+                woolSlabs += remapBlockStates(mappings, "minecraft:" + color + "_wool_slab",
+                        "minecraft:" + color + "_wool_slab", ViaBackportVisuals::markerState);
+                concreteStairs += remapBlockStates(mappings, "minecraft:" + color + "_concrete_stairs",
+                        "minecraft:" + color + "_concrete_stairs", ViaBackportVisuals::markerState);
+                concreteSlabs += remapBlockStates(mappings, "minecraft:" + color + "_concrete_slab",
+                        "minecraft:" + color + "_concrete_slab", ViaBackportVisuals::markerState);
+            }
             for (String[] mapping : BLOCK_MAPPINGS) {
                 otherBlocks += remapBlockStates(mappings,
                         "minecraft:" + mapping[0],
                         "minecraft:" + mapping[1]);
             }
 
-            leaves += remapBlockStates(mappings, "minecraft:red_poplar_leaves",
-                    "minecraft:oak_leaves", ViaBackportVisuals::redPoplarLeafMarker);
-            leaves += remapBlockStates(mappings, "minecraft:orange_poplar_leaves",
-                    "minecraft:spruce_leaves", ViaBackportVisuals::orangePoplarLeafMarker);
-            leaves += remapBlockStates(mappings, "minecraft:yellow_poplar_leaves",
-                    "minecraft:jungle_leaves", ViaBackportVisuals::yellowPoplarLeafMarker);
+            /*
+             * Do not rewrite poplar leaves to oak/spruce/jungle states. Those are
+             * legitimate 26.2 blocks and their state/model files are shared with
+             * real trees. ViaBackwards/ViaBackwards-Plus supplies the poplar leaf
+             * visual mapping without corrupting genuine leaf blocks.
+             */
+            LOGGER.info("Leaving ViaBackwards poplar-leaf state mappings untouched.");
 
             /*
-             * Do the same for straw beds. A redstone-wire marker is not a bed and gives
-             * the 26.2 client the wrong collision and interaction shape.
+             * Straw beds also get an isolated marker. The client patch can turn the
+             * reserved redstone states back into the real bed shape while the server
+             * continues to store minecraft:straw_bed.
              */
-            LOGGER.info("Leaving ViaBackwards straw-bed state mapping untouched.");
+            strawBed += remapBlockStates(mappings, "minecraft:straw_bed",
+                    "minecraft:straw_bed", ViaBackportVisuals::strawBedMarker);
 
             mappingsEnabled = true;
 
