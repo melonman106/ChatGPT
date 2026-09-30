@@ -11,7 +11,9 @@ import com.viaversion.viabackwards.api.data.MappedItem;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
-import net.fabricmc.fabric.api.event.player.AttackBlockCallback;\nimport net.fabricmc.fabric.api.event.player.UseItemOnCallback;\nimport net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
+import net.fabricmc.fabric.api.event.player.AttackBlockCallback;
+import net.fabricmc.fabric.api.event.player.UseItemOnCallback;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
@@ -151,7 +153,25 @@ public final class ViaBackportVisuals implements ModInitializer {
     public void onInitialize() {
         LOGGER.info("ViaBackportVisuals loaded for Minecraft 26.3.");
 
-        VbvMarkers.registerPayload();\n        ServerLifecycleEvents.SERVER_STARTED.register(server -> installMappings());\n\n        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->\n                VbvMarkers.scanAround(handler.getPlayer(), handler.getPlayer().blockPosition()));\n\n        UseItemOnCallback.EVENT.register((player, level, hand, hitResult) -> {\n            if (player instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {\n                serverPlayer.server.execute(() -> VbvMarkers.scanAround(serverPlayer, hitResult.getBlockPos()));\n            }\n            return InteractionResult.PASS;\n        });\n\n        ServerTickEvents.END_SERVER_TICK.register(server -> {\n            if (server.getTickCount() % 20 != 0) return;\n            for (net.minecraft.server.level.ServerPlayer player : server.getPlayerList().getPlayers()) {\n                VbvMarkers.scanAround(player, player.blockPosition());\n            }\n        });
+        VbvMarkers.registerPayload();
+        ServerLifecycleEvents.SERVER_STARTED.register(server -> installMappings());
+
+        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->
+                VbvMarkers.scanAround(handler.getPlayer(), handler.getPlayer().blockPosition()));
+
+        UseItemOnCallback.EVENT.register((player, level, hand, hitResult) -> {
+            if (player instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
+                serverPlayer.server.execute(() -> VbvMarkers.scanAround(serverPlayer, hitResult.getBlockPos()));
+            }
+            return InteractionResult.PASS;
+        });
+
+        ServerTickEvents.END_SERVER_TICK.register(server -> {
+            if (server.getTickCount() % 20 != 0) return;
+            for (net.minecraft.server.level.ServerPlayer player : server.getPlayerList().getPlayers()) {
+                VbvMarkers.scanAround(player, player.blockPosition());
+            }
+        });
 
         AttackBlockCallback.EVENT.register((player, level, hand, pos, direction) -> {
             if (!mappingsEnabled || !(player instanceof net.minecraft.server.level.ServerPlayer serverPlayer)) {
@@ -161,8 +181,10 @@ public final class ViaBackportVisuals implements ModInitializer {
             return InteractionResult.PASS;
         });
 
-        ServerPlayConnectionEvents.DISCONNECT.register((handler, server) ->
-                VbvMining.clear(handler.getPlayer());\n                VbvMarkers.clear(handler.getPlayer()));
+        ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
+                VbvMining.clear(handler.getPlayer());
+                VbvMarkers.clear(handler.getPlayer());
+        });
 
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) ->
                 dispatcher.register(Commands.literal("vbv")
