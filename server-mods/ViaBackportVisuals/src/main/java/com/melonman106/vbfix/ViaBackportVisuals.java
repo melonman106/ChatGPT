@@ -289,12 +289,13 @@ public final class ViaBackportVisuals implements ModInitializer {
             }
 
             /*
-             * Do not rewrite poplar leaves to oak/spruce/jungle states. Those are
-             * legitimate 26.2 blocks and their state/model files are shared with
-             * real trees. ViaBackwards/ViaBackwards-Plus supplies the poplar leaf
-             * visual mapping without corrupting genuine leaf blocks.
+             * Poplar leaves use cherry leaves only as a collision/shape placeholder.
+             * Their visual is drawn by the isolated VBV item-display overlay, so
+             * genuine cherry leaves are never retextured by the resource pack.
              */
-            LOGGER.info("Leaving ViaBackwards poplar-leaf state mappings untouched.");
+            leaves += remapBlockStates(mappings, "minecraft:red_poplar_leaves", "minecraft:cherry_leaves");
+            leaves += remapBlockStates(mappings, "minecraft:orange_poplar_leaves", "minecraft:cherry_leaves");
+            leaves += remapBlockStates(mappings, "minecraft:yellow_poplar_leaves", "minecraft:cherry_leaves");
 
             /*
              * Straw beds also get an isolated marker. The client patch can turn the
