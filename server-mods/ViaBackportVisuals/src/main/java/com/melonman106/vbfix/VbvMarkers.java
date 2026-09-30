@@ -43,6 +43,9 @@ public final class VbvMarkers {
     }
 
     public static void scanAround(ServerPlayer player, BlockPos center) {
+        // The display overlay is the Eagler-compatible visual path. It does not
+        // require a client mod and never globally overrides a vanilla block model.
+        VbvDisplays.scanAround(player, center);
         if (!ServerPlayNetworking.canSend(player, VbvMarkerPayload.TYPE)) return;
 
         Map<BlockPos, Integer> known = SENT.computeIfAbsent(player.getUUID(), ignored -> new HashMap<>());
