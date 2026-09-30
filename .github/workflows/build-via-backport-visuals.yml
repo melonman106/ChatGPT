@@ -45,6 +45,21 @@ jobs:
       - name: Build Fabric 26.2 client companion
         working-directory: client-mods/ViaBackportVisualsClient-26.2
         run: gradle build --no-daemon --refresh-dependencies
+      - name: Generate isolated companion resource pack
+        run: |
+          rm -rf build/vbv-pack
+          python3 resourcepacks/ViaBackportVisuals-26.2-VBPlus-26.3-Companion/generate_models.py build/vbv-pack
+          cp resourcepacks/ViaBackportVisuals-26.2-VBPlus-26.3-Companion/pack.mcmeta build/vbv-pack/
+          cp resourcepacks/ViaBackportVisuals-26.2-VBPlus-26.3-Companion/README.txt build/vbv-pack/
+          cd build/vbv-pack
+          zip -qr ../../ViaBackportVisuals-26.2-Isolated-Companion.zip .
+      - name: Upload isolated companion resource pack
+        uses: actions/upload-artifact@v4
+        with:
+          name: ViaBackportVisuals-26.2-Isolated-Companion
+          path: ViaBackportVisuals-26.2-Isolated-Companion.zip
+          if-no-files-found: error
+
       - name: Upload client mod JAR
         uses: actions/upload-artifact@v4
         with:
