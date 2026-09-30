@@ -54,8 +54,8 @@ public final class VbvDisplays {
                     seen.add(key);
                     String old = active.get(key);
                     if (!modelId.equals(old)) {
-                        if (old != null) killAt(player.getServer(), key);
-                        summon(player.getServer(), key, modelId);
+                        if (old != null) killAt(level.getServer(), key);
+                        summon(level.getServer(), key, modelId);
                         active.put(key, modelId);
                     }
                 }
@@ -65,7 +65,7 @@ public final class VbvDisplays {
         for (BlockPos pos : Set.copyOf(active.keySet())) {
             if (pos.distManhattan(center) > radius * 3) continue;
             if (!seen.contains(pos) && level.hasChunkAt(pos)) {
-                killAt(player.getServer(), pos);
+                killAt(level.getServer(), pos);
                 active.remove(pos);
             }
         }
