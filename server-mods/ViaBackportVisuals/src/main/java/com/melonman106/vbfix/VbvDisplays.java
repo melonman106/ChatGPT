@@ -4,7 +4,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.BlockState;\nimport net.minecraft.core.registries.BuiltInRegistries;
 
 import java.util.HashMap;
 import java.util.HashSet;
@@ -92,7 +92,7 @@ public final class VbvDisplays {
     }
 
     private static String modelId(BlockState state) {
-        String id = state.getBlock().builtInRegistryHolder().key().location().getPath();
+        String id = BuiltInRegistries.BLOCK.getKey(state.getBlock()).getPath();
 
         if (id.endsWith("_wool_stairs") || id.endsWith("_concrete_stairs")) {
             String family = id.endsWith("_wool_stairs")
