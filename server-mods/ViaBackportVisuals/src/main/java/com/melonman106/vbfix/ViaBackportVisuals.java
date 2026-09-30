@@ -147,6 +147,7 @@ public final class ViaBackportVisuals implements ModInitializer {
 
     private static Mappings activeMappings;
     private static volatile boolean mappingsEnabled = true;
+    private static volatile int restartTicks = -1;
 
     @Override
     public void onInitialize() {
@@ -162,6 +163,7 @@ public final class ViaBackportVisuals implements ModInitializer {
                 VbvMarkers.scanAround(handler.getPlayer(), handler.getPlayer().blockPosition()));
 
         ServerTickEvents.END_SERVER_TICK.register(server -> {
+            handleRestartCountdown(server);
             if (server.getTickCount() % 20 != 0) return;
             for (net.minecraft.server.level.ServerPlayer player : server.getPlayerList().getPlayers()) {
                 VbvMarkers.scanAround(player, player.blockPosition());
@@ -190,10 +192,41 @@ public final class ViaBackportVisuals implements ModInitializer {
                                 .executes(context -> enableMappings(context.getSource())))
                         .then(Commands.literal("status")
                                 .executes(context -> status(context.getSource())))
+                        .then(Commands.literal("restart")
+                                .executes(context -> restartServer(context.getSource())))
                         .then(Commands.literal("dump")
                                 .then(RequiredArgumentBuilder.<net.minecraft.commands.CommandSourceStack, String>argument("block", StringArgumentType.word())
                                         .executes(context -> dump(context.getSource(),
                                                 StringArgumentType.getString(context, "block")))))));
+    }
+
+    private static int restartServer(net.minecraft.commands.CommandSourceStack source) {
+        if (restartTicks >= 0) {
+            source.sendFailure(Component.literal("A VBV server restart is already counting down."));
+            return 0;
+        }
+
+        restartTicks = 200; // 10 seconds at 20 ticks per second
+        source.getServer().getPlayerList().broadcastSystemMessage(
+                Component.literal("[VBV] Restarting server in 10 seconds for a mod update."), false);
+        LOGGER.info("VBV restart countdown started by {}.", source.getTextName());
+        return 1;
+    }
+
+    private static void handleRestartCountdown(net.minecraft.server.MinecraftServer server) {
+        if (restartTicks < 0) return;
+
+        restartTicks--;
+        if (restartTicks > 0 && restartTicks % 20 == 0) {
+            int seconds = restartTicks / 20;
+            server.getPlayerList().broadcastSystemMessage(
+                    Component.literal("[VBV] " + seconds), false);
+        } else if (restartTicks == 0) {
+            server.getPlayerList().broadcastSystemMessage(
+                    Component.literal("[VBV] Restarting now..."), false);
+            server.getCommands().performPrefixedCommand(
+                    server.createCommandSourceStack(), "stop");
+        }
     }
 
     private static void installMappings() {
