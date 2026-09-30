@@ -12,10 +12,12 @@ Server requirement:
 Included:
 - 16 Wool Stairs
 - 16 Wool Slabs
-- corrected vanilla 26.2 stair/slab geometry via model overrides (no custom stair rotations)
-- Straw Bed support from the server mapping/companion pack
+- 16 Concrete Stairs
+- 16 Concrete Slabs
+- model files used by the 26.2 client companion for position-aware rendering
+- Straw Bed model assets for the companion's bed renderer
 
-The placeholder approach means the selected 26.2 placeholder can share the replacement appearance while the pack is active.
+The pack deliberately does NOT override the vanilla blockstates of the real 26.2 placeholder blocks. The client companion mod selects these models only for server-marked positions.
 
 
 Emergency visual-mapping commands (operator level 2+):
@@ -33,8 +35,14 @@ The companion pack is intentionally no longer allowed to globally replace genuin
 The correct architecture is now:
 - server: real 26.2 stair/slab/bed placeholder states for correct collision;
 - server -> client: a small ViaBackportVisuals marker payload identifying translated block positions;
-- client: a 26.2 Fabric companion mod that uses the position-aware block-model API to render the backported texture only at marked positions.
+- client: a 26.2 Fabric companion mod that uses the position-aware block-model API to render the backported texture only at marked positions;
+- resource pack: supplies the 26.3 stair/slab model geometry and textures without changing genuine 26.2 placeholder blocks.
 
 Do NOT re-add note_block or redstone_wire collision markers.
 Do NOT add global blockstate/model overrides for genuine vanilla placeholder blocks.
 See server-mods/ViaBackportVisuals/docs/PLACEMENT_ISOLATION_ARCHITECTURE.md for the implementation contract.
+
+
+Client requirement:
+- Install the ViaBackportVisuals Client 26.2 Fabric mod from the matching GitHub Actions artifact.
+- Enable this companion resource pack on the 26.2 client.
