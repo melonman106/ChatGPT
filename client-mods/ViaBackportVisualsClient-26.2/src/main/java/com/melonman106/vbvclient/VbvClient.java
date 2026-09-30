@@ -67,7 +67,7 @@ public final class VbvClient implements ClientModInitializer {
     private static void registerModelKeys() {
         for (int visual = 0; visual < 64; visual++) {
             if (visual < 64) {
-                for (String shape : new String[]{"straight","inner","outer"}) {
+                for (String shape : new String[]{"straight","inner_left","inner_right","outer_left","outer_right"}) {
                     for (String half : new String[]{"bottom","top"}) {
                         for (String facing : new String[]{"east","north","south","west"}) {
                             addKey(visual, shape + ":" + half + ":" + facing);
@@ -88,11 +88,8 @@ public final class VbvClient implements ClientModInitializer {
         if (visual >= 16 && visual < 32 || visual >= 48) {
             variant = "slab:" + propertyString(state, "type");
         } else {
-            variant = propertyString(state, "shape").replace("inner_left", "inner")
-                    .replace("inner_right", "inner")
-                    .replace("outer_left", "outer")
-                    .replace("outer_right", "outer")
-                    + ":" + propertyString(state, "half") + ":" + propertyString(state, "facing");
+            variant = propertyString(state, "shape") + ":" +
+                    propertyString(state, "half") + ":" + propertyString(state, "facing");
         }
 
         ExtraModelKey<BlockStateModel> key = MODELS.get(visual + ":" + variant);
@@ -133,11 +130,22 @@ public final class VbvClient implements ClientModInitializer {
         String shape = p[0];
         String half = p[1];
         String facing = p[2];
-        String suffix = shape.equals("straight") ? "_stairs" : "_stairs_" + shape;
-        String model = "minecraft:block/" + base + suffix;
-        int y = switch (facing) {
-            case "east" -> 90; case "north" -> 180; case "west" -> 270; default -> 0;
+        String model = "minecraft:block/" + base +
+                (shape.equals("straight") ? "_stairs" : "_stairs_" + (shape.startsWith("inner") ? "inner" : "outer"));
+
+        int baseY = switch (facing) {
+            case "east" -> 0;
+            case "south" -> 90;
+            case "west" -> 180;
+            default -> 270;
         };
+        int y = baseY;
+        if (shape.endsWith("_left") && !shape.equals("straight")) {
+            y -= half.equals("top") ? 0 : 90;
+        } else if (shape.endsWith("_right") && !shape.equals("straight")) {
+            y += half.equals("top") ? 90 : 0;
+        }
+        y = (y + 360) % 360;
         int x = half.equals("top") ? 180 : 0;
         return SimpleUnbakedExtraModel.blockStateModel(Identifier.parse(model), BlockModelRotation.get(x, y));
     }
