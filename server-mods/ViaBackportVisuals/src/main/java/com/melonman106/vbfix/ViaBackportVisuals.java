@@ -398,6 +398,10 @@ public final class ViaBackportVisuals implements ModInitializer {
     private static int enableMappings(net.minecraft.commands.CommandSourceStack source) {
         if (activeMappings == null) {
             installMappings();
+            if (activeMappings == null) {
+                source.sendFailure(Component.literal("ViaBackportVisuals could not install mappings because ViaVersion is not ready."));
+                return 0;
+            }
         } else {
             for (Map.Entry<Integer, Integer> entry : APPLIED.entrySet()) {
                 activeMappings.setNewId(entry.getKey(), entry.getValue());
@@ -479,7 +483,11 @@ public final class ViaBackportVisuals implements ModInitializer {
     }
 
     private static Block getBlock(String id) {
-        return BuiltInRegistries.BLOCK.getValue(Identifier.parse(id));
+        Identifier identifier = Identifier.parse(id);
+        if (!BuiltInRegistries.BLOCK.containsKey(identifier)) {
+            return null;
+        }
+        return BuiltInRegistries.BLOCK.getValue(identifier);
     }
 
     private static String stateKey(BlockState state) {
