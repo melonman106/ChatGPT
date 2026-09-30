@@ -74,6 +74,8 @@ public final class VbvDisplays {
         // world from different centers. A display is removed only when a scan
         // actually reaches its position and finds that the block is no longer
         // a VBV visual block.
+    }
+
     private static void summon(MinecraftServer server, BlockPos pos, String modelId) {
         String positionTag = positionTag(pos);
         String modelTag = "vbv_m_" + modelId;
