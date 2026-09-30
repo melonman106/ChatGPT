@@ -8,7 +8,9 @@ import net.fabricmc.fabric.api.client.model.loading.v1.ModelLoadingPlugin;
 import net.fabricmc.fabric.api.client.model.loading.v1.SimpleUnbakedExtraModel;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.renderer.block.dispatch.BlockModelRotation;
+import com.mojang.math.Transformation;
+import org.joml.Matrix4f;
+import net.fabricmc.fabric.api.client.renderer.v1.model.ModelStateHelper;
 import net.minecraft.client.renderer.block.dispatch.BlockStateModel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.Identifier;
@@ -83,6 +85,15 @@ public final class VbvClient implements ClientModInitializer {
         MODELS.put(visual + ":" + variant, ExtraModelKey.create(() -> "viabackportvisuals:" + visual + "/" + variant));
     }
 
+    private static ModelState rotation(int x, int y) {
+        Matrix4f matrix = new Matrix4f()
+                .translation(0.5f, 0.5f, 0.5f)
+                .rotateY((float) Math.toRadians(y))
+                .rotateX((float) Math.toRadians(x))
+                .translate(-0.5f, -0.5f, -0.5f);
+        return ModelStateHelper.of(new Transformation(matrix), false);
+    }
+
     public static BlockStateModel targetModel(BlockState state, int visual) {
         String variant;
         if (visual >= 16 && visual < 32 || visual >= 48) {
@@ -115,7 +126,7 @@ public final class VbvClient implements ClientModInitializer {
             String type = variant.substring("slab:".length());
             int x = type.equals("top") ? 180 : 0;
             if (type.equals("double")) model = "minecraft:block/" + color + "_wool_slab_double";
-            return SimpleUnbakedExtraModel.blockStateModel(Identifier.parse(model), BlockModelRotation.get(x, 0));
+            return SimpleUnbakedExtraModel.blockStateModel(Identifier.parse(model), rotation(x, 0));
         }
 
         if (visual >= 48) {
@@ -123,7 +134,7 @@ public final class VbvClient implements ClientModInitializer {
             String type = variant.substring("slab:".length());
             int x = type.equals("top") ? 180 : 0;
             if (type.equals("double")) model = "minecraft:block/" + color + "_concrete_slab_double";
-            return SimpleUnbakedExtraModel.blockStateModel(Identifier.parse(model), BlockModelRotation.get(x, 0));
+            return SimpleUnbakedExtraModel.blockStateModel(Identifier.parse(model), rotation(x, 0));
         }
 
         String[] p = variant.split(":");
@@ -147,6 +158,6 @@ public final class VbvClient implements ClientModInitializer {
         }
         y = (y + 360) % 360;
         int x = half.equals("top") ? 180 : 0;
-        return SimpleUnbakedExtraModel.blockStateModel(Identifier.parse(model), BlockModelRotation.get(x, y));
+        return SimpleUnbakedExtraModel.blockStateModel(Identifier.parse(model), rotation(x, y));
     }
 }
