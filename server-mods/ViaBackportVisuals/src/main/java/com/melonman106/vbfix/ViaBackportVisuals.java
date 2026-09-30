@@ -147,9 +147,7 @@ public final class ViaBackportVisuals implements ModInitializer {
     public void onInitialize() {
         LOGGER.info("ViaBackportVisuals loaded for Minecraft 26.3.");
 
-        VbvMarkers.registerPayload();
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {
-            VbvDisplays.reset(server);
             installMappings();
         });
 
@@ -163,9 +161,7 @@ public final class ViaBackportVisuals implements ModInitializer {
                 mappingRetryTicks++;
                 installMappings();
             }
-            for (net.minecraft.server.level.ServerPlayer player : server.getPlayerList().getPlayers()) {
-                VbvMarkers.scanAround(player, player.blockPosition());
-            }
+
         });
 
         AttackBlockCallback.EVENT.register((player, level, hand, pos, direction) -> {
@@ -282,19 +278,14 @@ public final class ViaBackportVisuals implements ModInitializer {
             }
 
             /*
-             * Poplar leaves use cherry leaves only as a collision/shape placeholder.
-             * Their visual is drawn by the isolated VBV item-display overlay, so
-             * genuine cherry leaves are never retextured by the resource pack.
+             * Poplar leaves still use a safe 26.2 placeholder. Their isolated
+             * visual requires client support that an unmodified Eagler 26.2
+             * client does not have, so no entity overlay is spawned here.
              */
             leaves += remapBlockStates(mappings, "minecraft:red_poplar_leaves", "minecraft:cherry_leaves");
             leaves += remapBlockStates(mappings, "minecraft:orange_poplar_leaves", "minecraft:cherry_leaves");
             leaves += remapBlockStates(mappings, "minecraft:yellow_poplar_leaves", "minecraft:cherry_leaves");
 
-            /*
-             * Straw beds also get an isolated marker. The client patch can turn the
-             * reserved redstone states back into the real bed shape while the server
-             * continues to store minecraft:straw_bed.
-             */
             strawBed += remapBlockStates(mappings, "minecraft:straw_bed", "minecraft:yellow_bed");
 
             mappingsEnabled = true;
