@@ -5,7 +5,7 @@ on:
   push:
     paths:
       - 'server-mods/ViaBackportVisuals/**'
-      - 'client-mods/ViaBackportVisualsClient-26.2/**'
+      - 'resourcepacks/ViaBackportVisuals-26.2-Eagler-Overlay/**'
       - 'resourcepacks/ViaBackportVisuals-26.2-VBPlus-26.3-Companion/**'
       - '.github/workflows/build-via-backport-visuals.yml'
 
@@ -31,40 +31,21 @@ jobs:
           path: server-mods/ViaBackportVisuals/build/libs/*.jar
           if-no-files-found: error
 
-  build-client:
+  build-eagler-pack:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '25'
-      - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '9.7.0'
-      - name: Build Fabric 26.2 client companion
-        working-directory: client-mods/ViaBackportVisualsClient-26.2
-        run: gradle build --no-daemon --refresh-dependencies
-      - name: Generate isolated companion resource pack
+      - name: Generate Eagler 26.2 server-only visual pack
         run: |
-          rm -rf build/vbv-pack
-          python3 resourcepacks/ViaBackportVisuals-26.2-VBPlus-26.3-Companion/generate_models.py build/vbv-pack
-          cp resourcepacks/ViaBackportVisuals-26.2-VBPlus-26.3-Companion/pack.mcmeta build/vbv-pack/
-          cp resourcepacks/ViaBackportVisuals-26.2-VBPlus-26.3-Companion/README.txt build/vbv-pack/
-          cd build/vbv-pack
-          zip -qr ../../ViaBackportVisuals-26.2-Isolated-Companion.zip .
-      - name: Upload isolated companion resource pack
+          python3 resourcepacks/ViaBackportVisuals-26.2-Eagler-Overlay/generate_pack.py build/vbv-eagler-pack
+          cd build/vbv-eagler-pack
+          zip -qr ../../ViaBackportVisuals-26.2-Eagler-Overlay.zip .
+      - name: Upload Eagler visual pack
         uses: actions/upload-artifact@v4
         with:
-          name: ViaBackportVisuals-26.2-Isolated-Companion
-          path: ViaBackportVisuals-26.2-Isolated-Companion.zip
+          name: ViaBackportVisuals-26.2-Eagler-Overlay
+          path: ViaBackportVisuals-26.2-Eagler-Overlay.zip
           if-no-files-found: error
 
-      - name: Upload client mod JAR
-        uses: actions/upload-artifact@v4
-        with:
-          name: ViaBackportVisuals-Client-Fabric-26.2
-          path: client-mods/ViaBackportVisualsClient-26.2/build/libs/*.jar
-          if-no-files-found: error
-
-# Build server and client after ViaBackportVisuals state-aware fixes.
+# Eagler path: server-side display entities + item_model resource-pack assets.
+# No Fabric client companion is built or required.
