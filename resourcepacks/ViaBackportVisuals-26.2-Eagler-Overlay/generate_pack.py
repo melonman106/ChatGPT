@@ -44,7 +44,7 @@ def emit_block_family(block):
         entries = variant if isinstance(variant, list) else [variant]
         for entry in entries:
             model = entry["model"]
-            model_path = model.split(":", 1)[-1]
+            model_path = model if ":" in model else "minecraft:" + model
             model_id = model_id_from_key(block, key)
             safe_model_id = model_id.replace("/", "_")
             wrapper = OUT / "assets/viabackportvisuals/models/display" / f"{safe_model_id}.json"
