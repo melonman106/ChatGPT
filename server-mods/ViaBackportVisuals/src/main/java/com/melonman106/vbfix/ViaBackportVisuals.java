@@ -55,14 +55,14 @@ public final class ViaBackportVisuals implements ModInitializer {
             "exposed_cut_copper_stairs",
             "weathered_cut_copper_stairs",
             "oxidized_cut_copper_stairs",
-            "mud_brick_stairs",
-            "tuff_brick_stairs",
+            "mud_red_nether_brick_stairs",
+            "tuff_red_nether_brick_stairs",
             "polished_tuff_stairs",
             "bamboo_mosaic_stairs",
-            "end_stone_brick_stairs",
-            "resin_brick_stairs",
-            "cinnabar_brick_stairs",
-            "sulfur_brick_stairs"
+            "end_dark_prismarine_stairs",
+            "resin_red_nether_brick_stairs",
+            "cinnabar_red_nether_brick_stairs",
+            "sulfur_red_nether_brick_stairs"
     };
 
     private static final String[] WOOL_SLAB_PLACEHOLDERS = {
@@ -85,12 +85,12 @@ public final class ViaBackportVisuals implements ModInitializer {
     };
 
     private static final String[] CONCRETE_STAIR_PLACEHOLDERS = {
-            "pale_oak_stairs", "deepslate_brick_stairs", "deepslate_tile_stairs",
-            "polished_deepslate_stairs", "polished_blackstone_brick_stairs",
-            "polished_blackstone_stairs", "blackstone_stairs", "cobbled_deepslate_stairs",
-            "prismarine_brick_stairs", "dark_prismarine_stairs", "purpur_stairs",
-            "nether_brick_stairs", "red_nether_brick_stairs",
-            "mossy_stone_brick_stairs", "stone_brick_stairs", "brick_stairs"
+            "smooth_quartz_stairs", "smooth_red_sandstone_stairs", "red_sandstone_stairs",
+            "quartz_stairs", "crimson_stairs",
+            "warped_stairs", "mangrove_stairs", "cherry_stairs",
+            "bamboo_stairs", "tuff_stairs", "sandstone_stairs",
+            "smooth_sandstone_stairs", "red_smooth_sandstone_stairs",
+            "polished_blackdark_prismarine_stairs", "dark_prismarine_stairs", "red_nether_brick_stairs"
     };
 
     private static final String[] CONCRETE_SLAB_PLACEHOLDERS = {
