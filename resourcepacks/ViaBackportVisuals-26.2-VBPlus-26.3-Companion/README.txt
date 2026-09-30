@@ -24,3 +24,17 @@ Emergency visual-mapping commands (operator level 2+):
 /vbv enable
 
 /vbv disable restores the original ViaBackwards block-state mappings in memory. Reconnect clients after using it so their chunk visuals refresh. It does not delete or replace world blocks.
+
+
+IMPORTANT ISOLATION NOTE
+------------------------
+The companion pack is intentionally no longer allowed to globally replace genuine 26.2 blockstates/models. Resource-pack-only predicates cannot identify a placed block's origin, so global placeholder overrides cause genuine copper/deepslate/stone-brick/beds/etc. to change texture.
+
+The correct architecture is now:
+- server: real 26.2 stair/slab/bed placeholder states for correct collision;
+- server -> client: a small ViaBackportVisuals marker payload identifying translated block positions;
+- client: a 26.2 Fabric companion mod that uses the position-aware block-model API to render the backported texture only at marked positions.
+
+Do NOT re-add note_block or redstone_wire collision markers.
+Do NOT add global blockstate/model overrides for genuine vanilla placeholder blocks.
+See server-mods/ViaBackportVisuals/docs/PLACEMENT_ISOLATION_ARCHITECTURE.md for the implementation contract.
