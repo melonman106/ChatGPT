@@ -20,9 +20,7 @@ import net.minecraft.server.permissions.Permissions;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.InteractionResult;
-import net.minecraft.world.level.block.BedBlock;
 import net.minecraft.world.level.block.Block;
-import net.minecraft.world.level.block.LeavesBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.Property;
 import org.slf4j.Logger;
@@ -134,11 +132,6 @@ public final class ViaBackportVisuals implements ModInitializer {
     };
 
     private static final String STRAW_BED_PLACEHOLDER = "yellow_bed";
-
-    private static final String[] STAIR_FACINGS = {"east","north","south","west"};
-    private static final String[] STAIR_HALVES = {"bottom","top"};
-    private static final String[] STAIR_SHAPES = {"inner_left","inner_right","outer_left","outer_right","straight"};
-    private static final String[] SLAB_TYPES = {"bottom","double","top"};
 
 
     private static final Map<Integer, Integer> ORIGINAL_MAPPINGS = new HashMap<>();
@@ -383,8 +376,6 @@ public final class ViaBackportVisuals implements ModInitializer {
 
         return changed;
     }
-
-    private static BlockState markerState(BlockState src, BlockState placeholder) { return placeholder; }
 
     private static int disableMappings(net.minecraft.commands.CommandSourceStack source) {
         if (activeMappings == null) {
