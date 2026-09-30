@@ -49,7 +49,7 @@ def stair_blockstate(name):
             for shape in ("straight", "inner_left", "inner_right", "outer_left", "outer_right"):
                 model = f"minecraft:block/{name}_{'inner' if shape.startswith('inner') else 'outer' if shape.startswith('outer') else 'straight'}"
                 extra_y = {
-                    "north": 0, "east": 90, "south": 180, "west": 270
+                    "north": 180, "east": 90, "south": 0, "west": 270
                 }[facing]
                 rotation = {"model": model, "uvlock": True}
                 if shape in ("inner_right", "outer_right"):
