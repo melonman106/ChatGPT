@@ -13,6 +13,7 @@ import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.player.AttackBlockCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.permissions.Permissions;
@@ -37,8 +38,6 @@ public final class ViaBackportVisuals implements ModInitializer {
     public static final String MOD_ID = "viabackportvisuals";
     private static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
-    private static final ProtocolVersion SERVER_VERSION = ProtocolVersion.v26_3;
-    private static final ProtocolVersion CLIENT_VERSION = ProtocolVersion.v26_2;
 
     private static final String[] WOOL_COLORS = {
             "white", "orange", "magenta", "light_blue",
@@ -151,6 +150,8 @@ public final class ViaBackportVisuals implements ModInitializer {
         });
 
 
+        ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> VbvMining.clear(handler.getPlayer()));
+
         ServerTickEvents.END_SERVER_TICK.register(server -> {
             handleRestartCountdown(server);
             if (server.getTickCount() % 20 != 0) return;
@@ -224,7 +225,7 @@ public final class ViaBackportVisuals implements ModInitializer {
             }
 
             Protocol protocol = Via.getManager().getProtocolManager()
-                    .getProtocol(CLIENT_VERSION, SERVER_VERSION);
+                    .getProtocol(ProtocolVersion.v26_2, ProtocolVersion.v26_3);
 
             if (protocol == null) {
                 LOGGER.warn("Could not find the ViaBackwards 26.3 -> 26.2 protocol.");
