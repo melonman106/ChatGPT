@@ -5,6 +5,8 @@ on:
   push:
     paths:
       - 'server-mods/ViaBackportVisuals/**'
+      - 'client-mods/ViaBackportVisualsClient-26.2/**'
+      - 'resourcepacks/ViaBackportVisuals-26.2-VBPlus-26.3-Companion/**'
       - '.github/workflows/build-via-backport-visuals.yml'
 
 jobs:
