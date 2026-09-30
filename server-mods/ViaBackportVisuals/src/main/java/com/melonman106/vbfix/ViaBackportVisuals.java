@@ -434,9 +434,9 @@ public final class ViaBackportVisuals implements ModInitializer {
         int part = "head".equals(propertyString(src, BedBlock.PART.getName())) ? 1 : 0;
         BlockState marker = ph;
         marker = setProperty(marker, "east", "up");
-        marker = setProperty(marker, "north", "up");
+        marker = setProperty(marker, "north", "side");
         marker = setProperty(marker, "south", "up");
-        marker = setProperty(marker, "west", "up");
+        marker = setProperty(marker, "west", "none");
         marker = setProperty(marker, "power", Integer.toString(facing * 2 + part));
         return marker;
     }
