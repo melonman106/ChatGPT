@@ -362,28 +362,15 @@ public final class ViaBackportVisuals implements ModInitializer {
 
     private static int redstoneMarkerIndex(String id, int slot) {
         if (id.endsWith("_wool_slab")) {
-            return 0 + indexOfColor(id) * 6 + slabLocal(stateFromSlot(slot, id));
+            return (slot - 640);
         }
         if (id.endsWith("_concrete_stairs")) {
             return 96 + (slot - NOTE_MARKER_CAPACITY);
         }
         if (id.endsWith("_concrete_slab")) {
-            return 176 + indexOfColor(id) * 6 + slabLocal(stateFromSlot(slot, id));
+            return 272 + (slot - 1376);
         }
-        return 300 + (slot & 15);
-    }
-
-    private static int indexOfColor(String id) {
-        for (int i = 0; i < WOOL_COLORS.length; i++) {
-            if (id.startsWith("minecraft:" + WOOL_COLORS[i] + "_")) return i;
-        }
-        return 0;
-    }
-
-    private static int slabLocal(BlockState state, String id) {
-        int t = indexOf(SLAB_TYPES, propertyString(state, "type"));
-        int w = "true".equals(propertyString(state, "waterlogged")) ? 1 : 0;
-        return t * 2 + w;
+        return 368 + (slot & 15);
     }
 
     private static int markerSlot(String id, BlockState state) {
