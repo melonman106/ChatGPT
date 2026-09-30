@@ -80,6 +80,14 @@ def emit_slab_family(placeholder, texture):
         "parent": "minecraft:block/cube_all",
         "textures": {"all": f"minecraft:block/{texture}"},
     })
+    blockstates = OUT / "assets/minecraft/blockstates"
+    write_json(blockstates / f"{placeholder}.json", {
+        "variants": {
+            "type=bottom": {"model": f"minecraft:block/{placeholder}"},
+            "type=double": {"model": f"minecraft:block/{placeholder}_double"},
+            "type=top": {"model": f"minecraft:block/{placeholder}_top"},
+        }
+    })
 
 def main():
     if OUT.exists():
