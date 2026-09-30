@@ -123,7 +123,7 @@ public final class VbvClient implements ClientModInitializer {
         String base = concrete ? color + "_concrete" : color + "_wool";
 
         if (visual >= 16 && visual < 32) {
-            String model = "minecraft:block/" + color + "_wool_slab";
+            String model = "viabackportvisuals:block/" + color + "_wool_slab";
             String type = variant.substring("slab:".length());
             int x = type.equals("top") ? 180 : 0;
             if (type.equals("double")) model = "minecraft:block/" + color + "_wool_slab_double";
@@ -131,7 +131,7 @@ public final class VbvClient implements ClientModInitializer {
         }
 
         if (visual >= 48) {
-            String model = "minecraft:block/" + color + "_concrete_slab";
+            String model = "viabackportvisuals:block/" + color + "_concrete_slab";
             String type = variant.substring("slab:".length());
             int x = type.equals("top") ? 180 : 0;
             if (type.equals("double")) model = "minecraft:block/" + color + "_concrete_slab_double";
@@ -142,7 +142,7 @@ public final class VbvClient implements ClientModInitializer {
         String shape = p[0];
         String half = p[1];
         String facing = p[2];
-        String model = "minecraft:block/" + base +
+        String model = "viabackportvisuals:block/" + base +
                 (shape.equals("straight") ? "_stairs" : "_stairs_" + (shape.startsWith("inner") ? "inner" : "outer"));
 
         int baseY = switch (facing) {
