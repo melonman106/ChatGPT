@@ -11,7 +11,7 @@ import net.minecraft.client.Minecraft;
 import com.mojang.math.Transformation;
 import org.joml.Matrix4f;
 import net.fabricmc.fabric.api.client.renderer.v1.model.ModelStateHelper;
-import net.minecraft.client.renderer.block.dispatch.BlockStateModel;
+import net.minecraft.client.renderer.block.dispatch.BlockStateModel;\nimport net.minecraft.client.renderer.block.dispatch.ModelState;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.level.block.state.BlockState;
