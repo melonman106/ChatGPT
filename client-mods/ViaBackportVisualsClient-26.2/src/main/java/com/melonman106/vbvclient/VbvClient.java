@@ -66,7 +66,7 @@ public final class VbvClient implements ClientModInitializer {
 
     private static void registerModelKeys() {
         for (int visual = 0; visual < 64; visual++) {
-            if (visual < 32) {
+            if (visual < 64) {
                 for (String shape : new String[]{"straight","inner","outer"}) {
                     for (String half : new String[]{"bottom","top"}) {
                         for (String facing : new String[]{"east","north","south","west"}) {
@@ -81,6 +81,31 @@ public final class VbvClient implements ClientModInitializer {
 
     private static void addKey(int visual, String variant) {
         MODELS.put(visual + ":" + variant, ExtraModelKey.create(() -> "viabackportvisuals:" + visual + "/" + variant));
+    }
+
+    public static BlockStateModel targetModel(BlockState state, int visual) {
+        String variant;
+        if (visual >= 16 && visual < 32 || visual >= 48) {
+            variant = "slab:" + propertyString(state, "type");
+        } else {
+            variant = propertyString(state, "shape").replace("inner_left", "inner")
+                    .replace("inner_right", "inner")
+                    .replace("outer_left", "outer")
+                    .replace("outer_right", "outer")
+                    + ":" + propertyString(state, "half") + ":" + propertyString(state, "facing");
+        }
+
+        ExtraModelKey<BlockStateModel> key = MODELS.get(visual + ":" + variant);
+        if (key == null) return null;
+        FabricModelManager manager = (FabricModelManager) Minecraft.getInstance().getModelManager();
+        return manager.getModel(key);
+    }
+
+    private static String propertyString(BlockState state, String name) {
+        for (var property : state.getProperties()) {
+            if (property.getName().equals(name)) return String.valueOf(state.getValue(property));
+        }
+        return "";
     }
 
     private static SimpleUnbakedExtraModel<BlockStateModel> extraModel(int visual, String variant) {
