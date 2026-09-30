@@ -38,7 +38,7 @@ public final class VbvDisplays {
     }
 
     public static void scanAround(ServerPlayer player, BlockPos center) {
-        ServerLevel level = player.serverLevel();
+        ServerLevel level = player.level();
         Map<BlockPos, String> active = ACTIVE.computeIfAbsent(level, ignored -> new HashMap<>());
         Set<BlockPos> seen = new HashSet<>();
 
@@ -54,8 +54,8 @@ public final class VbvDisplays {
                     seen.add(key);
                     String old = active.get(key);
                     if (!modelId.equals(old)) {
-                        if (old != null) killAt(player.server, key);
-                        summon(player.server, key, modelId);
+                        if (old != null) killAt(player.getServer(), key);
+                        summon(player.getServer(), key, modelId);
                         active.put(key, modelId);
                     }
                 }
@@ -65,7 +65,7 @@ public final class VbvDisplays {
         for (BlockPos pos : Set.copyOf(active.keySet())) {
             if (pos.distManhattan(center) > radius * 3) continue;
             if (!seen.contains(pos) && level.hasChunkAt(pos)) {
-                killAt(player.server, pos);
+                killAt(player.getServer(), pos);
                 active.remove(pos);
             }
         }
@@ -116,7 +116,7 @@ public final class VbvDisplays {
     }
 
     private static String value(BlockState state, String name, String fallback) {
-        return state.getValues().entrySet().stream()
+        return state.getValues()
                 .filter(entry -> entry.getKey().getName().equals(name))
                 .map(entry -> String.valueOf(entry.getValue()).toLowerCase(Locale.ROOT))
                 .findFirst()
