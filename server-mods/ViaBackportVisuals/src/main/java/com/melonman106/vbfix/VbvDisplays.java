@@ -110,8 +110,8 @@ public final class VbvDisplays {
 
         if (id.endsWith("_wool_slab") || id.endsWith("_concrete_slab")) {
             String family = id.endsWith("_wool_slab")
-                    ? id.substring(0, id.length() - 10)
-                    : id.substring(0, id.length() - 14);
+                    ? id.substring(0, id.length() - "_wool_slab".length())
+                    : id.substring(0, id.length() - "_concrete_slab".length());
             return family + "_slab_" + value(state, "type", "bottom");
         }
 
