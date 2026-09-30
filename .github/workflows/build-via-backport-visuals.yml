@@ -39,6 +39,25 @@ jobs:
         run: |
           python3 resourcepacks/ViaBackportVisuals-26.2-Eagler-Overlay/generate_pack.py build/vbv-eagler-pack
           cd build/vbv-eagler-pack
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path(".")
+          assert (root / "pack.mcmeta").is_file(), "pack.mcmeta missing"
+          for p in [root / "assets/minecraft/blockstates"]:
+              assert p.is_dir(), "blockstates directory missing"
+          # Stairs: vanilla 26.2 blockstates must resolve straight/base + inner + outer.
+          for name in ["waxed_cut_copper_stairs", "smooth_quartz_stairs"]:
+              for suffix in ["", "_inner", "_outer"]:
+                  assert (root / f"assets/minecraft/models/block/{name}{suffix}.json").is_file(), f"missing stair model {name}{suffix}"
+              assert not (root / f"assets/minecraft/blockstates/{name}.json").exists(), f"stair blockstate was unexpectedly generated: {name}"
+          # Slabs: the reserved placeholder blockstate must select the dedicated double model.
+          for name in ["waxed_cut_copper_slab", "smooth_quartz_slab"]:
+              state = json.loads((root / f"assets/minecraft/blockstates/{name}.json").read_text())
+              assert state["variants"]["type=double"]["model"] == f"minecraft:block/{name}_double"
+              assert (root / f"assets/minecraft/models/block/{name}_double.json").is_file()
+          print("Eagler pack structure validation passed.")
+          PY
           zip -qr ../../ViaBackportVisuals-26.2-Eagler-Overlay.zip .
       - name: Upload Eagler visual pack
         uses: actions/upload-artifact@v4
