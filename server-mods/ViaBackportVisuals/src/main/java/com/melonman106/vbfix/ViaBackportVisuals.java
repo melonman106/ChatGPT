@@ -134,12 +134,10 @@ public final class ViaBackportVisuals implements ModInitializer {
 
     private static final String STRAW_BED_PLACEHOLDER = "yellow_bed";
 
-    private static final String[] MARKER_INSTRUMENTS = {"banjo","basedrum","bass","bell","bit","chime","cow_bell","creeper","custom_head","didgeridoo","dragon","flute","guitar","harp","hat","iron_xylophone","piglin","pling","skeleton","snare","wither_skeleton","xylophone","zombie"};
     private static final String[] STAIR_FACINGS = {"east","north","south","west"};
     private static final String[] STAIR_HALVES = {"bottom","top"};
     private static final String[] STAIR_SHAPES = {"inner_left","inner_right","outer_left","outer_right","straight"};
     private static final String[] SLAB_TYPES = {"bottom","double","top"};
-    private static final int NOTE_MARKER_CAPACITY = 1200;
 
 
     private static final Map<Integer, Integer> ORIGINAL_MAPPINGS = new HashMap<>();
@@ -217,22 +215,17 @@ public final class ViaBackportVisuals implements ModInitializer {
             int leaves = 0;
 
             /*
-             * Use isolated client-visible marker states again. Stairs use note_block
-             * states first; slabs use the redstone_wire marker range. The actual server
-             * block remains the real 26.3 wool/concrete stair or slab. A future client
-             * patch can recognize these reserved states and restore the correct 26.3
-             * collision/interaction shape on the 26.2 client.
+             * Use real 26.2 stair/slab placeholders so the client receives the
+             * correct vanilla collision geometry: stairs stay stairs and slabs
+             * stay slabs. Each colour uses a separate existing 26.2 block.
              */
-            LOGGER.info("Installing isolated note-block stair and redstone-wire slab markers.");
-            for (String color : WOOL_COLORS) {
-                woolStairs += remapBlockStates(mappings, "minecraft:" + color + "_wool_stairs",
-                        "minecraft:" + color + "_wool_stairs", ViaBackportVisuals::markerState);
-                woolSlabs += remapBlockStates(mappings, "minecraft:" + color + "_wool_slab",
-                        "minecraft:" + color + "_wool_slab", ViaBackportVisuals::markerState);
-                concreteStairs += remapBlockStates(mappings, "minecraft:" + color + "_concrete_stairs",
-                        "minecraft:" + color + "_concrete_stairs", ViaBackportVisuals::markerState);
-                concreteSlabs += remapBlockStates(mappings, "minecraft:" + color + "_concrete_slab",
-                        "minecraft:" + color + "_concrete_slab", ViaBackportVisuals::markerState);
+            LOGGER.info("Installing real stair/slab placeholders for wool and concrete.");
+            for (int i = 0; i < WOOL_COLORS.length; i++) {
+                String color = WOOL_COLORS[i];
+                woolStairs += remapBlockStates(mappings, "minecraft:" + color + "_wool_stairs", "minecraft:" + WOOL_STAIR_PLACEHOLDERS[i]);
+                woolSlabs += remapBlockStates(mappings, "minecraft:" + color + "_wool_slab", "minecraft:" + WOOL_SLAB_PLACEHOLDERS[i]);
+                concreteStairs += remapBlockStates(mappings, "minecraft:" + color + "_concrete_stairs", "minecraft:" + CONCRETE_STAIR_PLACEHOLDERS[i]);
+                concreteSlabs += remapBlockStates(mappings, "minecraft:" + color + "_concrete_slab", "minecraft:" + CONCRETE_SLAB_PLACEHOLDERS[i]);
             }
             for (String[] mapping : BLOCK_MAPPINGS) {
                 otherBlocks += remapBlockStates(mappings,
@@ -253,8 +246,7 @@ public final class ViaBackportVisuals implements ModInitializer {
              * reserved redstone states back into the real bed shape while the server
              * continues to store minecraft:straw_bed.
              */
-            strawBed += remapBlockStates(mappings, "minecraft:straw_bed",
-                    "minecraft:straw_bed", ViaBackportVisuals::strawBedMarker);
+            strawBed += remapBlockStates(mappings, "minecraft:straw_bed", "minecraft:yellow_bed");
 
             mappingsEnabled = true;
 
@@ -336,110 +328,7 @@ public final class ViaBackportVisuals implements ModInitializer {
         return changed;
     }
 
-    private static BlockState markerState(BlockState src, BlockState ignored) {
-        String id = BuiltInRegistries.BLOCK.getKey(src.getBlock()).toString();
-        int slot = markerSlot(id, src);
-        boolean stair = id.endsWith("_stairs");
-        boolean useNote = stair && slot < NOTE_MARKER_CAPACITY;
-        Block marker = useNote ? getBlock("minecraft:note_block") : getBlock("minecraft:redstone_wire");
-        if (marker == null) return ignored;
-        BlockState state = marker.defaultBlockState();
-        if (useNote) {
-            int within = slot % 600;
-            state = setProperty(state, "instrument", MARKER_INSTRUMENTS[within / 25]);
-            state = setProperty(state, "note", Integer.toString(within % 25));
-            state = setProperty(state, "powered", Boolean.toString(slot >= 600));
-        } else {
-            int r = redstoneMarkerIndex(id, slot), ci = r / 16, power = r % 16;
-            state = setProperty(state, "power", Integer.toString(power));
-            state = setProperty(state, "east", redstoneSide(ci % 3));
-            state = setProperty(state, "north", redstoneSide((ci / 3) % 3));
-            state = setProperty(state, "south", redstoneSide((ci / 9) % 3));
-            state = setProperty(state, "west", redstoneSide((ci / 27) % 3));
-        }
-        return state;
-    }
-
-    private static int redstoneMarkerIndex(String id, int slot) {
-        if (id.endsWith("_wool_slab")) {
-            return (slot - 640);
-        }
-        if (id.endsWith("_concrete_stairs")) {
-            return 96 + (slot - NOTE_MARKER_CAPACITY);
-        }
-        if (id.endsWith("_concrete_slab")) {
-            return 272 + (slot - 1376);
-        }
-        return 368 + (slot & 15);
-    }
-
-    private static int markerSlot(String id, BlockState state) {
-        int color=-1; boolean wool=false, concrete=false, stairs=false, slab=false;
-        for(int i=0;i<WOOL_COLORS.length;i++){
-            if(id.equals("minecraft:"+WOOL_COLORS[i]+"_wool_stairs")){color=i;wool=true;stairs=true;break;}
-            if(id.equals("minecraft:"+WOOL_COLORS[i]+"_wool_slab")){color=i;wool=true;slab=true;break;}
-            if(id.equals("minecraft:"+WOOL_COLORS[i]+"_concrete_stairs")){color=i;concrete=true;stairs=true;break;}
-            if(id.equals("minecraft:"+WOOL_COLORS[i]+"_concrete_slab")){color=i;concrete=true;slab=true;break;}
-        }
-        if(color<0)return 0;
-        int base;
-        if(wool&&stairs)base=color*40;
-        else if(wool)base=16*40+color*6;
-        else if(concrete&&stairs)base=16*40+16*6+color*40;
-        else base=16*40+16*6+16*40+color*6;
-        int local;
-        if(stairs){
-            int f=indexOf(STAIR_FACINGS,propertyString(state,"facing")), h=indexOf(STAIR_HALVES,propertyString(state,"half")), s=indexOf(STAIR_SHAPES,propertyString(state,"shape"));
-            local=((f*2)+h)*5+s;
-        }else{
-            int t=indexOf(SLAB_TYPES,propertyString(state,"type")), w="true".equals(propertyString(state,"waterlogged"))?1:0;
-            local=t*2+w;
-        }
-        return base+local;
-    }
-
-    private static int indexOf(String[] a,String v){for(int i=0;i<a.length;i++)if(a[i].equals(v))return i;return 0;}
-    private static String propertyString(BlockState s,String n){for(Property<?> p:s.getProperties())if(p.getName().equals(n))return String.valueOf(s.getValue(p));return "";}
-    private static String redstoneSide(int v){return v==0?"none":v==1?"side":"up";}
-    @SuppressWarnings({"rawtypes","unchecked"})
-    private static BlockState setProperty(BlockState s,String n,String v){
-        for(Property p:s.getProperties())if(p.getName().equals(n)){java.util.Optional x=p.getValue(v);if(x.isPresent())return s.setValue((Property) p, (Comparable) x.get());}
-        return s;
-    }
-
-    private static BlockState redPoplarLeafMarker(BlockState src, BlockState ph) {
-        return ph.setValue(LeavesBlock.DISTANCE, 7)
-                .setValue(LeavesBlock.PERSISTENT, false)
-                .setValue(LeavesBlock.WATERLOGGED, src.getValue(LeavesBlock.WATERLOGGED));
-    }
-
-    private static BlockState orangePoplarLeafMarker(BlockState src, BlockState ph) {
-        return redPoplarLeafMarker(src, ph);
-    }
-
-    private static BlockState yellowPoplarLeafMarker(BlockState src, BlockState ph) {
-        return redPoplarLeafMarker(src, ph);
-    }
-
-    private static BlockState strawBedMarker(BlockState src, BlockState ph) {
-        /*
-         * A bed has no block entity, so arbitrary NBT cannot reach the 26.2
-         * block-model system. Use a reserved redstone-wire state as the
-         * client-visible placement marker instead. Power 0..7 encodes:
-         * facing (4) x bed part (2). The server still contains the real
-         * 26.3 straw bed; only the ViaBackwards client representation changes.
-         */
-        int facing = indexOf(STAIR_FACINGS,
-                propertyString(src, BedBlock.FACING.getName()));
-        int part = "head".equals(propertyString(src, BedBlock.PART.getName())) ? 1 : 0;
-        BlockState marker = ph;
-        marker = setProperty(marker, "east", "up");
-        marker = setProperty(marker, "north", "side");
-        marker = setProperty(marker, "south", "up");
-        marker = setProperty(marker, "west", "none");
-        marker = setProperty(marker, "power", Integer.toString(facing * 2 + part));
-        return marker;
-    }
+    private static BlockState markerState(BlockState src, BlockState placeholder) { return placeholder; }
 
     private static int disableMappings(net.minecraft.commands.CommandSourceStack source) {
         if (activeMappings == null) {
