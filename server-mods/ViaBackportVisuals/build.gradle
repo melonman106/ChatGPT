@@ -11,8 +11,6 @@ base {
 }
 
 loom {
-    splitEnvironmentSourceSets()
-
     mods {
         "viabackportvisuals" {
             sourceSet sourceSets.main
