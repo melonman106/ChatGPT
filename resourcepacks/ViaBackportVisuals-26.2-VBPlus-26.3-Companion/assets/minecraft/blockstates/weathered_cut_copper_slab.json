@@ -1,1 +1,13 @@
-{"variants":{"type=bottom,waterlogged=false":{"model":"minecraft:block/pink_wool_slab"},"type=bottom,waterlogged=true":{"model":"minecraft:block/pink_wool_slab"},"type=double,waterlogged=false":{"model":"minecraft:block/pink_wool_slab_double"},"type=double,waterlogged=true":{"model":"minecraft:block/pink_wool_slab_double"},"type=top,waterlogged=false":{"model":"minecraft:block/pink_wool_slab_top"},"type=top,waterlogged=true":{"model":"minecraft:block/pink_wool_slab_top"}}}
+{
+  "variants": {
+    "type=bottom": {
+      "model": "minecraft:block/weathered_cut_copper_slab"
+    },
+    "type=double": {
+      "model": "minecraft:block/weathered_cut_copper_slab_double"
+    },
+    "type=top": {
+      "model": "minecraft:block/weathered_cut_copper_slab_top"
+    }
+  }
+}
