@@ -154,7 +154,7 @@ public final class ViaBackportVisuals implements ModInitializer {
         LOGGER.info("ViaBackportVisuals loaded for Minecraft 26.3.");
 
         VbvMarkers.registerPayload();
-        ServerLifecycleEvents.SERVER_STARTED.register(server -> installMappings());
+        ServerLifecycleEvents.SERVER_STARTED.register(server -> {\n            VbvDisplays.reset(server);\n            installMappings();\n        });
 
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->
                 VbvMarkers.scanAround(handler.getPlayer(), handler.getPlayer().blockPosition()));
