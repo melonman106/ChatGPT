@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "viabackportvisualsclient",
+  "version": "${version}",
+  "name": "ViaBackportVisuals Client",
+  "description": "Position-aware 26.3 visual rendering for 26.2 Fabric clients.",
+  "authors": ["melonman106"],
+  "environment": "client",
+  "entrypoints": {
+    "client": ["com.melonman106.vbvclient.VbvClient"]
+  },
+  "depends": {
+    "fabricloader": ">=0.19.3",
+    "minecraft": "~26.2",
+    "java": ">=25",
+    "fabric-api": "*"
+  }
+}
