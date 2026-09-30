@@ -96,8 +96,8 @@ public final class VbvDisplays {
 
         if (id.endsWith("_wool_stairs") || id.endsWith("_concrete_stairs")) {
             String family = id.endsWith("_wool_stairs")
-                    ? id.substring(0, id.length() - 12)
-                    : id.substring(0, id.length() - 16);
+                    ? id.substring(0, id.length() - 7)
+                    : id.substring(0, id.length() - 7);
             return family + "_stairs_" +
                     value(state, "facing", "north") + "_" +
                     value(state, "half", "bottom") + "_" +
