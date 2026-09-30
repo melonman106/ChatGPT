@@ -41,34 +41,9 @@ def write_json(path, data):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
-def stair_blockstate(name):
-    variants = {}
-    for facing, y in (("north", 180), ("east", 270), ("south", 0), ("west", 90)):
-        for half in ("bottom", "top"):
-            x = 0 if half == "bottom" else 180
-            for shape in ("straight", "inner_left", "inner_right", "outer_left", "outer_right"):
-                model = f"minecraft:block/{name}_{'inner' if shape.startswith('inner') else 'outer' if shape.startswith('outer') else 'straight'}"
-                extra_y = {
-                    "north": 180, "east": 90, "south": 0, "west": 270
-                }[facing]
-                rotation = {"model": model, "uvlock": True}
-                if shape in ("inner_right", "outer_right"):
-                    rotation["y"] = (extra_y + 90) % 360
-                elif shape in ("inner_left", "outer_left"):
-                    rotation["y"] = extra_y
-                else:
-                    rotation["y"] = extra_y
-                if rotation["y"] == 0:
-                    rotation.pop("y")
-                if x:
-                    rotation["x"] = x
-                variants[f"facing={facing},half={half},shape={shape}"] = rotation
-    return {"variants": variants}
-
 def emit_stair_family(placeholder, texture):
     base = placeholder[:-7]  # remove _stairs
     models = OUT / "assets/minecraft/models/block"
-    blockstates = OUT / "assets/minecraft/blockstates"
     for suffix, parent in (
         ("straight", "minecraft:block/stairs"),
         ("inner", "minecraft:block/inner_stairs"),
@@ -82,7 +57,6 @@ def emit_stair_family(placeholder, texture):
                 "top": f"minecraft:block/{texture}",
             },
         })
-    write_json(blockstates / f"{placeholder}.json", stair_blockstate(placeholder))
 
 def emit_slab_family(placeholder, texture):
     models = OUT / "assets/minecraft/models/block"
@@ -107,18 +81,12 @@ def emit_slab_family(placeholder, texture):
         "parent": "minecraft:block/cube_all",
         "textures": {"all": f"minecraft:block/{texture}"},
     })
-    write_json(blockstates / f"{placeholder}.json", {
-        "variants": {
-            "type=bottom": {"model": f"minecraft:block/{placeholder}"},
-            "type=double": {"model": f"minecraft:block/{placeholder}_double"},
-            "type=top": {"model": f"minecraft:block/{placeholder}_top"},
-        }
-    })
 
 def main():
     if OUT.exists():
         shutil.rmtree(OUT)
     OUT.mkdir(parents=True)
+    write_json(OUT / "pack.mcmeta", {"pack": {"pack_format": 88, "description": "ViaBackportVisuals 26.2 Eagler visual pack"}})
 
     source_textures = ROOT / "resourcepacks/ViaBackportVisuals-26.2-VBPlus-26.3-Companion/assets/minecraft/textures"
     if source_textures.exists():
