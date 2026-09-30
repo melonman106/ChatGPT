@@ -29,11 +29,11 @@ def emit_stairs(color, material):
             x = 0 if half == "bottom" else 180
             for shape in ("straight", "inner_left", "inner_right", "outer_left", "outer_right"):
                 if shape == "straight":
-                    parent = f"minecraft:block/{block}_stairs"
+                    parent = "minecraft:block/stairs"
                 elif shape.startswith("inner"):
-                    parent = f"minecraft:block/{block}_stairs_inner"
+                    parent = "minecraft:block/inner_stairs"
                 else:
-                    parent = f"minecraft:block/{block}_stairs_outer"
+                    parent = "minecraft:block/outer_stairs"
 
                 model_id = f"{block}_stairs_{facing}_{half}_{shape}"
                 wrapper = out_models / f"{model_id}.json"
@@ -61,9 +61,9 @@ def emit_slabs(color, material):
     out_items = OUT / "assets/viabackportvisuals/items/display"
 
     for slab_type, parent in (
-        ("bottom", f"minecraft:block/{block}_slab"),
-        ("top", f"minecraft:block/{block}_slab_top"),
-        ("double", f"minecraft:block/{block}")
+        ("bottom", "minecraft:block/slab"),
+        ("top", "minecraft:block/slab_top"),
+        ("double", "minecraft:block/cube_all")
     ):
         model_id = f"{block}_slab_{slab_type}"
         write_json(out_models / f"{model_id}.json", {
