@@ -125,17 +125,17 @@ public final class VbvClient implements ClientModInitializer {
         if (visual >= 16 && visual < 32) {
             String model = "viabackportvisuals:block/" + color + "_wool_slab";
             String type = variant.substring("slab:".length());
-            int x = type.equals("top") ? 180 : 0;
-            if (type.equals("double")) model = "minecraft:block/" + color + "_wool_slab_double";
-            return SimpleUnbakedExtraModel.blockStateModel(Identifier.parse(model), rotation(x, 0));
+            if (type.equals("top")) model = "viabackportvisuals:block/" + color + "_wool_slab_top";
+            if (type.equals("double")) model = "viabackportvisuals:block/" + color + "_wool_slab_double";
+            return SimpleUnbakedExtraModel.blockStateModel(Identifier.parse(model), rotation(0, 0));
         }
 
         if (visual >= 48) {
             String model = "viabackportvisuals:block/" + color + "_concrete_slab";
             String type = variant.substring("slab:".length());
-            int x = type.equals("top") ? 180 : 0;
-            if (type.equals("double")) model = "minecraft:block/" + color + "_concrete_slab_double";
-            return SimpleUnbakedExtraModel.blockStateModel(Identifier.parse(model), rotation(x, 0));
+            if (type.equals("top")) model = "viabackportvisuals:block/" + color + "_concrete_slab_top";
+            if (type.equals("double")) model = "viabackportvisuals:block/" + color + "_concrete_slab_double";
+            return SimpleUnbakedExtraModel.blockStateModel(Identifier.parse(model), rotation(0, 0));
         }
 
         String[] p = variant.split(":");
