@@ -13,7 +13,6 @@ import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.player.AttackBlockCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
-import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.permissions.Permissions;
@@ -151,8 +150,6 @@ public final class ViaBackportVisuals implements ModInitializer {
             installMappings();
         });
 
-        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->
-                VbvMarkers.scanAround(handler.getPlayer(), handler.getPlayer().blockPosition()));
 
         ServerTickEvents.END_SERVER_TICK.register(server -> {
             handleRestartCountdown(server);
@@ -172,10 +169,6 @@ public final class ViaBackportVisuals implements ModInitializer {
             return InteractionResult.PASS;
         });
 
-        ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
-                VbvMining.clear(handler.getPlayer());
-                VbvMarkers.clear(handler.getPlayer());
-        });
 
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) ->
                 dispatcher.register(Commands.literal("vbv")
