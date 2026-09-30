@@ -4,9 +4,25 @@
   "version": "${version}",
   "name": "ViaBackportVisuals",
   "description": "Server-side visual and gameplay compatibility helpers for ViaBackwards 26.3 to 26.2 clients.",
-  "authors": ["melonman106"],
+  "authors": [
+    "melonman106"
+  ],
   "environment": "server",
-  "entrypoints": {"main": ["com.melonman106.vbfix.ViaBackportVisuals"]},
-  "mixins": ["via_backport_visuals.mixins.json"],
-  "depends": {"fabricloader": ">=0.19.5", "minecraft": "~26.3", "java": ">=25", "fabric-api": "*"}
+  "entrypoints": {
+    "main": [
+      "com.melonman106.vbfix.ViaBackportVisuals"
+    ]
+  },
+  "mixins": [
+    "via_backport_visuals.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.19.5",
+    "minecraft": "~26.3",
+    "java": ">=25",
+    "fabric-api": "*"
+  },
+  "suggests": {
+    "viaversion": "*"
+  }
 }
