@@ -5,7 +5,6 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-SOURCE = ROOT / "resourcepacks/ViaBackportVisuals-26.2-VBPlus-26.3-Companion"
 OUT = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "build/vbv-eagler-pack"
 
 COLORS = [
@@ -15,86 +14,104 @@ COLORS = [
     "brown", "green", "red", "black",
 ]
 
+WOOL_STAIR_PLACEHOLDERS = [
+    "waxed_cut_copper_stairs", "waxed_exposed_cut_copper_stairs",
+    "waxed_weathered_cut_copper_stairs", "waxed_oxidized_cut_copper_stairs",
+    "cut_copper_stairs", "exposed_cut_copper_stairs",
+    "weathered_cut_copper_stairs", "oxidized_cut_copper_stairs",
+    "mud_brick_stairs", "tuff_brick_stairs", "polished_tuff_stairs",
+    "bamboo_mosaic_stairs", "end_stone_brick_stairs", "resin_brick_stairs",
+    "cinnabar_brick_stairs", "sulfur_brick_stairs",
+]
+
+WOOL_SLAB_PLACEHOLDERS = [x.replace("_stairs", "_slab") for x in WOOL_STAIR_PLACEHOLDERS]
+
+CONCRETE_STAIR_PLACEHOLDERS = [
+    "pale_oak_stairs", "deepslate_brick_stairs", "deepslate_tile_stairs",
+    "polished_deepslate_stairs", "polished_blackstone_brick_stairs",
+    "polished_blackstone_stairs", "blackstone_stairs", "cobbled_deepslate_stairs",
+    "prismarine_brick_stairs", "dark_prismarine_stairs", "purpur_stairs",
+    "nether_brick_stairs", "red_nether_brick_stairs",
+    "mossy_stone_brick_stairs", "stone_brick_stairs", "brick_stairs",
+]
+
+CONCRETE_SLAB_PLACEHOLDERS = [x.replace("_stairs", "_slab") for x in CONCRETE_STAIR_PLACEHOLDERS]
+
 def write_json(path, data):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
-def emit_stairs(color, material):
-    block = f"{color}_{material}"
-    out_models = OUT / "assets/viabackportvisuals/models/display"
-    out_items = OUT / "assets/viabackportvisuals/items/display"
-
-    for facing, y in (("north", 0), ("east", 90), ("south", 180), ("west", 270)):
+def stair_blockstate(name):
+    variants = {}
+    for facing, y in (("north", 180), ("east", 270), ("south", 0), ("west", 90)):
         for half in ("bottom", "top"):
             x = 0 if half == "bottom" else 180
             for shape in ("straight", "inner_left", "inner_right", "outer_left", "outer_right"):
-                if shape == "straight":
-                    parent = "minecraft:block/stairs"
-                elif shape.startswith("inner"):
-                    parent = "minecraft:block/inner_stairs"
+                model = f"minecraft:block/{name}_{'inner' if shape.startswith('inner') else 'outer' if shape.startswith('outer') else 'straight'}"
+                extra_y = {
+                    "north": 0, "east": 90, "south": 180, "west": 270
+                }[facing]
+                rotation = {"model": model, "uvlock": True}
+                if shape in ("inner_right", "outer_right"):
+                    rotation["y"] = (extra_y + 90) % 360
+                elif shape in ("inner_left", "outer_left"):
+                    rotation["y"] = extra_y
                 else:
-                    parent = "minecraft:block/outer_stairs"
+                    rotation["y"] = extra_y
+                if rotation["y"] == 0:
+                    rotation.pop("y")
+                if x:
+                    rotation["x"] = x
+                variants[f"facing={facing},half={half},shape={shape}"] = rotation
+    return {"variants": variants}
 
-                model_id = f"{block}_stairs_{facing}_{half}_{shape}"
-                wrapper = out_models / f"{model_id}.json"
-                write_json(wrapper, {
-                    "parent": parent,
-                    "textures": {
-                        "bottom": f"minecraft:block/{block}",
-                        "side": f"minecraft:block/{block}",
-                        "top": f"minecraft:block/{block}"
-                    },
-                    "x": x,
-                    "y": y,
-                    "uvlock": True
-                })
-                write_json(out_items / f"{model_id}.json", {
-                    "model": {
-                        "type": "minecraft:model",
-                        "model": f"viabackportvisuals:display/{model_id}"
-                    }
-                })
-
-def emit_slabs(color, material):
-    block = f"{color}_{material}"
-    out_models = OUT / "assets/viabackportvisuals/models/display"
-    out_items = OUT / "assets/viabackportvisuals/items/display"
-
-    for slab_type, parent in (
-        ("bottom", "minecraft:block/slab"),
-        ("top", "minecraft:block/slab_top"),
-        ("double", "minecraft:block/cube_all")
+def emit_stair_family(placeholder, texture):
+    base = placeholder[:-7]  # remove _stairs
+    models = OUT / "assets/minecraft/models/block"
+    blockstates = OUT / "assets/minecraft/blockstates"
+    for suffix, parent in (
+        ("straight", "minecraft:block/stairs"),
+        ("inner", "minecraft:block/inner_stairs"),
+        ("outer", "minecraft:block/outer_stairs"),
     ):
-        model_id = f"{block}_slab_{slab_type}"
-        write_json(out_models / f"{model_id}.json", {
+        write_json(models / f"{placeholder}_{suffix}.json", {
             "parent": parent,
             "textures": {
-                "bottom": f"minecraft:block/{block}",
-                "side": f"minecraft:block/{block}",
-                "top": f"minecraft:block/{block}",
-                "all": f"minecraft:block/{block}"
-            }
+                "bottom": f"minecraft:block/{texture}",
+                "side": f"minecraft:block/{texture}",
+                "top": f"minecraft:block/{texture}",
+            },
         })
-        write_json(out_items / f"{model_id}.json", {
-            "model": {
-                "type": "minecraft:model",
-                "model": f"viabackportvisuals:display/{model_id}"
-            }
-        })
+    write_json(blockstates / f"{placeholder}.json", stair_blockstate(placeholder))
 
-def emit_leaves(color):
-    model_id = f"{color}_poplar_leaves"
-    out_models = OUT / "assets/viabackportvisuals/models/display"
-    out_items = OUT / "assets/viabackportvisuals/items/display"
-    write_json(out_models / f"{model_id}.json", {
-        "parent": "minecraft:block/cube_all",
-        "textures": {"all": f"minecraft:block/{model_id}"},
-        "render_type": "minecraft:cutout_mipped"
+def emit_slab_family(placeholder, texture):
+    models = OUT / "assets/minecraft/models/block"
+    blockstates = OUT / "assets/minecraft/blockstates"
+    write_json(models / f"{placeholder}.json", {
+        "parent": "minecraft:block/slab",
+        "textures": {
+            "bottom": f"minecraft:block/{texture}",
+            "side": f"minecraft:block/{texture}",
+            "top": f"minecraft:block/{texture}",
+        },
     })
-    write_json(out_items / f"{model_id}.json", {
-        "model": {
-            "type": "minecraft:model",
-            "model": f"viabackportvisuals:display/{model_id}"
+    write_json(models / f"{placeholder}_top.json", {
+        "parent": "minecraft:block/slab_top",
+        "textures": {
+            "bottom": f"minecraft:block/{texture}",
+            "side": f"minecraft:block/{texture}",
+            "top": f"minecraft:block/{texture}",
+        },
+    })
+    write_json(models / f"{placeholder}_double.json", {
+        "parent": "minecraft:block/cube_all",
+        "textures": {"all": f"minecraft:block/{texture}"},
+    })
+    write_json(blockstates / f"{placeholder}.json", {
+        "variants": {
+            "type=bottom": {"model": f"minecraft:block/{placeholder}"},
+            "type=double": {"model": f"minecraft:block/{placeholder}_double"},
+            "type=top": {"model": f"minecraft:block/{placeholder}_top"},
         }
     })
 
@@ -103,22 +120,25 @@ def main():
         shutil.rmtree(OUT)
     OUT.mkdir(parents=True)
 
-    # Copy only the textures needed by the isolated display models.
-    textures = SOURCE / "assets/minecraft/textures"
-    if textures.exists():
-        shutil.copytree(textures, OUT / "assets/minecraft/textures")
+    source_textures = ROOT / "resourcepacks/ViaBackportVisuals-26.2-VBPlus-26.3-Companion/assets/minecraft/textures"
+    if source_textures.exists():
+        shutil.copytree(source_textures, OUT / "assets/minecraft/textures")
 
-    # Do NOT copy minecraft blockstates or placeholder models.
-    # Those would globally alter genuine 26.2 blocks.
-    for color in COLORS:
-        for material in ("wool", "concrete"):
-            emit_stairs(color, material)
-            emit_slabs(color, material)
+    # No item_display entities, custom item models, or client marker code.
+    # The server sends ordinary 26.2 stair/slab block states; the pack simply
+    # gives the reserved placeholder block models the corresponding wool or
+    # concrete texture while retaining the native stair/slab collision shape.
+    for color, placeholder in zip(COLORS, WOOL_STAIR_PLACEHOLDERS):
+        emit_stair_family(placeholder, f"{color}_wool")
+    for color, placeholder in zip(COLORS, WOOL_SLAB_PLACEHOLDERS):
+        emit_slab_family(placeholder, f"{color}_wool")
+    for color, placeholder in zip(COLORS, CONCRETE_STAIR_PLACEHOLDERS):
+        emit_stair_family(placeholder, f"{color}_concrete")
+    for color, placeholder in zip(COLORS, CONCRETE_SLAB_PLACEHOLDERS):
+        emit_slab_family(placeholder, f"{color}_concrete")
 
-    for color in ("red", "orange", "yellow"):
-        emit_leaves(color)
-
-    print("Generated isolated display models for 16 wool + 16 concrete stair/slab families plus red/orange/yellow poplar leaves.")
+    print("Generated Eagler 26.2 pack: standard placeholder blockstates/models for 16 wool + 16 concrete stair/slab families.")
+    print("No item_display entities or custom client code are required.")
 
 if __name__ == "__main__":
     main()
