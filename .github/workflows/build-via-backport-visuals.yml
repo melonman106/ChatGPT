@@ -47,5 +47,4 @@ jobs:
           path: ViaBackportVisuals-26.2-Eagler-Overlay.zip
           if-no-files-found: error
 
-# Eagler path: server-side display entities + item_model resource-pack assets.
-# No Fabric client companion is built or required.
+# Eagler path: ordinary 26.2 placeholder block models; no client mod or display entities.
