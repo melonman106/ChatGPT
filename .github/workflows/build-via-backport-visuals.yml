@@ -22,11 +22,32 @@ jobs:
       - name: Build Fabric 26.3 mod
         working-directory: server-mods/ViaBackportVisuals
         run: gradle build --no-daemon --refresh-dependencies
-      - name: Upload mod JAR
+      - name: Upload server mod JAR
         uses: actions/upload-artifact@v4
         with:
           name: ViaBackportVisuals-Fabric-26.3
           path: server-mods/ViaBackportVisuals/build/libs/*.jar
           if-no-files-found: error
 
-# Build after ViaBackportVisuals state-aware fixes.
+  build-client:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.7.0'
+      - name: Build Fabric 26.2 client companion
+        working-directory: client-mods/ViaBackportVisualsClient-26.2
+        run: gradle build --no-daemon --refresh-dependencies
+      - name: Upload client mod JAR
+        uses: actions/upload-artifact@v4
+        with:
+          name: ViaBackportVisuals-Client-Fabric-26.2
+          path: client-mods/ViaBackportVisualsClient-26.2/build/libs/*.jar
+          if-no-files-found: error
+
+# Build server and client after ViaBackportVisuals state-aware fixes.
