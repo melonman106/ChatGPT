@@ -47,10 +47,17 @@ public final class VbvDisplays {
             for (int y = center.getY() - radius; y <= center.getY() + radius; y++) {
                 for (int z = center.getZ() - radius; z <= center.getZ() + radius; z++) {
                     BlockPos pos = new BlockPos(x, y, z);
-                    String modelId = modelId(level.getBlockState(pos));
-                    if (modelId == null) continue;
-
+                    BlockState state = level.getBlockState(pos);
+                    String modelId = modelId(state);
                     BlockPos key = pos.immutable();
+
+                    if (modelId == null) {
+                        if (active.remove(key) != null) {
+                            killAt(level.getServer(), key);
+                        }
+                        continue;
+                    }
+
                     seen.add(key);
                     String old = active.get(key);
                     if (!modelId.equals(old)) {
@@ -62,15 +69,11 @@ public final class VbvDisplays {
             }
         }
 
-        for (BlockPos pos : Set.copyOf(active.keySet())) {
-            if (pos.distManhattan(center) > radius * 3) continue;
-            if (!seen.contains(pos) && level.hasChunkAt(pos)) {
-                killAt(level.getServer(), pos);
-                active.remove(pos);
-            }
-        }
-    }
-
+        // Never remove an active display merely because another player's
+        // scan cube does not include it. Multiple players can scan the same
+        // world from different centers. A display is removed only when a scan
+        // actually reaches its position and finds that the block is no longer
+        // a VBV visual block.
     private static void summon(MinecraftServer server, BlockPos pos, String modelId) {
         String positionTag = positionTag(pos);
         String modelTag = "vbv_m_" + modelId;
