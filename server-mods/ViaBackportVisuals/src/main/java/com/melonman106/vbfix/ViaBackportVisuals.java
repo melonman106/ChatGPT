@@ -216,18 +216,14 @@ public final class ViaBackportVisuals implements ModInitializer {
             int strawBed = 0;
             int leaves = 0;
 
-            for (int i = 0; i < WOOL_COLORS.length; i++) {
-                String color = WOOL_COLORS[i];
-                woolStairs += remapBlockStates(mappings, "minecraft:" + color + "_wool_stairs", "minecraft:note_block", ViaBackportVisuals::markerState);
-                woolSlabs += remapBlockStates(mappings, "minecraft:" + color + "_wool_slab", "minecraft:note_block", ViaBackportVisuals::markerState);
-            }
-
-            for (int i = 0; i < WOOL_COLORS.length; i++) {
-                String color = WOOL_COLORS[i];
-                concreteStairs += remapBlockStates(mappings, "minecraft:" + color + "_concrete_stairs", "minecraft:redstone_wire", ViaBackportVisuals::markerState);
-                concreteSlabs += remapBlockStates(mappings, "minecraft:" + color + "_concrete_slab", "minecraft:redstone_wire", ViaBackportVisuals::markerState);
-            }
-
+            /*
+             * Leave wool/concrete stairs and slabs to ViaBackwards.
+             * The old note_block/redstone_wire markers have the wrong collision shape,
+             * which is why the 26.2 client could not walk up the stairs and could get
+             * caught inside slabs. ViaBackwards 5.12.0 already has the native 26.3 -> 26.2
+             * state mappings, so do not replace those states with unrelated marker blocks.
+             */
+            LOGGER.info("Leaving ViaBackwards wool/concrete stair and slab state mappings untouched.");
             for (String[] mapping : BLOCK_MAPPINGS) {
                 otherBlocks += remapBlockStates(mappings,
                         "minecraft:" + mapping[0],
@@ -241,8 +237,11 @@ public final class ViaBackportVisuals implements ModInitializer {
             leaves += remapBlockStates(mappings, "minecraft:yellow_poplar_leaves",
                     "minecraft:jungle_leaves", ViaBackportVisuals::yellowPoplarLeafMarker);
 
-            strawBed = remapBlockStates(mappings, "minecraft:straw_bed",
-                    "minecraft:redstone_wire", ViaBackportVisuals::strawBedMarker);
+            /*
+             * Do the same for straw beds. A redstone-wire marker is not a bed and gives
+             * the 26.2 client the wrong collision and interaction shape.
+             */
+            LOGGER.info("Leaving ViaBackwards straw-bed state mapping untouched.");
 
             mappingsEnabled = true;
 
