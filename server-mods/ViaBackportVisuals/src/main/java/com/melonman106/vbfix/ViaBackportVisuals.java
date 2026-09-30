@@ -339,16 +339,18 @@ public final class ViaBackportVisuals implements ModInitializer {
     private static BlockState markerState(BlockState src, BlockState ignored) {
         String id = BuiltInRegistries.BLOCK.getKey(src.getBlock()).toString();
         int slot = markerSlot(id, src);
-        Block marker = slot < NOTE_MARKER_CAPACITY ? getBlock("minecraft:note_block") : getBlock("minecraft:redstone_wire");
+        boolean stair = id.endsWith("_stairs");
+        boolean useNote = stair && slot < NOTE_MARKER_CAPACITY;
+        Block marker = useNote ? getBlock("minecraft:note_block") : getBlock("minecraft:redstone_wire");
         if (marker == null) return ignored;
         BlockState state = marker.defaultBlockState();
-        if (slot < NOTE_MARKER_CAPACITY) {
-            int within = slot % 575;
+        if (useNote) {
+            int within = slot % 600;
             state = setProperty(state, "instrument", MARKER_INSTRUMENTS[within / 25]);
             state = setProperty(state, "note", Integer.toString(within % 25));
-            state = setProperty(state, "powered", Boolean.toString(slot >= 575));
+            state = setProperty(state, "powered", Boolean.toString(slot >= 600));
         } else {
-            int r = slot - NOTE_MARKER_CAPACITY, ci = r / 16, power = r % 16;
+            int r = redstoneMarkerIndex(id, slot), ci = r / 16, power = r % 16;
             state = setProperty(state, "power", Integer.toString(power));
             state = setProperty(state, "east", redstoneSide(ci % 3));
             state = setProperty(state, "north", redstoneSide((ci / 3) % 3));
@@ -356,6 +358,32 @@ public final class ViaBackportVisuals implements ModInitializer {
             state = setProperty(state, "west", redstoneSide((ci / 27) % 3));
         }
         return state;
+    }
+
+    private static int redstoneMarkerIndex(String id, int slot) {
+        if (id.endsWith("_wool_slab")) {
+            return 0 + indexOfColor(id) * 6 + slabLocal(stateFromSlot(slot, id));
+        }
+        if (id.endsWith("_concrete_stairs")) {
+            return 96 + (slot - NOTE_MARKER_CAPACITY);
+        }
+        if (id.endsWith("_concrete_slab")) {
+            return 176 + indexOfColor(id) * 6 + slabLocal(stateFromSlot(slot, id));
+        }
+        return 300 + (slot & 15);
+    }
+
+    private static int indexOfColor(String id) {
+        for (int i = 0; i < WOOL_COLORS.length; i++) {
+            if (id.startsWith("minecraft:" + WOOL_COLORS[i] + "_")) return i;
+        }
+        return 0;
+    }
+
+    private static int slabLocal(BlockState state, String id) {
+        int t = indexOf(SLAB_TYPES, propertyString(state, "type"));
+        int w = "true".equals(propertyString(state, "waterlogged")) ? 1 : 0;
+        return t * 2 + w;
     }
 
     private static int markerSlot(String id, BlockState state) {
