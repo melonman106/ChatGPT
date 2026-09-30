@@ -116,9 +116,9 @@ public final class VbvDisplays {
     }
 
     private static String value(BlockState state, String name, String fallback) {
-        return state.getValues()
-                .filter(entry -> entry.getKey().getName().equals(name))
-                .map(entry -> String.valueOf(entry.getValue()).toLowerCase(Locale.ROOT))
+        return state.getProperties().stream()
+                .filter(property -> property.getName().equals(name))
+                .map(property -> String.valueOf(state.getValue(property)).toLowerCase(Locale.ROOT))
                 .findFirst()
                 .orElse(fallback);
     }
