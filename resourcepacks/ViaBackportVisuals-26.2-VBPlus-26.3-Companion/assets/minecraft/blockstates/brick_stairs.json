@@ -2,60 +2,58 @@
   "variants": {
     "facing=east,half=bottom,shape=inner_left": {
       "model": "minecraft:block/brick_stairs_inner",
-      "y": 270,
       "uvlock": true
     },
     "facing=east,half=bottom,shape=inner_right": {
       "model": "minecraft:block/brick_stairs_inner",
-      "y": 270,
+      "y": 90,
       "uvlock": true
     },
     "facing=east,half=bottom,shape=outer_left": {
       "model": "minecraft:block/brick_stairs_outer",
-      "y": 270,
       "uvlock": true
     },
     "facing=east,half=bottom,shape=outer_right": {
       "model": "minecraft:block/brick_stairs_outer",
-      "y": 270,
+      "y": 90,
       "uvlock": true
     },
     "facing=east,half=bottom,shape=straight": {
-      "model": "minecraft:block/brick_stairs",
+      "model": "minecraft:block/brick_stairs_straight",
+      "y": 90,
       "uvlock": true
     },
     "facing=east,half=top,shape=inner_left": {
       "model": "minecraft:block/brick_stairs_inner",
       "x": 180,
-      "y": 270,
       "uvlock": true
     },
     "facing=east,half=top,shape=inner_right": {
       "model": "minecraft:block/brick_stairs_inner",
       "x": 180,
-      "y": 270,
+      "y": 90,
       "uvlock": true
     },
     "facing=east,half=top,shape=outer_left": {
       "model": "minecraft:block/brick_stairs_outer",
       "x": 180,
-      "y": 270,
       "uvlock": true
     },
     "facing=east,half=top,shape=outer_right": {
       "model": "minecraft:block/brick_stairs_outer",
       "x": 180,
-      "y": 270,
+      "y": 90,
       "uvlock": true
     },
     "facing=east,half=top,shape=straight": {
-      "model": "minecraft:block/brick_stairs",
+      "model": "minecraft:block/brick_stairs_straight",
       "x": 180,
+      "y": 90,
       "uvlock": true
     },
     "facing=north,half=bottom,shape=inner_left": {
       "model": "minecraft:block/brick_stairs_inner",
-      "y": 180,
+      "y": 90,
       "uvlock": true
     },
     "facing=north,half=bottom,shape=inner_right": {
@@ -65,7 +63,7 @@
     },
     "facing=north,half=bottom,shape=outer_left": {
       "model": "minecraft:block/brick_stairs_outer",
-      "y": 180,
+      "y": 90,
       "uvlock": true
     },
     "facing=north,half=bottom,shape=outer_right": {
@@ -74,14 +72,14 @@
       "uvlock": true
     },
     "facing=north,half=bottom,shape=straight": {
-      "model": "minecraft:block/brick_stairs",
-      "y": 270,
+      "model": "minecraft:block/brick_stairs_straight",
+      "y": 180,
       "uvlock": true
     },
     "facing=north,half=top,shape=inner_left": {
       "model": "minecraft:block/brick_stairs_inner",
       "x": 180,
-      "y": 180,
+      "y": 90,
       "uvlock": true
     },
     "facing=north,half=top,shape=inner_right": {
@@ -93,7 +91,7 @@
     "facing=north,half=top,shape=outer_left": {
       "model": "minecraft:block/brick_stairs_outer",
       "x": 180,
-      "y": 180,
+      "y": 90,
       "uvlock": true
     },
     "facing=north,half=top,shape=outer_right": {
@@ -103,9 +101,9 @@
       "uvlock": true
     },
     "facing=north,half=top,shape=straight": {
-      "model": "minecraft:block/brick_stairs",
+      "model": "minecraft:block/brick_stairs_straight",
       "x": 180,
-      "y": 270,
+      "y": 180,
       "uvlock": true
     },
     "facing=south,half=bottom,shape=inner_left": {
@@ -113,18 +111,21 @@
       "uvlock": true
     },
     "facing=south,half=bottom,shape=inner_right": {
-      "model": "minecraft:block/brick_stairs_inner"
+      "model": "minecraft:block/brick_stairs_inner",
+      "y": 270,
+      "uvlock": true
     },
     "facing=south,half=bottom,shape=outer_left": {
       "model": "minecraft:block/brick_stairs_outer",
       "uvlock": true
     },
     "facing=south,half=bottom,shape=outer_right": {
-      "model": "minecraft:block/brick_stairs_outer"
+      "model": "minecraft:block/brick_stairs_outer",
+      "y": 270,
+      "uvlock": true
     },
     "facing=south,half=bottom,shape=straight": {
-      "model": "minecraft:block/brick_stairs",
-      "y": 90,
+      "model": "minecraft:block/brick_stairs_straight",
       "uvlock": true
     },
     "facing=south,half=top,shape=inner_left": {
@@ -134,7 +135,9 @@
     },
     "facing=south,half=top,shape=inner_right": {
       "model": "minecraft:block/brick_stairs_inner",
-      "x": 180
+      "x": 180,
+      "y": 270,
+      "uvlock": true
     },
     "facing=south,half=top,shape=outer_left": {
       "model": "minecraft:block/brick_stairs_outer",
@@ -143,67 +146,68 @@
     },
     "facing=south,half=top,shape=outer_right": {
       "model": "minecraft:block/brick_stairs_outer",
-      "x": 180
+      "x": 180,
+      "y": 270,
+      "uvlock": true
     },
     "facing=south,half=top,shape=straight": {
-      "model": "minecraft:block/brick_stairs",
+      "model": "minecraft:block/brick_stairs_straight",
       "x": 180,
-      "y": 90,
       "uvlock": true
     },
     "facing=west,half=bottom,shape=inner_left": {
       "model": "minecraft:block/brick_stairs_inner",
-      "y": 90,
+      "y": 270,
       "uvlock": true
     },
     "facing=west,half=bottom,shape=inner_right": {
       "model": "minecraft:block/brick_stairs_inner",
-      "y": 90,
+      "y": 180,
       "uvlock": true
     },
     "facing=west,half=bottom,shape=outer_left": {
       "model": "minecraft:block/brick_stairs_outer",
-      "y": 90,
+      "y": 270,
       "uvlock": true
     },
     "facing=west,half=bottom,shape=outer_right": {
       "model": "minecraft:block/brick_stairs_outer",
-      "y": 90,
+      "y": 180,
       "uvlock": true
     },
     "facing=west,half=bottom,shape=straight": {
-      "model": "minecraft:block/brick_stairs",
-      "y": 180,
+      "model": "minecraft:block/brick_stairs_straight",
+      "y": 270,
       "uvlock": true
     },
     "facing=west,half=top,shape=inner_left": {
       "model": "minecraft:block/brick_stairs_inner",
       "x": 180,
-      "y": 90,
+      "y": 270,
       "uvlock": true
     },
     "facing=west,half=top,shape=inner_right": {
       "model": "minecraft:block/brick_stairs_inner",
       "x": 180,
-      "y": 90,
+      "y": 180,
       "uvlock": true
     },
     "facing=west,half=top,shape=outer_left": {
       "model": "minecraft:block/brick_stairs_outer",
       "x": 180,
-      "y": 90,
+      "y": 270,
       "uvlock": true
     },
     "facing=west,half=top,shape=outer_right": {
       "model": "minecraft:block/brick_stairs_outer",
       "x": 180,
-      "y": 90,
+      "y": 180,
       "uvlock": true
     },
     "facing=west,half=top,shape=straight": {
-      "model": "minecraft:block/brick_stairs",
+      "model": "minecraft:block/brick_stairs_straight",
       "x": 180,
-      "y": 180,
+      "y": 270,
       "uvlock": true
     }
   }
