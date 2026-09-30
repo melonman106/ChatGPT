@@ -148,6 +148,7 @@ public final class ViaBackportVisuals implements ModInitializer {
     private static Mappings activeMappings;
     private static volatile boolean mappingsEnabled = true;
     private static volatile int restartTicks = -1;
+    private static int mappingRetryTicks = 0;
 
     @Override
     public void onInitialize() {
@@ -165,6 +166,10 @@ public final class ViaBackportVisuals implements ModInitializer {
         ServerTickEvents.END_SERVER_TICK.register(server -> {
             handleRestartCountdown(server);
             if (server.getTickCount() % 20 != 0) return;
+            if (activeMappings == null && mappingRetryTicks < 10) {
+                mappingRetryTicks++;
+                installMappings();
+            }
             for (net.minecraft.server.level.ServerPlayer player : server.getPlayerList().getPlayers()) {
                 VbvMarkers.scanAround(player, player.blockPosition());
             }
