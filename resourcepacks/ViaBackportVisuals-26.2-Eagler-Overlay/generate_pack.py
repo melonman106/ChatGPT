@@ -82,6 +82,22 @@ def emit_slabs(color, material):
             }
         })
 
+def emit_leaves(color):
+    model_id = f"{color}_poplar_leaves"
+    out_models = OUT / "assets/viabackportvisuals/models/display"
+    out_items = OUT / "assets/viabackportvisuals/items/display"
+    write_json(out_models / f"{model_id}.json", {
+        "parent": "minecraft:block/cube_all",
+        "textures": {"all": f"minecraft:block/{model_id}"},
+        "render_type": "minecraft:cutout_mipped"
+    })
+    write_json(out_items / f"{model_id}.json", {
+        "model": {
+            "type": "minecraft:model",
+            "model": f"viabackportvisuals:display/{model_id}"
+        }
+    })
+
 def main():
     if OUT.exists():
         shutil.rmtree(OUT)
@@ -98,6 +114,9 @@ def main():
         for material in ("wool", "concrete"):
             emit_stairs(color, material)
             emit_slabs(color, material)
+
+    for color in ("red", "orange", "yellow"):
+        emit_leaves(color)
 
     print("Generated isolated display models for 16 wool + 16 concrete stair/slab families plus red/orange/yellow poplar leaves.")
 
