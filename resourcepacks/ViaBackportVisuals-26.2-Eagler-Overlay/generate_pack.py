@@ -19,20 +19,20 @@ WOOL_STAIR_PLACEHOLDERS = [
     "waxed_weathered_cut_copper_stairs", "waxed_oxidized_cut_copper_stairs",
     "cut_copper_stairs", "exposed_cut_copper_stairs",
     "weathered_cut_copper_stairs", "oxidized_cut_copper_stairs",
-    "mud_brick_stairs", "tuff_brick_stairs", "polished_tuff_stairs",
-    "bamboo_mosaic_stairs", "end_stone_brick_stairs", "resin_brick_stairs",
-    "cinnabar_brick_stairs", "sulfur_brick_stairs",
+    "mud_red_nether_brick_stairs", "tuff_red_nether_brick_stairs", "polished_tuff_stairs",
+    "bamboo_mosaic_stairs", "end_dark_prismarine_stairs", "resin_red_nether_brick_stairs",
+    "cinnabar_red_nether_brick_stairs", "sulfur_red_nether_brick_stairs",
 ]
 
 WOOL_SLAB_PLACEHOLDERS = [x.replace("_stairs", "_slab") for x in WOOL_STAIR_PLACEHOLDERS]
 
 CONCRETE_STAIR_PLACEHOLDERS = [
-    "pale_oak_stairs", "deepslate_brick_stairs", "deepslate_tile_stairs",
-    "polished_deepslate_stairs", "polished_blackstone_brick_stairs",
-    "polished_blackstone_stairs", "blackstone_stairs", "cobbled_deepslate_stairs",
-    "prismarine_brick_stairs", "dark_prismarine_stairs", "purpur_stairs",
-    "nether_brick_stairs", "red_nether_brick_stairs",
-    "mossy_stone_brick_stairs", "stone_brick_stairs", "brick_stairs",
+    "smooth_quartz_stairs", "smooth_red_sandstone_stairs", "red_sandstone_stairs",
+    "quartz_stairs", "crimson_stairs",
+    "warped_stairs", "mangrove_stairs", "cherry_stairs",
+    "bamboo_stairs", "tuff_stairs", "sandstone_stairs",
+    "smooth_sandstone_stairs", "red_smooth_sandstone_stairs",
+    "polished_blackdark_prismarine_stairs", "dark_prismarine_stairs", "red_nether_brick_stairs",
 ]
 
 CONCRETE_SLAB_PLACEHOLDERS = [x.replace("_stairs", "_slab") for x in CONCRETE_STAIR_PLACEHOLDERS]
@@ -42,14 +42,13 @@ def write_json(path, data):
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
 def emit_stair_family(placeholder, texture):
-    base = placeholder[:-7]  # remove _stairs
     models = OUT / "assets/minecraft/models/block"
     for suffix, parent in (
-        ("straight", "minecraft:block/stairs"),
-        ("inner", "minecraft:block/inner_stairs"),
-        ("outer", "minecraft:block/outer_stairs"),
+        ("", "minecraft:block/stairs"),
+        ("_inner", "minecraft:block/inner_stairs"),
+        ("_outer", "minecraft:block/outer_stairs"),
     ):
-        write_json(models / f"{placeholder}_{suffix}.json", {
+        write_json(models / f"{placeholder}{suffix}.json", {
             "parent": parent,
             "textures": {
                 "bottom": f"minecraft:block/{texture}",
