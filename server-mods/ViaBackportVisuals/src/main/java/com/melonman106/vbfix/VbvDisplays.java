@@ -117,6 +117,11 @@ public final class VbvDisplays {
             return family + "_slab_" + value(state, "type", "bottom");
         }
 
+        if (id.equals("red_poplar_leaves") || id.equals("orange_poplar_leaves")
+                || id.equals("yellow_poplar_leaves")) {
+            return id;
+        }
+
         return null;
     }
 
