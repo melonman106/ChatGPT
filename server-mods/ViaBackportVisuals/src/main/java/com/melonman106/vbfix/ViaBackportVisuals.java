@@ -12,7 +12,6 @@ import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.player.AttackBlockCallback;
-import net.fabricmc.fabric.api.event.player.UseItemOnCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.minecraft.commands.Commands;
@@ -20,7 +19,6 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.server.permissions.Permissions;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
-import net.minecraft.world.InteractionResult;
 import net.minecraft.world.level.block.BedBlock;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.LeavesBlock;
@@ -161,13 +159,6 @@ public final class ViaBackportVisuals implements ModInitializer {
 
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->
                 VbvMarkers.scanAround(handler.getPlayer(), handler.getPlayer().blockPosition()));
-
-        UseItemOnCallback.EVENT.register((player, level, hand, hitResult) -> {
-            if (player instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
-                serverPlayer.server.execute(() -> VbvMarkers.scanAround(serverPlayer, hitResult.getBlockPos()));
-            }
-            return InteractionResult.PASS;
-        });
 
         ServerTickEvents.END_SERVER_TICK.register(server -> {
             if (server.getTickCount() % 20 != 0) return;
