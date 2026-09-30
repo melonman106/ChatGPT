@@ -99,7 +99,7 @@ def main():
             emit_stairs(color, material)
             emit_slabs(color, material)
 
-    print("Generated isolated display models for 16 wool + 16 concrete stair/slab families.")
+    print("Generated isolated display models for 16 wool + 16 concrete stair/slab families plus red/orange/yellow poplar leaves.")
 
 if __name__ == "__main__":
     main()
