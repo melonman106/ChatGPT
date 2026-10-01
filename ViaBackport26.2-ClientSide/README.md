@@ -1,13 +1,17 @@
 # ViaBackportVisuals 26.2 Client Side
 
-This is the Eaglercraft 26.2 u1 client-side integration for ViaBackportVisuals.
+Native Eaglercraft 26.2 u1 client-side patch for ViaBackportVisuals.
 
-The implementation is intended to be integrated into the generated Eaglercraft 26.2 u1 source rather than used as a standalone Fabric client mod.
+This is not a Fabric Loader/API mod and does not embed ModMenu. It provides a native ModMenu-style installed-mod browser inside the Eagler client.
 
-## Goal
+## Included
+- Client-side ViaBackportVisuals registry.
+- Per-block visual override registry.
+- Native Mods screen and details screen.
+- Built-in registration API.
+- GitHub Actions build/patch pipeline.
 
-Render 26.3 blocks correctly when ViaBackwards presents them to a 26.2 client, without globally replacing genuine 26.2 block visuals.
+The patch is applied to generated Eaglercraft source by the build workflow.
 
-## Status
-
-Initial client-side integration workspace. The exact Eaglercraft u1 renderer/network APIs will be filled in after the u1 source project is generated and inspected.
+## Current mappings
+white_wool_stairs, white_wool_slab, straw_bed, and the known poplar family are registered initially. More mappings can be added without globally replacing genuine 26.2 textures.
