@@ -4,7 +4,7 @@ import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 
-/** Label-only details page; see VBVModsScreen for why it uses disabled Buttons. */
+/** Details page for a native Eagler client mod. */
 public final class VBVModDetailsScreen extends Screen {
     private final Screen parent;
     private final VBVModInfo info;
@@ -18,7 +18,7 @@ public final class VBVModDetailsScreen extends Screen {
 
     private void label(String text) {
         Button b = Button.builder(Component.literal(text), button -> { })
-            .bounds(20, labelY, Math.min(400, width - 40), 20).build();
+            .bounds(20, labelY, Math.min(520, width - 40), 20).build();
         b.active = false;
         addRenderableWidget(b);
         labelY += 24;
@@ -32,6 +32,9 @@ public final class VBVModDetailsScreen extends Screen {
         label("ID: " + info.id());
         label("Version: " + info.version());
         label("Authors: " + info.authors());
+        label(info.resourcePackMod() ? "Type: Resource-pack client mod" : "Type: Native client mod");
+        label("pack.png: " + info.iconPath());
+
         String text = String.valueOf(info.description());
         while (!text.isEmpty() && labelY < height - 50) {
             int cut = Math.min(text.length(), 60);
@@ -42,6 +45,7 @@ public final class VBVModDetailsScreen extends Screen {
             label(text.substring(0, cut).trim());
             text = text.substring(cut).trim();
         }
+
         addRenderableWidget(Button.builder(
             Component.literal("Back"),
             button -> VBVNav.open(parent)
