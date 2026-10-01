@@ -261,13 +261,20 @@ jobs:
 
           cd ModdedClientSource
           chmod +x ./gradlew
-          ./gradlew :game:processResources --no-daemon --rerun-tasks
           game_classes="$(pwd)/game/build/classes/java/main"
-          if [ ! -f "$game_classes/version.json" ] || [ ! -f "$game_classes/assets/minecraft/lang/en_us.json" ]; then
-            echo "::error::TeaVM runtime resources were not copied into game/build/classes/java/main."
-            find "$game_classes" -maxdepth 3 -type f | head -50 || true
-            exit 1
-          fi
+          mkdir -p "$game_classes"
+
+          # The generated Eaglercraft skeleton intentionally declares no Gradle
+          # resource source set, so :game:processResources reports NO-SOURCE.
+          # TeaVM nevertheless loads version.json/assets directly from the game
+          # classes directory. Copy the official runtime resources there
+          # explicitly instead of relying on Gradle's resource task.
+          echo "=== Installing TeaVM runtime resources into game/build/classes/java/main ==="
+          cp -a "$resources"/. "$game_classes"/
+
+          test -f "$game_classes/version.json"
+          test -f "$game_classes/pack.mcmeta"
+          test -f "$game_classes/assets/minecraft/lang/en_us.json"
           echo "=== TeaVM resource classpath verified ==="
           ls -lh "$game_classes/version.json" "$game_classes/assets/minecraft/lang/en_us.json"
           cd "$GITHUB_WORKSPACE"
