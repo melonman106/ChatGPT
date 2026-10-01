@@ -97,7 +97,7 @@ jobs:
       - name: Restore Minecraft runtime resources
         run: |
           set -euo pipefail
-          game_dir="$(find generated-client -type d -name game -print -quit)"
+          game_dir="$(find generated-client -type f \( -path "*/game/build.gradle" -o -path "*/game/build.gradle.kts" \) -print -quit | xargs -r dirname)"
           if [ -z "$game_dir" ]; then
             echo "::error::Could not locate the generated game module."
             exit 1
@@ -229,11 +229,10 @@ jobs:
           mkdir -p ModdedClientSource
           cp -a "$build_root"/. ModdedClientSource/
 
-          # The standalone TeaVM linker resolves runtime resources from the
-          # Gradle resource/classes output, not from the post-assemble game JAR.
-          # Re-seed the copied source tree and run processResources so
-          # version.json/assets are present on the actual TeaVM classpath.
-          game_dir="$(find ModdedClientSource -type d -name game -print -quit)"
+          # The source tree contains a Java package directory named "game", so never
+          # locate the module by directory name alone. Use the module build file
+          # to identify the real Gradle :game project.
+          game_dir="$(find ModdedClientSource -type f \( -path "*/game/build.gradle" -o -path "*/game/build.gradle.kts" \) -print -quit | xargs -r dirname)"
           if [ -z "$game_dir" ]; then
             echo "::error::Could not locate the copied game module in ModdedClientSource."
             exit 1
