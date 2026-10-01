@@ -140,9 +140,87 @@ jobs:
             gradle assemble --no-daemon
           fi
 
+      - name: Setup Node.js for single-HTML packaging
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Prepare ModdedClientSource
+        run: |
+          set -euo pipefail
+
+          rm -rf ModdedClientSource
+
+          build_root=$(find generated-client -type f \
+            \( -name 'gradlew' -o -name 'build.gradle' -o -name 'build.gradle.kts' \) \
+            -print -quit | xargs -r dirname)
+
+          if [ -z "$build_root" ]; then
+            echo "::error::Could not locate the generated Eaglercraft build root."
+            exit 1
+          fi
+
+          mkdir -p ModdedClientSource
+          cp -a "$build_root"/. ModdedClientSource/
+
+          single_html_script="ModdedClientSource/wasm-toolchain/build-single-html.js"
+
+          if [ ! -f "$single_html_script" ]; then
+            echo "::error::The built client does not contain wasm-toolchain/build-single-html.js."
+            echo "=== wasm-toolchain files found ==="
+            find ModdedClientSource -path '*/wasm-toolchain/*' -type f -print | sort || true
+            exit 1
+          fi
+
+          echo "Found single-HTML builder: $single_html_script"
+          node --version
+
+      - name: Build single-file HTML client
+        working-directory: ModdedClientSource
+        run: |
+          set -euo pipefail
+
+          test -f wasm-toolchain/build-single-html.js
+
+          echo "=== build-single-html.js help ==="
+          node wasm-toolchain/build-single-html.js --help 2>&1 || true
+
+          echo "=== Running single-HTML builder ==="
+          node wasm-toolchain/build-single-html.js
+
+          echo "=== Generated HTML files ==="
+          find . -type f -name '*.html' -printf '%s %p\n' | sort -nr | head -50
+
+          html_count=$(find . -type f -name '*.html' | wc -l)
+          if [ "$html_count" -eq 0 ]; then
+            echo "::error::build-single-html.js completed but produced no HTML file."
+            exit 1
+          fi
+
+      - name: Select final single HTML
+        run: |
+          set -euo pipefail
+
+          mkdir -p final-client
+
+          candidate=$(find ModdedClientSource -type f -name '*.html' \
+            -printf '%s %p\n' | sort -nr | head -1 | cut -d' ' -f2-)
+
+          if [ -z "$candidate" ]; then
+            echo "::error::No HTML output was found."
+            exit 1
+          fi
+
+          cp "$candidate" final-client/Eaglercraft-26.2-VBV-Modded.html
+
+          echo "Final single HTML:"
+          ls -lh final-client/Eaglercraft-26.2-VBV-Modded.html
+
       - name: Upload patched client source and build
         uses: actions/upload-artifact@v4
         with:
           name: ViaBackport26.2-ClientSide
           path: |
             generated-client
+            ModdedClientSource
+            final-client
