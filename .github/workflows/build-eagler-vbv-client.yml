@@ -226,7 +226,7 @@ jobs:
           build_root="$(find "$GITHUB_WORKSPACE/generated-client" -type f -name 'gradlew' -print -quit | xargs -r dirname)"
           if [ -z "$build_root" ]; then
             echo "::error::Could not locate the generated Eaglercraft Gradle root."
-            find "$GITHUB_WORKSPACE/generated-client" -maxdepth 6 -type f \\( -name 'gradlew' -o -name 'build.gradle' -o -name 'build.gradle.kts' \\) -print | sort || true
+            find "$GITHUB_WORKSPACE/generated-client" -maxdepth 6 -type f \( -name 'gradlew' -o -name 'build.gradle' -o -name 'build.gradle.kts' \) -print | sort || true
             exit 1
           fi
           build_root="$(realpath "$build_root")"
@@ -240,13 +240,13 @@ jobs:
           # The generated project has a real Gradle module named game, but it can
           # also contain Java packages named game, so locate it by its build file.
           modded_root="$GITHUB_WORKSPACE/ModdedClientSource"
-          game_dir="$(find "$modded_root" -type f \\( -path "*/game/build.gradle" -o -path "*/game/build.gradle.kts" \\) -print -quit | xargs -r dirname)"
+          game_dir="$(find "$modded_root" -type f \( -path "*/game/build.gradle" -o -path "*/game/build.gradle.kts" \) -print -quit | xargs -r dirname)"
           if [ -z "$game_dir" ]; then
             echo "::error::Could not locate the copied Gradle game module."
             echo "=== ModdedClientSource top level ==="
             find "$modded_root" -maxdepth 2 -print | sort | head -300
             echo "=== Gradle module files ==="
-            find "$modded_root" -type f \\( -name 'build.gradle' -o -name 'build.gradle.kts' \\) -print | sort | head -300
+            find "$modded_root" -type f \( -name 'build.gradle' -o -name 'build.gradle.kts' \) -print | sort | head -300
             exit 1
           fi
           game_dir="$(realpath "$game_dir")"
@@ -274,7 +274,7 @@ jobs:
           if [ -e "$temp_resources/pack.mcmeta" ]; then
             cp -a "$temp_resources/pack.mcmeta" "$resources/"
           else
-            printf '%s\\n' '{' '  "pack": {' '    "description": "Minecraft 26.2",' '    "min_format": 88,' '    "max_format": 88' '  }' '}' > "$resources/pack.mcmeta"
+            printf '%s\n' '{' '  "pack": {' '    "description": "Minecraft 26.2",' '    "min_format": 88,' '    "max_format": 88' '  }' '}' > "$resources/pack.mcmeta"
           fi
 
           cp -a "$temp_resources/version.json" "$resources/"
