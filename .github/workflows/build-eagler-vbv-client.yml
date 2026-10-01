@@ -31,7 +31,7 @@ jobs:
 
           mkdir -p build-input/u1-portable-kit
 
-          curl -fL --retry 3             -o build-input/portable-kit.zip             "https://github.com/melonman106/ChatGPT/releases/download/Modded/portable-kit.zip"
+          curl -fL --retry 3             -o build-input/portable-kit.zip             "https://github.com/melonman106/ChatGPT/releases/download/Cleit/portable-kit.zip"
 
           expected="974c88e396dabebced363aa30bc518e159b0a06d4f430dde8a06525154328d19"
           actual="$(sha256sum build-input/portable-kit.zip | awk '{print $1}')"
