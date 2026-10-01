@@ -8,8 +8,6 @@ import zipfile
 
 ROOT = pathlib.Path(sys.argv[1]).resolve()
 
-# The VBV sources live in THIS repository (next to this script), not inside
-# the generated project that ROOT points at.
 CLIENT_SIDE = pathlib.Path(__file__).resolve().parent.parent
 SOURCE = CLIENT_SIDE / "src/main/java/com/melonman106/vbvclient"
 
@@ -18,16 +16,12 @@ if not SOURCE.is_dir():
 if not ROOT.is_dir():
     raise SystemExit(f"Generated project directory missing: {ROOT}")
 
-# create-dev writes a multi-module Gradle project straight into ROOT (the
-# decompiled game code is in a module such as game/). Find the real source root
-# by locating Minecraft.java instead of assuming a fixed layout.
 def find_source_root():
     for p in sorted(ROOT.rglob("Minecraft.java")):
         parts = p.parts
         if "build" in parts:
             continue
         if p.parent.name == "client" and p.parent.parent.name == "minecraft":
-            # .../<source root>/net/minecraft/client/Minecraft.java
             return p.parents[3]
     return None
 
@@ -45,13 +39,6 @@ for src in SOURCE.glob("*.java"):
     shutil.copy2(src, DEST / src.name)
 print("Copied", len(list(SOURCE.glob('*.java'))), "VBV files to", DEST)
 
-# ---------------------------------------------------------------------------
-# Import resource-pack mods from ModsPack/.
-#
-# The user only needs to upload ZIP resource packs. Each ZIP is unpacked into
-# the generated client's private vbvclient/mods/<id>/ directory and a small
-# Java registry is generated so the native Mods screen can discover it.
-# ---------------------------------------------------------------------------
 REPO_ROOT = CLIENT_SIDE.parent
 MODS_PACK = REPO_ROOT / "ModsPack"
 GENERATED_PACK_CLASS = DEST / "VBVGeneratedPackMods.java"
@@ -125,8 +112,6 @@ def extract_resource_pack(zippath, mod_id):
             relative = name[len(root):]
             if not relative or relative.endswith("/"):
                 continue
-
-            # Keep the parts a client-side resource-pack mod can actually use.
             if not (
                 relative == "pack.png"
                 or relative == "pack.mcmeta"
@@ -167,8 +152,6 @@ if MODS_PACK.is_dir():
 
         icon = GENERATED_PACK_RESOURCE_ROOT / mod_id / "pack.png"
         if not icon.is_file():
-            # Resource packs do not have to contain pack.png. Use the project's
-            # standard icon so every imported mod still has an icon.
             fallback = CLIENT_SIDE / "pack.png"
             if fallback.is_file():
                 shutil.copy2(fallback, icon)
@@ -228,10 +211,67 @@ def java_files():
         except (UnicodeDecodeError, OSError):
             continue
 
-# ---------------------------------------------------------------------------
-# 1) Discover how this 26.2 decompile opens a screen. Mojang/Eagler renamed
-#    Minecraft.setScreen, so read the real name from Minecraft.java.
-# ---------------------------------------------------------------------------
+def find_method_end(text, method_start):
+    """Return the index of the closing brace for the method containing method_start."""
+    brace = text.find("{", method_start)
+    if brace < 0:
+        return None
+
+    depth = 0
+    in_string = False
+    in_char = False
+    in_line_comment = False
+    in_block_comment = False
+    escaped = False
+    i = brace
+
+    while i < len(text):
+        c = text[i]
+        n = text[i + 1] if i + 1 < len(text) else ""
+
+        if in_line_comment:
+            if c == "\n":
+                in_line_comment = False
+        elif in_block_comment:
+            if c == "*" and n == "/":
+                in_block_comment = False
+                i += 1
+        elif in_string:
+            if escaped:
+                escaped = False
+            elif c == "\\":
+                escaped = True
+            elif c == '"':
+                in_string = False
+        elif in_char:
+            if escaped:
+                escaped = False
+            elif c == "\\":
+                escaped = True
+            elif c == "'":
+                in_char = False
+        else:
+            if c == "/" and n == "/":
+                in_line_comment = True
+                i += 1
+            elif c == "/" and n == "*":
+                in_block_comment = True
+                i += 1
+            elif c == '"':
+                in_string = True
+            elif c == "'":
+                in_char = True
+            elif c == "{":
+                depth += 1
+            elif c == "}":
+                depth -= 1
+                if depth == 0:
+                    return i
+
+        i += 1
+
+    return None
+
 minecraft = None
 for p, s in java_files():
     if re.search(r"class\s+Minecraft\b", s) and "static Minecraft" in s:
@@ -253,18 +293,9 @@ for preferred in ("setScreen", "setScreenAndShow", "openScreen", "showScreen"):
 if open_name is None and screen_methods:
     open_name = screen_methods[0]
 if open_name is None:
-    print("Methods in Minecraft.java that mention Screen:")
-    for line in mc_src.splitlines():
-        if "Screen" in line and "(" in line and ("void" in line or "public" in line):
-            print("   ", line.strip())
     raise SystemExit("Could not find a method on Minecraft that takes a single Screen")
 print("Screen-opening method on Minecraft:", open_name, "(candidates:", screen_methods, ")")
 
-# ---------------------------------------------------------------------------
-# 4) Native Armor HUD. The real Uku's Armor HUD 26.2 implementation injects
-#    at the TAIL of Hud.extractItemHotbar. Do the same in native Eagler
-#    source instead of depending on Fabric/NeoForge mixins.
-# ---------------------------------------------------------------------------
 HUD_CALL = "com.melonman106.vbvclient.VBVArmorHud.render(graphics);"
 
 hud_path = None
@@ -295,20 +326,13 @@ else:
     hud_path.write_text(hud_src, encoding="utf-8")
     print("Inserted Armor HUD hook at the end of", hud_path)
 
-
 nav = DEST / "VBVNav.java"
 nav_src = nav.read_text(encoding="utf-8")
 nav.write_text(nav_src.replace(".setScreen(screen)", f".{open_name}(screen)"), encoding="utf-8")
 
-# ---------------------------------------------------------------------------
-# 2) Initialize the registry from the Minecraft constructor.
-#    The call MUST come after super(...)/this(...): the skeleton compiles with
-#    --release 24, which forbids statements before a constructor call.
-# ---------------------------------------------------------------------------
 INIT_CALL = "com.melonman106.vbvclient.VBVClient.init();"
 
 def end_of_ctor_call(text, start):
-    """text[start:] begins with super(/this( ; return index just past the ';'."""
     i = text.index("(", start)
     depth = 0
     while i < len(text):
@@ -332,7 +356,7 @@ else:
         rest = mc_src[m.end():]
         call = re.match(r"\s*(super|this)\s*\(", rest)
         if call and call.group(1) == "this":
-            continue  # delegating constructor; the target constructor will run init
+            continue
         if call:
             pos = m.end() + end_of_ctor_call(rest, call.start(1))
         else:
@@ -345,9 +369,6 @@ else:
     if not inserted:
         raise SystemExit("Minecraft found, but its constructor hook was not identified")
 
-# ---------------------------------------------------------------------------
-# 3) Native Mods button on the title screen.
-# ---------------------------------------------------------------------------
 title = None
 for p, s in java_files():
     if re.search(r"class\s+TitleScreen\b", s) and "extends Screen" in s:
