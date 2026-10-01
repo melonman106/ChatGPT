@@ -220,79 +220,99 @@ jobs:
       - name: Prepare ModdedClientSource
         run: |
           set -euo pipefail
-          rm -rf ModdedClientSource
-          build_root="$(find generated-client -type f -name 'gradlew' -print -quit | xargs -r dirname)"
-          if [ -z "$build_root" ]; then
-            echo "::error::Could not locate the generated Eaglercraft build root (gradlew)."
-            exit 1
-          fi
-          mkdir -p ModdedClientSource
-          cp -a "$build_root"/. ModdedClientSource/
 
-          # The source tree contains a Java package directory named "game", so never
-          # locate the module by directory name alone. Use the module build file
-          # to identify the real Gradle :game project.
-          game_dir="$(find ModdedClientSource -type f \( -path "*/game/build.gradle" -o -path "*/game/build.gradle.kts" \) -print -quit | xargs -r dirname)"
-          if [ -z "$game_dir" ]; then
-            echo "::error::Could not locate the copied game module in ModdedClientSource."
+          rm -rf "$GITHUB_WORKSPACE/ModdedClientSource"
+
+          build_root="$(find "$GITHUB_WORKSPACE/generated-client" -type f -name 'gradlew' -print -quit | xargs -r dirname)"
+          if [ -z "$build_root" ]; then
+            echo "::error::Could not locate the generated Eaglercraft Gradle root."
+            find "$GITHUB_WORKSPACE/generated-client" -maxdepth 6 -type f \\( -name 'gradlew' -o -name 'build.gradle' -o -name 'build.gradle.kts' \\) -print | sort || true
             exit 1
           fi
+          build_root="$(realpath "$build_root")"
+
+          mkdir -p "$GITHUB_WORKSPACE/ModdedClientSource"
+          cp -a "$build_root"/. "$GITHUB_WORKSPACE/ModdedClientSource/"
+
+          # IMPORTANT: all paths below are absolute. The previous workflow stored
+          # "ModdedClientSource/game/..." and then cd'd into ModdedClientSource,
+          # accidentally turning that into ModdedClientSource/ModdedClientSource/...
+          # The generated project has a real Gradle module named game, but it can
+          # also contain Java packages named game, so locate it by its build file.
+          modded_root="$GITHUB_WORKSPACE/ModdedClientSource"
+          game_dir="$(find "$modded_root" -type f \\( -path "*/game/build.gradle" -o -path "*/game/build.gradle.kts" \\) -print -quit | xargs -r dirname)"
+          if [ -z "$game_dir" ]; then
+            echo "::error::Could not locate the copied Gradle game module."
+            echo "=== ModdedClientSource top level ==="
+            find "$modded_root" -maxdepth 2 -print | sort | head -300
+            echo "=== Gradle module files ==="
+            find "$modded_root" -type f \\( -name 'build.gradle' -o -name 'build.gradle.kts' \\) -print | sort | head -300
+            exit 1
+          fi
+          game_dir="$(realpath "$game_dir")"
           resources="$game_dir/src/main/resources"
+
+          echo "=== Generated client paths ==="
+          echo "Gradle root: $build_root"
+          echo "Copied root: $modded_root"
+          echo "Game module: $game_dir"
+          echo "Resources:   $resources"
+
+          # create-dev's generated skeleton does not provide a normal Gradle
+          # resource source set for the runtime assets. Install the official
+          # Minecraft runtime resources into the actual game module explicitly.
           rm -rf "$resources"
           mkdir -p "$resources"
+
           temp_resources="$(mktemp -d)"
           trap 'rm -rf "$temp_resources"' EXIT
           unzip -q "$GITHUB_WORKSPACE/build-input/minecraft-26.2-client.jar" -d "$temp_resources"
+
           test -f "$temp_resources/version.json"
           test -f "$temp_resources/assets/minecraft/lang/en_us.json"
+
           if [ -e "$temp_resources/pack.mcmeta" ]; then
             cp -a "$temp_resources/pack.mcmeta" "$resources/"
           else
-            printf '%s\n' '{' '  "pack": {' '    "description": "Minecraft 26.2",' '    "min_format": 88,' '    "max_format": 88' '  }' '}' > "$resources/pack.mcmeta"
+            printf '%s\\n' '{' '  "pack": {' '    "description": "Minecraft 26.2",' '    "min_format": 88,' '    "max_format": 88' '  }' '}' > "$resources/pack.mcmeta"
           fi
+
           cp -a "$temp_resources/version.json" "$resources/"
           cp -a "$temp_resources/assets" "$resources/"
           if [ -e "$temp_resources/data" ]; then
             cp -a "$temp_resources/data" "$resources/"
           fi
+
           test -f "$resources/version.json"
+          test -f "$resources/pack.mcmeta"
           test -f "$resources/assets/minecraft/lang/en_us.json"
 
-          cd ModdedClientSource
-          chmod +x ./gradlew
-          game_classes="$(pwd)/game/build/classes/java/main"
+          game_classes="$game_dir/build/classes/java/main"
           mkdir -p "$game_classes"
 
-          # The generated Eaglercraft skeleton intentionally declares no Gradle
-          # resource source set, so :game:processResources reports NO-SOURCE.
-          # TeaVM nevertheless loads version.json/assets directly from the game
-          # classes directory. Copy the official runtime resources there
-          # explicitly instead of relying on Gradle's resource task.
-          echo "=== Installing TeaVM runtime resources into game/build/classes/java/main ==="
-          if [ ! -d "$resources" ]; then
-            echo "::error::Expected runtime resource directory does not exist: $resources"
-            echo "=== Game module contents ==="
-            find "$game_dir" -maxdepth 4 -print | sort | head -300
-            exit 1
-          fi
+          echo "=== Installing TeaVM runtime resources ==="
+          echo "Source: $resources"
+          echo "Target: $game_classes"
           cp -a "$resources"/. "$game_classes"/
 
           test -f "$game_classes/version.json"
           test -f "$game_classes/pack.mcmeta"
           test -f "$game_classes/assets/minecraft/lang/en_us.json"
+
           echo "=== TeaVM resource classpath verified ==="
           ls -lh "$game_classes/version.json" "$game_classes/assets/minecraft/lang/en_us.json"
-          cd "$GITHUB_WORKSPACE"
 
-          single_html_script="ModdedClientSource/wasm-toolchain/build-single-html.js"
+          single_html_script="$modded_root/wasm-toolchain/build-single-html.js"
           if [ ! -f "$single_html_script" ]; then
-            echo "::error::The built client does not contain wasm-toolchain/build-single-html.js."
+            echo "::error::The generated client does not contain wasm-toolchain/build-single-html.js."
             echo "=== wasm-toolchain files found ==="
-            find ModdedClientSource -path '*/wasm-toolchain/*' -type f -print | sort || true
+            find "$modded_root" -path '*/wasm-toolchain/*' -type f -print | sort || true
             exit 1
           fi
+
           echo "Found single-HTML builder: $single_html_script"
           node --version
+
 
       - name: Build single-file HTML client
         working-directory: ModdedClientSource
