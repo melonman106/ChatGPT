@@ -178,11 +178,14 @@ jobs:
 
           cd "$build_root"
 
+          # "assemble" compiles everything and builds jars. "build" also runs
+          # :platform:test, which Gradle 9 fails because that module has test
+          # sources but no discoverable tests.
           if [ -f ./gradlew ]; then
             chmod +x ./gradlew
-            ./gradlew build --no-daemon
+            ./gradlew assemble --no-daemon
           else
-            gradle build --no-daemon
+            gradle assemble --no-daemon
           fi
 
       - name: Upload patched client source and build
