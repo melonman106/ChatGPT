@@ -103,7 +103,8 @@ jobs:
             exit 1
           fi
           resources="$game_dir/src/main/resources"
-          rm -rf "$resources"
+          # Preserve Eagler-specific skeleton resources (especially pack.png).
+          # Only overlay the official Minecraft runtime resources below.
           mkdir -p "$resources"
           temp_resources="$(mktemp -d)"
           trap 'rm -rf "$temp_resources"' EXIT
@@ -134,6 +135,9 @@ jobs:
           test -f "$resources/version.json"
           test -f "$resources/pack.mcmeta"
           test -f "$resources/assets/minecraft/lang/en_us.json"
+          test -f "$resources/pack.png"
+          echo "Preserved Eagler skeleton pack.png:"
+          ls -lh "$resources/pack.png"
           du -sh "$resources"
           find "$resources" -type f | wc -l
 
@@ -258,10 +262,9 @@ jobs:
           echo "Game module: $game_dir"
           echo "Resources:   $resources"
 
-          # create-dev's generated skeleton does not provide a normal Gradle
-          # resource source set for the runtime assets. Install the official
-          # Minecraft runtime resources into the actual game module explicitly.
-          rm -rf "$resources"
+          # Preserve Eagler-specific skeleton resources (especially pack.png).
+          # The single-HTML deploy script requires pack.png at this exact path.
+          # Only overlay the official Minecraft runtime resources below.
           mkdir -p "$resources"
 
           temp_resources="$(mktemp -d)"
@@ -298,6 +301,7 @@ jobs:
           test -f "$game_classes/version.json"
           test -f "$game_classes/pack.mcmeta"
           test -f "$game_classes/assets/minecraft/lang/en_us.json"
+          test -f "$game_classes/pack.png"
 
           echo "=== TeaVM resource classpath verified ==="
           ls -lh "$game_classes/version.json" "$game_classes/assets/minecraft/lang/en_us.json"
