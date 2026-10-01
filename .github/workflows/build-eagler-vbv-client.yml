@@ -19,152 +19,115 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-java@v4
+      - name: Setup Java 17
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
 
-      - name: Extract patcher archive
+      - name: Download pinned Eaglercraft 26.2 u1 Setup
+        run: |
+          set -euo pipefail
+          mkdir -p build-input
+          curl -fL --retry 3 \
+            -o build-input/Eaglercraft-26.2-u1-Setup.jar \
+            "https://github.com/melonman106/ChatGPT/releases/download/Modded/Eaglercraft-26.2-u1-Setup.jar"
+
+          echo "57bfcacdf24310d48f462a9a508fe2a59acad8487a8de34bb40963c46183c1bd  build-input/Eaglercraft-26.2-u1-Setup.jar" \
+            | sha256sum -c -
+
+      - name: Install complete Eaglercraft patcher kit
         run: |
           set -euo pipefail
           rm -rf Eaglercraft-26.2-u1
-          mkdir -p Eaglercraft-26.2-u1
-          tar -xzf eaglercraft-26.2-patcher-main.tar.gz -C Eaglercraft-26.2-u1
+          java -jar build-input/Eaglercraft-26.2-u1-Setup.jar \
+            --install-dir Eaglercraft-26.2-u1
 
-      - name: Locate patcher distribution root
+          test -f Eaglercraft-26.2-u1/patcher/java-cli/eagler-patcher
+          test -f Eaglercraft-26.2-u1/patcher/java-cli/eaglercraft-26.2-java-cli.jar
+
+      - name: Download official Minecraft 26.2 client
         run: |
           set -euo pipefail
+          curl -fL --retry 3 \
+            -o build-input/minecraft-26.2-client.jar \
+            "https://piston-data.mojang.com/v1/objects/2dc72797acbc1b63fc16a11c4ac393605f453754/client.jar"
 
-          # The archive contains nested executable directories. The previous
-          # workflow incorrectly selected patcher/java-cli as the root because
-          # it searched for eagler-patcher first. The real distribution root
-          # is the directory containing GUIDE.md/README.md.
-          root=$(find Eaglercraft-26.2-u1 -type f -name 'GUIDE.md' -print -quit | xargs -r dirname)
+          echo "2dc72797acbc1b63fc16a11c4ac393605f453754  build-input/minecraft-26.2-client.jar" \
+            | sha1sum -c -
 
-          if [ -z "$root" ]; then
-            root=$(find Eaglercraft-26.2-u1 -type f -name 'README.md' -print -quit | xargs -r dirname)
-          fi
-
-          if [ -z "$root" ]; then
-            echo "::error::Could not locate the Eaglercraft patcher distribution root."
-            find Eaglercraft-26.2-u1 -maxdepth 5 -type f | sort
-            exit 1
-          fi
-
-          echo "EAGLER_PATCHER_ROOT=$root" >> "$GITHUB_ENV"
-          echo "Patcher distribution root: $root"
-
-      - name: Inspect patcher documentation and CLI
+      - name: Inspect patcher CLI
         run: |
           set -euo pipefail
-          cd "$EAGLER_PATCHER_ROOT"
+          cd Eaglercraft-26.2-u1/patcher/java-cli
+          chmod +x ./eagler-patcher
+          ./eagler-patcher --help 2>&1 || true
+          ./eagler-patcher create-dev --help 2>&1 || true
 
-          echo "=== DISTRIBUTION ROOT ==="
-          pwd
+      - name: Create editable Eaglercraft source project
+        run: |
+          set -euo pipefail
+          cd Eaglercraft-26.2-u1/patcher/java-cli
 
-          echo "=== GUIDE.md ==="
-          if [ -f GUIDE.md ]; then
-            cat GUIDE.md
-          else
-            echo "GUIDE.md not present"
-          fi
+          chmod +x ./eagler-patcher
 
-          echo "=== README.md ==="
-          if [ -f README.md ]; then
-            cat README.md
-          else
-            echo "README.md not present"
-          fi
+          # The complete Setup kit contains the pinned Java CLI and all required
+          # Eaglercraft inputs. The source-only tarball does not, which is why
+          # the previous workflow could never create a project.
+          #
+          # Try the CLI forms used by patcher builds across revisions. Every
+          # attempt gets a fresh output directory and is accepted only when it
+          # actually produces a Gradle source tree.
+          rm -rf "$GITHUB_WORKSPACE/generated-client"
 
-          echo "=== PATCHER TREE ==="
-          find . -maxdepth 5 -type f | sort | sed -n '1,2000p'
+          attempts=(
+            "create-dev --minecraft-jar $GITHUB_WORKSPACE/build-input/minecraft-26.2-client.jar --output $GITHUB_WORKSPACE/generated-client"
+            "create-dev --client-jar $GITHUB_WORKSPACE/build-input/minecraft-26.2-client.jar --output $GITHUB_WORKSPACE/generated-client"
+            "create-dev --input $GITHUB_WORKSPACE/build-input/minecraft-26.2-client.jar --output $GITHUB_WORKSPACE/generated-client"
+            "create-dev $GITHUB_WORKSPACE/build-input/minecraft-26.2-client.jar $GITHUB_WORKSPACE/generated-client"
+            "create-dev $GITHUB_WORKSPACE/build-input/minecraft-26.2-client.jar --output $GITHUB_WORKSPACE/generated-client"
+          )
 
-          echo "=== CLI HELP: wrapper scripts ==="
-          for cli in \
-            ./eagler-patcher \
-            ./patcher/eagler-patcher \
-            ./patcher/java-cli/eagler-patcher \
-            ./patcher/java-cli/eagler-patcher.cmd
-          do
-            if [ -f "$cli" ]; then
-              echo "--- $cli ---"
-              chmod +x "$cli" 2>/dev/null || true
-              "$cli" --help 2>&1 || true
-              "$cli" help 2>&1 || true
+          for command in "${attempts[@]}"; do
+            echo "=== Trying: ./eagler-patcher $command ==="
+            rm -rf "$GITHUB_WORKSPACE/generated-client"
+            set +e
+            ./eagler-patcher $command
+            status=$?
+            set -e
+
+            if [ "$status" -eq 0 ] && find "$GITHUB_WORKSPACE/generated-client" -type f \
+                \( -name 'gradlew' -o -name 'build.gradle' -o -name 'build.gradle.kts' \) \
+                -print -quit | grep -q .; then
+              echo "Eaglercraft source project created successfully."
+              exit 0
             fi
           done
 
-          echo "=== CLI HELP: Java CLI jars ==="
-          while IFS= read -r jar; do
-            echo "--- $jar ---"
-            java -jar "$jar" --help 2>&1 || true
-            java -jar "$jar" help 2>&1 || true
-          done < <(find . -type f -name '*java-cli*.jar' -o -name '*cli*.jar' | sort)
-
-      - name: Generate Eaglercraft source tree
-        run: |
-          set -euo pipefail
-          cd "$EAGLER_PATCHER_ROOT"
-
-          # Some patcher distributions include a generated Gradle tree; use it
-          # if present. Otherwise the documentation/CLI inspection above is
-          # intentionally the source of truth for the generation command.
-          generated=$(find . -type f \( -name 'gradlew' -o -name 'build.gradle' -o -name 'build.gradle.kts' \) -print -quit || true)
-
-          if [ -n "$generated" ]; then
-            echo "Generated build tree already present: $generated"
-            exit 0
-          fi
-
-          # Try the standard Java CLI entry points with the documented command
-          # forms used by Eaglercraft patcher distributions. Each attempt is
-          # isolated so a newer CLI can reject forms it does not support.
-          cli=""
-          if [ -f ./patcher/java-cli/eaglercraft-26.2-java-cli.jar ]; then
-            cli=./patcher/java-cli/eaglercraft-26.2-java-cli.jar
-          elif [ -f ./eaglercraft-26.2-java-cli.jar ]; then
-            cli=./eaglercraft-26.2-java-cli.jar
-          fi
-
-          if [ -n "$cli" ]; then
-            echo "Using Java CLI: $cli"
-
-            # The patcher is expected to materialize its source skeleton from
-            # the bundled source-patch/skeleton inputs. Do not hide errors.
-            for command in \
-              "setup" \
-              "init" \
-              "uncompile" \
-              "decompile" \
-              "generate"
-            do
-              echo "=== Trying CLI command: $command ==="
-              java -jar "$cli" "$command" 2>&1 || true
-
-              generated=$(find . -type f \( -name 'gradlew' -o -name 'build.gradle' -o -name 'build.gradle.kts' \) -print -quit || true)
-              if [ -n "$generated" ]; then
-                echo "Source tree generated: $generated"
-                exit 0
-              fi
-            done
-          fi
-
-          echo "::error::The patcher root is now correct, but no source-generation command produced a Gradle source tree."
-          echo "::error::The complete GUIDE.md/README.md and CLI output are printed above; the next run will expose the exact command required by this patcher build."
+          echo "::error::create-dev did not produce a Gradle source project."
+          echo "::error::The exact CLI usage is printed by the Inspect patcher CLI step."
           exit 1
 
       - name: Apply native VBV patch
         run: |
           set -euo pipefail
-          python3 ViaBackport26.2-ClientSide/patch/apply_vbv_patch.py "$GITHUB_WORKSPACE"
+          python3 ViaBackport26.2-ClientSide/patch/apply_vbv_patch.py generated-client
 
-      - name: Build generated client
+      - name: Setup Java 25 for Eaglercraft build
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: Build generated Eaglercraft client
         run: |
           set -euo pipefail
-          build_root=$(find "$EAGLER_PATCHER_ROOT" -type f \( -name 'gradlew' -o -name 'build.gradle' -o -name 'build.gradle.kts' \) -print -quit | xargs -r dirname)
+          build_root=$(find generated-client -type f \
+            \( -name 'gradlew' -o -name 'build.gradle' -o -name 'build.gradle.kts' \) \
+            -print -quit | xargs -r dirname)
 
           if [ -z "$build_root" ]; then
-            echo "::error::No generated Gradle client exists."
+            echo "::error::No generated Gradle client exists after create-dev."
             exit 1
           fi
 
@@ -177,8 +140,9 @@ jobs:
             gradle build --no-daemon
           fi
 
-      - name: Upload built client
+      - name: Upload patched client source and build
         uses: actions/upload-artifact@v4
         with:
           name: ViaBackport26.2-ClientSide
-          path: Eaglercraft-26.2-u1
+          path: |
+            generated-client
