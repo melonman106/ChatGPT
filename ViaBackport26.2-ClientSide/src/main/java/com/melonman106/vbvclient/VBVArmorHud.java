@@ -8,23 +8,21 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 
 public final class VBVArmorHud {
-    private static final int SLOT_SIZE = 20;
-    private static final int PANEL_WIDTH = 62;
-    private static final int PANEL_HEIGHT = SLOT_SIZE * 4;
-    private static final int HOTBAR_OFFSET = 91;
-    private static final int GAP = 4;
+    private static final int STEP = 20;
+    private static final int SIZE = 22;
+    private static final int HOTBAR_OFFSET = 98;
 
     private VBVArmorHud() {}
 
+    /**
+     * Native Eaglercraft 26.2 version of the useful Armor HUD behavior from
+     * Uku's Armor HUD 26.2. Four armor slots are shown vertically to the
+     * left of the hotbar: helmet, chestplate, leggings, boots.
+     */
     public static void render(GuiGraphicsExtractor graphics) {
         Minecraft minecraft = Minecraft.getInstance();
         if (!(minecraft.getCameraEntity() instanceof Player player)) return;
         if (minecraft.screen != null) return;
-
-        int left = graphics.guiWidth() / 2 - HOTBAR_OFFSET - PANEL_WIDTH - GAP;
-        int top = graphics.guiHeight() - PANEL_HEIGHT - 2;
-
-        graphics.fill(left, top, left + PANEL_WIDTH, top + PANEL_HEIGHT, 0x66000000);
 
         EquipmentSlot[] slots = {
             EquipmentSlot.HEAD,
@@ -33,27 +31,40 @@ public final class VBVArmorHud {
             EquipmentSlot.FEET
         };
 
+        int left = graphics.guiWidth() / 2 - HOTBAR_OFFSET - SIZE;
+        int top = graphics.guiHeight() - (SIZE + STEP * (slots.length - 1)) - 2;
+
         for (int i = 0; i < slots.length; i++) {
-            int y = top + i * SLOT_SIZE;
             ItemStack stack = player.getItemBySlot(slots[i]);
+            int x = left;
+            int y = top + STEP * i;
 
-            graphics.outline(left, y, SLOT_SIZE, SLOT_SIZE, 0x99FFFFFF);
+            // Keep the widget visually close to Uku's Armor HUD slot size.
+            graphics.fill(x, y, x + SIZE, y + SIZE, 0x66000000);
+            graphics.outline(x, y, SIZE, SIZE, 0x99FFFFFF);
 
-            if (!stack.isEmpty()) {
-                graphics.item(stack, left + 2, y + 2);
+            if (stack.isEmpty()) continue;
 
-                if (stack.isDamageableItem()) {
-                    int remaining = Math.max(0, stack.getMaxDamage() - stack.getDamageValue());
-                    int max = Math.max(1, stack.getMaxDamage());
-                    int percent = Math.max(0, Math.min(100, remaining * 100 / max));
+            // Render the actual equipped armor item.
+            graphics.item(stack, x + 3, y + 3);
 
-                    int color = percent > 50 ? 0xFF55FF55
-                        : percent > 20 ? 0xFFFFFF55
-                        : 0xFFFF5555;
+            // Render remaining durability, matching the 26.2 source's
+            // numeric durability behavior.
+            if (stack.isDamageableItem()) {
+                int remaining = Math.max(0, stack.getMaxDamage() - stack.getDamageValue());
+                int max = Math.max(1, stack.getMaxDamage());
+                int percent = Math.max(0, Math.min(100, remaining * 100 / max));
 
-                    Font font = minecraft.font;
-                    graphics.text(font, Integer.toString(remaining), left + SLOT_SIZE + 4, y + 6, color, true);
+                int color = stack.getBarColor();
+                if (percent <= 20) {
+                    color = 0xFFFF5555;
+                } else if (percent <= 50) {
+                    color = 0xFFFFFF55;
                 }
+
+                Font font = minecraft.font;
+                String durability = Integer.toString(remaining);
+                graphics.text(font, durability, x + SIZE + 2, y + 7, color, true);
             }
         }
     }
