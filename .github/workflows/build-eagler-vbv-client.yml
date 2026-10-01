@@ -187,17 +187,14 @@ jobs:
           # generated Eaglercraft project. The standalone TeaVM linker reads
           # resources from game.jar, so put the complete official 26.2 runtime
           # resource tree directly into the assembled game JAR.
-          build_root=$(find generated-client -type f \\
-            \\( -name 'gradlew' -o -name 'build.gradle' -o -name 'build.gradle.kts' \\\) \\
-            -print -quit | xargs -r dirname)
+          build_root=$(find generated-client -type f \( -name 'gradlew' -o -name 'build.gradle' -o -name 'build.gradle.kts' \) -print -quit | xargs -r dirname)
 
           if [ -z "$build_root" ]; then
             echo "::error::Could not locate the generated Eaglercraft build root."
             exit 1
           fi
 
-          game_jar=$(find "$build_root/game/build/libs" -maxdepth 1 -type f -name '*.jar' \\
-            ! -name '*-sources.jar' ! -name '*-dev.jar' -print -quit)
+          game_jar=$(find "$build_root/game/build/libs" -maxdepth 1 -type f -name '*.jar' ! -name '*-sources.jar' ! -name '*-dev.jar' -print -quit)
 
           if [ -z "$game_jar" ]; then
             echo "::error::Could not locate the assembled game JAR."
