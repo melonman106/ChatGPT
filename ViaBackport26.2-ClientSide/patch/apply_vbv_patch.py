@@ -260,6 +260,57 @@ if open_name is None:
     raise SystemExit("Could not find a method on Minecraft that takes a single Screen")
 print("Screen-opening method on Minecraft:", open_name, "(candidates:", screen_methods, ")")
 
+# ---------------------------------------------------------------------------
+# 4) Native Armor HUD. Minecraft 26.2 uses the extraction-based Hud API, so
+#    inject our renderer into Hud.extractRenderState.
+# ---------------------------------------------------------------------------
+HUD_CALL = "com.melonman106.vbvclient.VBVArmorHud.render(graphics);"
+
+def find_method_end(text, method_start):
+    brace = text.find("{", method_start)
+    if brace < 0:
+        return None
+    depth = 0
+    i = brace
+    while i < len(text):
+        if text[i] == "{":
+            depth += 1
+        elif text[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return i
+        i += 1
+    return None
+
+hud_path = None
+hud_src = None
+for p, s in java_files():
+    if re.search(r"class\s+Hud\b", s) and "GuiGraphicsExtractor" in s and "extractRenderState" in s:
+        hud_path, hud_src = p, s
+        break
+
+if hud_path is None:
+    raise SystemExit("Hud.java with GuiGraphicsExtractor/extractRenderState was not identified")
+
+if HUD_CALL in hud_src:
+    print("VBV Armor HUD hook already present.")
+else:
+    hud_match = re.search(
+        r"(?:public|private|protected)\s+void\s+extractRenderState\s*"
+        r"\(\s*GuiGraphicsExtractor\s+(\w+)\s*,\s*DeltaTracker\s+\w+\s*\)",
+        hud_src
+    )
+    if not hud_match:
+        raise SystemExit("Hud.extractRenderState signature was not identified")
+    end = find_method_end(hud_src, hud_match.start())
+    if end is None:
+        raise SystemExit("Could not find end of Hud.extractRenderState")
+    graphics_name = hud_match.group(1)
+    hud_src = hud_src[:end] + "\n        com.melonman106.vbvclient.VBVArmorHud.render(" + graphics_name + ");\n    " + hud_src[end:]
+    hud_path.write_text(hud_src, encoding="utf-8")
+    print("Inserted Armor HUD hook into", hud_path)
+
+
 nav = DEST / "VBVNav.java"
 nav_src = nav.read_text(encoding="utf-8")
 nav.write_text(nav_src.replace(".setScreen(screen)", f".{open_name}(screen)"), encoding="utf-8")
