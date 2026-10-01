@@ -1,0 +1,6 @@
+{
+  "id": "connected-glass",
+  "name": "Connected Glass",
+  "description": "Optional glass texture pack for a cleaner connected-glass appearance.",
+  "pack": "vbvclient/mods/connected-glass/pack.png"
+}
