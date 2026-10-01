@@ -1,14 +1,14 @@
 package com.melonman106.vbvclient;
 
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 
+/** Label-only details page; see VBVModsScreen for why it uses disabled Buttons. */
 public final class VBVModDetailsScreen extends Screen {
     private final Screen parent;
     private final VBVModInfo info;
+    private int labelY;
 
     public VBVModDetailsScreen(Screen parent, VBVModInfo info) {
         super(Component.literal(info.name()));
@@ -16,25 +16,35 @@ public final class VBVModDetailsScreen extends Screen {
         this.info = info;
     }
 
-    @Override
-    protected void init() {
-        super.init();
-        addRenderableWidget(Button.builder(
-            Component.literal("Back"),
-            button -> Minecraft.getInstance().setScreen(parent)
-        ).bounds(width / 2 - 50, height - 30, 100, 20).build());
+    private void label(String text) {
+        Button b = Button.builder(Component.literal(text), button -> { })
+            .bounds(20, labelY, Math.min(400, width - 40), 20).build();
+        b.active = false;
+        addRenderableWidget(b);
+        labelY += 24;
     }
 
     @Override
-    public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
-        renderBackground(graphics, mouseX, mouseY, partialTick);
-        int x = 20;
-        int y = 24;
-        graphics.drawString(font, info.name(), x, y, 0xFFFFFF);
-        graphics.drawString(font, "ID: " + info.id(), x, y += 18, 0xDDDDDD);
-        graphics.drawString(font, "Version: " + info.version(), x, y += 18, 0xDDDDDD);
-        graphics.drawString(font, "Authors: " + info.authors(), x, y += 18, 0xDDDDDD);
-        graphics.drawString(font, info.description(), x, y + 30, 0xBBBBBB);
-        super.render(graphics, mouseX, mouseY, partialTick);
+    protected void init() {
+        super.init();
+        labelY = 16;
+        label(info.name());
+        label("ID: " + info.id());
+        label("Version: " + info.version());
+        label("Authors: " + info.authors());
+        String text = String.valueOf(info.description());
+        while (!text.isEmpty() && labelY < height - 50) {
+            int cut = Math.min(text.length(), 60);
+            if (cut < text.length()) {
+                int space = text.lastIndexOf(' ', cut);
+                if (space > 20) cut = space;
+            }
+            label(text.substring(0, cut).trim());
+            text = text.substring(cut).trim();
+        }
+        addRenderableWidget(Button.builder(
+            Component.literal("Back"),
+            button -> VBVNav.open(parent)
+        ).bounds(width / 2 - 50, height - 30, 100, 20).build());
     }
 }
