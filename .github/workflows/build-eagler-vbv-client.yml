@@ -59,6 +59,10 @@ jobs:
             exit 1
           fi
 
+          # Keep a stable top-level entrypoint for older helper steps and local scripts.
+          # The Setup JAR may place the real patcher deeper in the installed kit.
+          ln -sf "$patcher" Eaglercraft-26.2-u1/eagler-patcher
+
           patcher_root="$(dirname "$patcher")"
           echo "EAGLER_PATCHER_ROOT=$patcher_root" >> "$GITHUB_ENV"
           echo "EAGLER_PATCHER=$patcher" >> "$GITHUB_ENV"
