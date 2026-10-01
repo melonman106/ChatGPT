@@ -107,7 +107,15 @@ jobs:
           # create-dev can place the Eagler pack image outside the Gradle
           # resource directory, so locate it before overlaying Minecraft assets.
           mkdir -p "$resources"
-          pack_png="$(find "$game_dir" -type f -name 'pack.png' -print -quit || true)"
+          pack_png=""
+          # The repository provides the Eaglercraft pack image explicitly.
+          # Prefer it so the final deploy step always receives the required pack.png.
+          if [ -f "$GITHUB_WORKSPACE/ViaBackport26.2-ClientSide/pack.png" ]; then
+            pack_png="$GITHUB_WORKSPACE/ViaBackport26.2-ClientSide/pack.png"
+          fi
+          if [ -z "$pack_png" ]; then
+            pack_png="$(find "$game_dir" -type f -name 'pack.png' -print -quit || true)"
+          fi
           if [ -z "$pack_png" ]; then
             pack_png="$(find "$GITHUB_WORKSPACE/generated-client" -type f -path '*/src/main/resources/pack.png' -print -quit || true)"
           fi
