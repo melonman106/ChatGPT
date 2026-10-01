@@ -111,6 +111,9 @@ jobs:
           if [ -z "$pack_png" ]; then
             pack_png="$(find "$GITHUB_WORKSPACE/generated-client" -type f -path '*/src/main/resources/pack.png' -print -quit || true)"
           fi
+          if [ -z "$pack_png" ] && [ -f "$GITHUB_WORKSPACE/generated-client/source/pack.png" ]; then
+            pack_png="$GITHUB_WORKSPACE/generated-client/source/pack.png"
+          fi
           if [ -z "$pack_png" ]; then
             pack_png="$(find "$EAGLER_PATCHER_ROOT" -type f -name 'pack.png' -print -quit || true)"
           fi
