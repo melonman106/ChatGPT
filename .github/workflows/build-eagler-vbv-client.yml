@@ -28,47 +28,33 @@ jobs:
       - name: Download and extract U1 portable-kit.zip
         run: |
           set -euo pipefail
-
           mkdir -p build-input/u1-portable-kit
-
-          curl -fL --retry 3             -o build-input/portable-kit.zip             "https://github.com/melonman106/ChatGPT/releases/download/Cleit/portable-kit.zip"
-
+          curl -fL --retry 3 -o build-input/portable-kit.zip "https://github.com/melonman106/ChatGPT/releases/download/Cleit/portable-kit.zip"
           expected="974c88e396dabebced363aa30bc518e159b0a06d4f430dde8a06525154328d19"
           actual="$(sha256sum build-input/portable-kit.zip | awk '{print $1}')"
-
           echo "Expected SHA-256: $expected"
           echo "Actual SHA-256:   $actual"
-
           test "$actual" = "$expected"
-
           unzip -q build-input/portable-kit.zip -d build-input/u1-portable-kit
-
           echo "=== Extracted U1 portable kit ==="
           find build-input/u1-portable-kit -type f -print | sort
-
           patcher="$(find build-input/u1-portable-kit -type f -name 'eagler-patcher' -print -quit || true)"
           cli_jar="$(find build-input/u1-portable-kit -type f -name 'eaglercraft-26.2-java-cli.jar' -print -quit || true)"
-
           if [ -z "$patcher" ]; then
             echo "::error::portable-kit.zip does not contain eagler-patcher."
             exit 1
           fi
-
           if [ -z "$cli_jar" ]; then
             echo "::error::portable-kit.zip does not contain eaglercraft-26.2-java-cli.jar."
             exit 1
           fi
-
           patcher="$(realpath "$patcher")"
           cli_jar="$(realpath "$cli_jar")"
           patcher_root="$(dirname "$patcher")"
-
           chmod +x "$patcher"
-
           echo "EAGLER_PATCHER_ROOT=$patcher_root" >> "$GITHUB_ENV"
           echo "EAGLER_PATCHER=$patcher" >> "$GITHUB_ENV"
           echo "EAGLER_JAVA_CLI=$cli_jar" >> "$GITHUB_ENV"
-
           echo "Using portable-kit patcher:"
           echo "  root=$patcher_root"
           echo "  patcher=$patcher"
@@ -77,20 +63,16 @@ jobs:
       - name: Download official Minecraft 26.2 client
         run: |
           set -euo pipefail
-          curl -fL --retry 3             -o build-input/minecraft-26.2-client.jar             "https://piston-data.mojang.com/v1/objects/2dc72797acbc1b63fc16a11c4ac393605f453754/client.jar"
-
-          echo "2dc72797acbc1b63fc16a11c4ac393605f453754  build-input/minecraft-26.2-client.jar"             | sha1sum -c -
+          curl -fL --retry 3 -o build-input/minecraft-26.2-client.jar "https://piston-data.mojang.com/v1/objects/2dc72797acbc1b63fc16a11c4ac393605f453754/client.jar"
+          echo "2dc72797acbc1b63fc16a11c4ac393605f453754  build-input/minecraft-26.2-client.jar" | sha1sum -c -
 
       - name: Inspect extracted U1 patcher
         run: |
           set -euo pipefail
-
           echo "=== Portable kit root ==="
           find "$EAGLER_PATCHER_ROOT" -maxdepth 3 -type f | sort
-
           echo "=== Patcher help ==="
           "$EAGLER_PATCHER" --help 2>&1 || true
-
           echo "=== create-dev help ==="
           "$EAGLER_PATCHER" create-dev --help 2>&1 || true
 
@@ -98,13 +80,10 @@ jobs:
         run: |
           set -euo pipefail
           rm -rf "$GITHUB_WORKSPACE/generated-client"
-
           cd "$EAGLER_PATCHER_ROOT"
           chmod +x "$EAGLER_PATCHER"
-
           "$EAGLER_PATCHER" create-dev             --jar "$GITHUB_WORKSPACE/build-input/minecraft-26.2-client.jar"             --output "$GITHUB_WORKSPACE/generated-client"             --vineflower "$EAGLER_PATCHER_ROOT/inputs/vineflower-1.12.0.jar"             --java17 "$JAVA_HOME/bin/java"             --patch-bundle "$EAGLER_PATCHER_ROOT/source-patch-bundle.zip"             --expected-bundle-sha256 fd944e9cabbebbf4bddce8a39e1b233b3c7d0cd4f860f9cae37550a3fcfa8b02             --project-skeleton "$EAGLER_PATCHER_ROOT/project-skeleton-v5-teavm-runtime-verified.zip"             --expected-skeleton-sha256 3656a83ed8187e2d859612c566f3aa73e242bf1e4633990c5bb4929e0a846c94
-
-          if ! find "$GITHUB_WORKSPACE/generated-client" -type f               \( -name 'gradlew' -o -name 'build.gradle' -o -name 'build.gradle.kts' \)               -print -quit | grep -q .; then
+          if ! find "$GITHUB_WORKSPACE/generated-client" -type f \( -name 'gradlew' -o -name 'build.gradle' -o -name 'build.gradle.kts' \) -print -quit | grep -q .; then
             echo "::error::create-dev completed but did not produce a Gradle source project."
             find "$GITHUB_WORKSPACE/generated-client" -maxdepth 5 -type f | sort | head -1000
             exit 1
@@ -118,47 +97,29 @@ jobs:
       - name: Restore Minecraft runtime resources
         run: |
           set -euo pipefail
-
-          # create-dev decompiles the client code, but the standalone TeaVM linker
-          # also needs the original Minecraft runtime resources on the game JAR
-          # classpath (version.json, language files, textures, sounds, etc.).
-          # The failed standalone link proved these were missing: game:processResources
-          # reported NO-SOURCE and the linker could not find version.json or en_us.json.
           game_dir="$(find generated-client -type d -name game -print -quit)"
           if [ -z "$game_dir" ]; then
             echo "::error::Could not locate the generated game module."
             exit 1
           fi
-
           resources="$game_dir/src/main/resources"
           rm -rf "$resources"
           mkdir -p "$resources"
-
           temp_resources="$(mktemp -d)"
           trap 'rm -rf "$temp_resources"' EXIT
-
           unzip -q build-input/minecraft-26.2-client.jar -d "$temp_resources"
-
-          # Copy only runtime resources. Do not copy the original compiled Java
-          # classes into the Gradle resources directory.
-          #
-          # The 26.2 Mojang client JAR is not guaranteed to contain pack.mcmeta.
-          # The TeaVM linker does not need Mojang's original metadata, so create
-          # a minimal valid 26.2 header when it is absent.
           for path in version.json assets; do
             if [ ! -e "$temp_resources/$path" ]; then
               echo "::error::Official client JAR is missing required runtime resource: $path"
               exit 1
             fi
           done
-
           if [ -e "$temp_resources/pack.mcmeta" ]; then
             echo "Official client JAR contains pack.mcmeta."
           else
             echo "Official client JAR has no pack.mcmeta; creating a minimal 26.2 header."
             printf '%s\n' '{' '  "pack": {' '    "description": "Minecraft 26.2",' '    "min_format": 88,' '    "max_format": 88' '  }' '}' > "$temp_resources/pack.mcmeta"
           fi
-
           echo "=== Restoring runtime resources ==="
           cp -a "$temp_resources/version.json" "$resources/"
           cp -a "$temp_resources/pack.mcmeta" "$resources/"
@@ -168,7 +129,6 @@ jobs:
           else
             echo "Official client JAR has no data/ directory; skipping it."
           fi
-
           echo "=== Restored runtime resources ==="
           printf 'game module: %s\nresources: %s\n' "$game_dir" "$resources"
           test -f "$resources/version.json"
@@ -176,6 +136,7 @@ jobs:
           test -f "$resources/assets/minecraft/lang/en_us.json"
           du -sh "$resources"
           find "$resources" -type f | wc -l
+
       - name: Setup Java 25 for Eaglercraft build
         uses: actions/setup-java@v5
         with:
@@ -185,71 +146,67 @@ jobs:
       - name: Build generated Eaglercraft client
         run: |
           set -euo pipefail
-          build_root=$(find generated-client -type f             \( -name 'gradlew' -o -name 'build.gradle' -o -name 'build.gradle.kts' \)             -print -quit | xargs -r dirname)
-
+          build_root="$(find generated-client -type f -name 'gradlew' -print -quit | xargs -r dirname)"
           if [ -z "$build_root" ]; then
-            echo "::error::No generated Gradle client exists after create-dev."
+            echo "::error::No generated Gradle client root (gradlew) exists after create-dev."
+            find generated-client -maxdepth 4 -type f \( -name 'gradlew' -o -name 'build.gradle' -o -name 'build.gradle.kts' \) -print | sort
             exit 1
           fi
-
           cd "$build_root"
-
-          if [ -f ./gradlew ]; then
-            chmod +x ./gradlew
-            ./gradlew assemble --no-daemon
-          else
-            gradle assemble --no-daemon
-          fi
+          chmod +x ./gradlew
+          ./gradlew assemble --no-daemon
 
       - name: Inject Minecraft runtime resources into game JAR
         run: |
           set -euo pipefail
-
-          # Gradle still reports game:processResources as NO-SOURCE in this
-          # generated Eaglercraft project. The standalone TeaVM linker reads
-          # resources from game.jar, so put the complete official 26.2 runtime
-          # resource tree directly into the assembled game JAR.
-          build_root=$(find generated-client -type f \( -name 'gradlew' -o -name 'build.gradle' -o -name 'build.gradle.kts' \) -print -quit | xargs -r dirname)
-
+          build_root="$(find generated-client -type f -name 'gradlew' -print -quit | xargs -r dirname)"
           if [ -z "$build_root" ]; then
-            echo "::error::Could not locate the generated Eaglercraft build root."
+            echo "::error::Could not locate the generated Eaglercraft build root (gradlew)."
             exit 1
           fi
-
-          game_jar=$(find "$build_root/game/build/libs" -maxdepth 1 -type f -name '*.jar' ! -name '*-sources.jar' ! -name '*-dev.jar' -print -quit)
-
+          game_libs="$build_root/game/build/libs"
+          if [ ! -d "$game_libs" ]; then
+            echo "::error::Game build output directory does not exist: $game_libs"
+            find "$build_root" -maxdepth 5 -type d -path '*/game/build/*' -print | sort || true
+            exit 1
+          fi
+          game_jar="$(find "$game_libs" -maxdepth 1 -type f -name '*.jar' ! -name '*-sources.jar' ! -name '*-dev.jar' -print -quit)"
           if [ -z "$game_jar" ]; then
-            echo "::error::Could not locate the assembled game JAR."
-            find "$build_root/game/build" -maxdepth 4 -type f -name '*.jar' -print || true
+            echo "::error::Could not locate the assembled game JAR in: $game_libs"
+            find "$game_libs" -maxdepth 1 -type f -print | sort || true
             exit 1
           fi
-
           temp_resources="$(mktemp -d)"
           trap 'rm -rf "$temp_resources"' EXIT
           unzip -q build-input/minecraft-26.2-client.jar -d "$temp_resources"
 
-          for path in version.json pack.mcmeta assets; do
-            test -e "$temp_resources/$path"
+          for path in version.json assets; do
+            if [ ! -e "$temp_resources/$path" ]; then
+              echo "::error::Official client JAR is missing required runtime resource: $path"
+              exit 1
+            fi
           done
+          if [ -e "$temp_resources/pack.mcmeta" ]; then
+            echo "Official client JAR contains pack.mcmeta."
+          else
+            echo "Official client JAR has no pack.mcmeta; recreating the same minimal 26.2 header used for game resources."
+            printf '%s\n' '{' '  "pack": {' '    "description": "Minecraft 26.2",' '    "min_format": 88,' '    "max_format": 88' '  }' '}' > "$temp_resources/pack.mcmeta"
+          fi
 
           echo "Injecting runtime resources into: $game_jar"
-          jar --update --file "$game_jar" \
-            -C "$temp_resources" version.json \
-            -C "$temp_resources" pack.mcmeta \
-            -C "$temp_resources" assets
-
+          jar --update --file "$game_jar"             -C "$temp_resources" version.json             -C "$temp_resources" pack.mcmeta             -C "$temp_resources" assets
           if [ -e "$temp_resources/data" ]; then
             echo "Injecting official 26.2 data/ directory too."
             jar --update --file "$game_jar" -C "$temp_resources" data
           else
             echo "No data/ directory in client JAR; skipping it."
           fi
+
           echo "=== Required resources in game.jar ==="
           jar --list --file "$game_jar" | grep -E '^(version.json|pack.mcmeta|assets/minecraft/lang/en_us.json|assets/)' | head -30
           jar --list --file "$game_jar" | grep -qx 'version.json'
           jar --list --file "$game_jar" | grep -qx 'pack.mcmeta'
           jar --list --file "$game_jar" | grep -qx 'assets/minecraft/lang/en_us.json'
-
           echo "=== game.jar size ==="
           ls -lh "$game_jar"
 
@@ -261,30 +218,21 @@ jobs:
       - name: Prepare ModdedClientSource
         run: |
           set -euo pipefail
-
           rm -rf ModdedClientSource
-
-          build_root=$(find generated-client -type f \
-            \( -name 'gradlew' -o -name 'build.gradle' -o -name 'build.gradle.kts' \) \
-            -print -quit | xargs -r dirname)
-
+          build_root="$(find generated-client -type f -name 'gradlew' -print -quit | xargs -r dirname)"
           if [ -z "$build_root" ]; then
-            echo "::error::Could not locate the generated Eaglercraft build root."
+            echo "::error::Could not locate the generated Eaglercraft build root (gradlew)."
             exit 1
           fi
-
           mkdir -p ModdedClientSource
           cp -a "$build_root"/. ModdedClientSource/
-
           single_html_script="ModdedClientSource/wasm-toolchain/build-single-html.js"
-
           if [ ! -f "$single_html_script" ]; then
             echo "::error::The built client does not contain wasm-toolchain/build-single-html.js."
             echo "=== wasm-toolchain files found ==="
             find ModdedClientSource -path '*/wasm-toolchain/*' -type f -print | sort || true
             exit 1
           fi
-
           echo "Found single-HTML builder: $single_html_script"
           node --version
 
@@ -292,18 +240,13 @@ jobs:
         working-directory: ModdedClientSource
         run: |
           set -euo pipefail
-
           test -f wasm-toolchain/build-single-html.js
-
           echo "=== build-single-html.js help ==="
           node wasm-toolchain/build-single-html.js --help 2>&1 || true
-
           echo "=== Running single-HTML builder ==="
           node wasm-toolchain/build-single-html.js
-
           echo "=== Generated HTML files ==="
           find . -type f -name '*.html' -printf '%s %p\n' | sort -nr | head -50
-
           html_count=$(find . -type f -name '*.html' | wc -l)
           if [ "$html_count" -eq 0 ]; then
             echo "::error::build-single-html.js completed but produced no HTML file."
@@ -313,19 +256,13 @@ jobs:
       - name: Select final single HTML
         run: |
           set -euo pipefail
-
           mkdir -p final-client
-
-          candidate=$(find ModdedClientSource -type f -name '*.html' \
-            -printf '%s %p\n' | sort -nr | head -1 | cut -d' ' -f2-)
-
+          candidate=$(find ModdedClientSource -type f -name '*.html' -printf '%s %p\n' | sort -nr | head -1 | cut -d' ' -f2-)
           if [ -z "$candidate" ]; then
             echo "::error::No HTML output was found."
             exit 1
           fi
-
           cp "$candidate" final-client/Eaglercraft-26.2-VBV-Modded.html
-
           echo "Final single HTML:"
           ls -lh final-client/Eaglercraft-26.2-VBV-Modded.html
 
