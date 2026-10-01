@@ -1,0 +1,6 @@
+{
+  "id": "appleskin",
+  "name": "AppleSkin",
+  "description": "Food, hunger, saturation, and exhaustion information in the client HUD.",
+  "pack": "vbvclient/mods/appleskin/pack.png"
+}
