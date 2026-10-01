@@ -228,6 +228,50 @@ jobs:
           fi
           mkdir -p ModdedClientSource
           cp -a "$build_root"/. ModdedClientSource/
+
+          # The standalone TeaVM linker resolves runtime resources from the
+          # Gradle resource/classes output, not from the post-assemble game JAR.
+          # Re-seed the copied source tree and run processResources so
+          # version.json/assets are present on the actual TeaVM classpath.
+          game_dir="$(find ModdedClientSource -type d -name game -print -quit)"
+          if [ -z "$game_dir" ]; then
+            echo "::error::Could not locate the copied game module in ModdedClientSource."
+            exit 1
+          fi
+          resources="$game_dir/src/main/resources"
+          rm -rf "$resources"
+          mkdir -p "$resources"
+          temp_resources="$(mktemp -d)"
+          trap 'rm -rf "$temp_resources"' EXIT
+          unzip -q "$GITHUB_WORKSPACE/build-input/minecraft-26.2-client.jar" -d "$temp_resources"
+          test -f "$temp_resources/version.json"
+          test -f "$temp_resources/assets/minecraft/lang/en_us.json"
+          if [ -e "$temp_resources/pack.mcmeta" ]; then
+            cp -a "$temp_resources/pack.mcmeta" "$resources/"
+          else
+            printf '%s\n' '{' '  "pack": {' '    "description": "Minecraft 26.2",' '    "min_format": 88,' '    "max_format": 88' '  }' '}' > "$resources/pack.mcmeta"
+          fi
+          cp -a "$temp_resources/version.json" "$resources/"
+          cp -a "$temp_resources/assets" "$resources/"
+          if [ -e "$temp_resources/data" ]; then
+            cp -a "$temp_resources/data" "$resources/"
+          fi
+          test -f "$resources/version.json"
+          test -f "$resources/assets/minecraft/lang/en_us.json"
+
+          cd ModdedClientSource
+          chmod +x ./gradlew
+          ./gradlew :game:processResources --no-daemon --rerun-tasks
+          game_classes="$(pwd)/game/build/classes/java/main"
+          if [ ! -f "$game_classes/version.json" ] || [ ! -f "$game_classes/assets/minecraft/lang/en_us.json" ]; then
+            echo "::error::TeaVM runtime resources were not copied into game/build/classes/java/main."
+            find "$game_classes" -maxdepth 3 -type f | head -50 || true
+            exit 1
+          fi
+          echo "=== TeaVM resource classpath verified ==="
+          ls -lh "$game_classes/version.json" "$game_classes/assets/minecraft/lang/en_us.json"
+          cd "$GITHUB_WORKSPACE"
+
           single_html_script="ModdedClientSource/wasm-toolchain/build-single-html.js"
           if [ ! -f "$single_html_script" ]; then
             echo "::error::The built client does not contain wasm-toolchain/build-single-html.js."
