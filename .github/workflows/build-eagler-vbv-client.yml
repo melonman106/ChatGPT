@@ -156,15 +156,7 @@ jobs:
             echo "Official client JAR contains pack.mcmeta."
           else
             echo "Official client JAR has no pack.mcmeta; creating a minimal 26.2 header."
-            cat > "$temp_resources/pack.mcmeta" <<'EOF'
-{
-  "pack": {
-    "description": "Minecraft 26.2",
-    "min_format": 88,
-    "max_format": 88
-  }
-}
-EOF
+            printf '%s\n' '{' '  "pack": {' '    "description": "Minecraft 26.2",' '    "min_format": 88,' '    "max_format": 88' '  }' '}' > "$temp_resources/pack.mcmeta"
           fi
 
           echo "=== Restoring runtime resources ==="
