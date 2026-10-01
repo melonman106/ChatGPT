@@ -365,7 +365,10 @@ jobs:
           rm -rf ModdedClientSource
 
           echo "=== Artifact layout ==="
-          find checkpoint -maxdepth 5 -type f | sort | head -300
+          layout_file="$(mktemp)"
+          find checkpoint -maxdepth 5 -type f -print | sort > "$layout_file"
+          head -300 "$layout_file"
+          rm -f "$layout_file"
 
           builder="$(find checkpoint -type f -path '*/wasm-toolchain/build-single-html.js' -print -quit || true)"
           if [ -z "$builder" ]; then
@@ -373,10 +376,12 @@ jobs:
             exit 1
           fi
 
-          artifact_root="$(dirname "$(dirname "$(dirname "$builder")")")"
-          # If the artifact was downloaded without its original top-level
-          # directory, artifact_root is the actual project root. Otherwise
-          # it is checkpoint/ModdedClientSource.
+          # build-single-html.js is directly inside wasm-toolchain, so its
+          # parent is the actual project root in this checkpoint.
+          artifact_root="$(dirname "$(dirname "$builder")")"
+          # The artifact is downloaded under checkpoint/, with the project
+          # files preserved at checkpoint/<project-root>. In the current
+          # artifact layout that project root is checkpoint itself.
           mkdir -p ModdedClientSource
           cp -a "$artifact_root"/. ModdedClientSource/
 
