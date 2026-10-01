@@ -37,10 +37,11 @@ jobs:
       - name: Generate Eaglercraft source
         run: |
           set -euo pipefail
-          rm -rf Eaglercraft-26.2-u1 U1-Patcher
-          mkdir -p Eaglercraft-26.2-u1 U1-Patcher
-          unzip -q build-input/Eaglercraft-26.2-u1-Setup.jar -d U1-Patcher
-          java -jar build-input/Eaglercraft-26.2-u1-Setup.jar create-dev Eaglercraft-26.2-u1
+          rm -rf Eaglercraft-26.2-u1
+          # The pinned Eaglercraft setup JAR is a patcher/installer. It does not
+          # accept the old "create-dev" command; it expects --install-dir.
+          java -jar build-input/Eaglercraft-26.2-u1-Setup.jar --install-dir Eaglercraft-26.2-u1
+          test -d Eaglercraft-26.2-u1
 
       - name: Apply native VBV patch
         run: |
