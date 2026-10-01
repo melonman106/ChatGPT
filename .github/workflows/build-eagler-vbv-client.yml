@@ -42,10 +42,6 @@ jobs:
           rm -rf Eaglercraft-26.2-u1
           mkdir -p Eaglercraft-26.2-u1
 
-          # The repository's extracted U1-Patcher contains the actual portable
-          # patcher kit. The Setup JAR is only a verifier/installer wrapper in
-          # this repository and does not reliably expose eagler-patcher at the
-          # expected top-level path.
           test -f U1-Patcher/portable-kit.zip
           unzip -q U1-Patcher/portable-kit.zip -d Eaglercraft-26.2-u1
 
@@ -53,20 +49,17 @@ jobs:
           cli_jar="$(find Eaglercraft-26.2-u1 -type f -name 'eaglercraft-26.2-java-cli.jar' -print -quit)"
 
           if [ -z "$patcher" ]; then
-            echo "::error::U1-Patcher portable kit does not contain eagler-patcher."
-            echo "=== U1-Patcher repository contents ==="
-            find U1-Patcher -maxdepth 3 -type f | sort
-            echo "=== Extracted portable kit ==="
-            find Eaglercraft-26.2-u1 -maxdepth 6 -type f | sort
+            echo "::error::No eagler-patcher was found in U1-Patcher/portable-kit.zip."
+            find Eaglercraft-26.2-u1 -type f -print | sort
             exit 1
           fi
-
           if [ -z "$cli_jar" ]; then
-            echo "::error::U1-Patcher portable kit does not contain eaglercraft-26.2-java-cli.jar."
-            find Eaglercraft-26.2-u1 -maxdepth 6 -type f | sort
+            echo "::error::No eaglercraft-26.2-java-cli.jar was found in U1-Patcher/portable-kit.zip."
+            find Eaglercraft-26.2-u1 -type f -print | sort
             exit 1
           fi
 
+          chmod +x "$patcher"
           patcher_root="$(dirname "$patcher")"
           echo "EAGLER_PATCHER_ROOT=$patcher_root" >> "$GITHUB_ENV"
           echo "EAGLER_PATCHER=$patcher" >> "$GITHUB_ENV"
