@@ -40,28 +40,32 @@ jobs:
         run: |
           set -euo pipefail
           rm -rf Eaglercraft-26.2-u1
-          java -jar build-input/Eaglercraft-26.2-u1-Setup.jar \
-            --install-dir Eaglercraft-26.2-u1
+          mkdir -p Eaglercraft-26.2-u1
 
-          # The Setup JAR itself reports a successful installation. Do not
-          # assume a fixed subdirectory: locate the files it actually installed.
+          # The repository's extracted U1-Patcher contains the actual portable
+          # patcher kit. The Setup JAR is only a verifier/installer wrapper in
+          # this repository and does not reliably expose eagler-patcher at the
+          # expected top-level path.
+          test -f U1-Patcher/portable-kit.zip
+          unzip -q U1-Patcher/portable-kit.zip -d Eaglercraft-26.2-u1
+
           patcher="$(find Eaglercraft-26.2-u1 -type f -name 'eagler-patcher' -print -quit)"
           cli_jar="$(find Eaglercraft-26.2-u1 -type f -name 'eaglercraft-26.2-java-cli.jar' -print -quit)"
 
           if [ -z "$patcher" ]; then
-            echo "::error::Installed Setup kit does not contain eagler-patcher."
-            find Eaglercraft-26.2-u1 -maxdepth 6 -type f | sort
-            exit 1
-          fi
-          if [ -z "$cli_jar" ]; then
-            echo "::error::Installed Setup kit does not contain eaglercraft-26.2-java-cli.jar."
+            echo "::error::U1-Patcher portable kit does not contain eagler-patcher."
+            echo "=== U1-Patcher repository contents ==="
+            find U1-Patcher -maxdepth 3 -type f | sort
+            echo "=== Extracted portable kit ==="
             find Eaglercraft-26.2-u1 -maxdepth 6 -type f | sort
             exit 1
           fi
 
-          # Keep a stable top-level entrypoint for older helper steps and local scripts.
-          # The Setup JAR may place the real patcher deeper in the installed kit.
-          ln -sf "$patcher" Eaglercraft-26.2-u1/eagler-patcher
+          if [ -z "$cli_jar" ]; then
+            echo "::error::U1-Patcher portable kit does not contain eaglercraft-26.2-java-cli.jar."
+            find Eaglercraft-26.2-u1 -maxdepth 6 -type f | sort
+            exit 1
+          fi
 
           patcher_root="$(dirname "$patcher")"
           echo "EAGLER_PATCHER_ROOT=$patcher_root" >> "$GITHUB_ENV"
