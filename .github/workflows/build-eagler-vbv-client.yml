@@ -15,15 +15,13 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install Java 17 and Java 25
+      - name: Install Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: |
-            17
-            25
+          java-version: "17"
 
-      - name: Install Node.js
+      - name: Install Node.js 24
         uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -38,6 +36,9 @@ jobs:
 
           expected="57bfcacdf24310d48f462a9a508fe2a59acad8487a8de34bb40963c46183c1bd"
           actual="$(sha256sum build-input/Eaglercraft-26.2-u1-Setup.jar | awk '{print $1}')"
+
+          echo "Expected SHA-256: $expected"
+          echo "Actual SHA-256:   $actual"
           test "$actual" = "$expected"
 
       - name: Prepare u1 patcher
@@ -54,7 +55,7 @@ jobs:
           echo "=== Candidate patcher JARs ==="
           find U1-Patcher -type f -name '*.jar' -print | sort
 
-      - name: Try generating the editable 26.2 u1 client source
+      - name: Generate editable 26.2 u1 client source
         shell: bash
         run: |
           set -euo pipefail
@@ -63,37 +64,36 @@ jobs:
           OUT="$PWD/Eaglercraft-26.2-u1"
 
           rm -rf "$OUT"
-          mkdir -p "$OUT"
 
           echo "Trying the documented create-dev operation..."
-
           set +e
           java -jar "$SETUP_JAR" create-dev "$OUT" 2>&1 | tee create-dev.log
           status=${PIPESTATUS[0]}
           set -e
 
           if [ "$status" -ne 0 ]; then
-            echo ""
-            echo "create-dev did not accept this invocation."
-            echo "Setup JAR help follows:"
+            echo "::error::create-dev did not accept this invocation."
+            echo "=== Setup JAR help ==="
             java -jar "$SETUP_JAR" --help 2>&1 || true
-            echo ""
-            echo "create-dev help follows:"
+            echo "=== create-dev help ==="
             java -jar "$SETUP_JAR" create-dev --help 2>&1 || true
             exit "$status"
           fi
 
+          test -d "$OUT"
           echo "=== Generated project ==="
-          find "$OUT" -maxdepth 4 -type f | sort | head -500
+          find "$OUT" -maxdepth 5 -type f | sort | head -500
+
+      - name: Switch to Java 25 for standalone compilation
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
 
       - name: Try compiling the generated client
+        shell: bash
         run: |
           set -euo pipefail
-
-          if [ ! -d Eaglercraft-26.2-u1 ]; then
-            echo "::error::No generated Eaglercraft-26.2-u1 project exists."
-            exit 1
-          fi
 
           if [ -f Eaglercraft-26.2-u1/gradlew ]; then
             cd Eaglercraft-26.2-u1
@@ -103,8 +103,8 @@ jobs:
             cd Eaglercraft-26.2-u1
             gradle build --no-daemon
           else
-            echo "::error::Generated project does not contain a Gradle build yet."
-            find Eaglercraft-26.2-u1 -maxdepth 3 -type f | sort
+            echo "::error::Generated project does not contain a Gradle build."
+            find Eaglercraft-26.2-u1 -maxdepth 5 -type f | sort
             exit 1
           fi
 
@@ -119,6 +119,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           git add -A Eaglercraft-26.2-u1 U1-Patcher
+
           if git diff --cached --quiet; then
             echo "No generated source changes to commit."
             exit 0
