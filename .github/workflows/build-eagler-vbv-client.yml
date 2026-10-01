@@ -36,38 +36,59 @@ jobs:
           echo "57bfcacdf24310d48f462a9a508fe2a59acad8487a8de34bb40963c46183c1bd  build-input/Eaglercraft-26.2-u1-Setup.jar" \
             | sha256sum -c -
 
-      - name: Prepare U1-Patcher
+      - name: Prepare U1-Patcher launcher
         run: |
           set -euo pipefail
-          rm -rf U1-Patcher/runtime
-          mkdir -p U1-Patcher/runtime
 
-          # U1-Patcher is the source of the complete portable kit.
+          # U1-Patcher is NOT a directory containing an eagler-patcher
+          # executable. It is the extracted contents of the single-file
+          # Java patcher JAR. The manifest explicitly names:
+          # com.eaglercraft.patcher.SingleFileLauncher
+          test -f U1-Patcher/META-INF/MANIFEST.MF
+          test -f U1-Patcher/com/eaglercraft/patcher/SingleFileLauncher.class
+          test -f U1-Patcher/com/eaglercraft/patcher/SingleFileLauncher\$1.class
           test -f U1-Patcher/portable-kit.zip
-          unzip -q U1-Patcher/portable-kit.zip -d U1-Patcher/runtime
+          test -f U1-Patcher/portable-kit.sha256
 
-          echo "=== U1-Patcher runtime ==="
-          find U1-Patcher/runtime -maxdepth 5 -type f -print | sort | head -1000
+          expected="$(tr -d '[:space:]' < U1-Patcher/portable-kit.sha256)"
+          actual="$(sha256sum U1-Patcher/portable-kit.zip | awk '{print $1}')"
+          echo "portable-kit expected: $expected"
+          echo "portable-kit actual:   $actual"
+          test "$actual" = "$expected"
 
-          # Do not assume a hard-coded Eaglercraft-26.2-u1/eagler-patcher path.
-          # Discover the patcher entry point from the U1-Patcher kit itself.
-          patcher="$(find U1-Patcher/runtime -type f -name 'eagler-patcher' -print -quit)"
+          grep -q '^Main-Class: com.eaglercraft.patcher.SingleFileLauncher'             U1-Patcher/META-INF/MANIFEST.MF
+
+          rm -rf Eaglercraft-26.2-u1
+          mkdir -p Eaglercraft-26.2-u1
+
+          # Reassemble the exact single-file launcher from U1-Patcher.
+          # This is the required executable form of the files in U1-Patcher.
+          (cd U1-Patcher && jar cfm             "$GITHUB_WORKSPACE/Eaglercraft-26.2-u1/Eaglercraft-26.2-u1-Setup.jar"             META-INF/MANIFEST.MF .)
+
+          test -s Eaglercraft-26.2-u1/Eaglercraft-26.2-u1-Setup.jar
+
+          echo "=== U1-Patcher files ==="
+          find U1-Patcher -maxdepth 6 -type f -print | sort
+
+          echo "=== Reassembled launcher ==="
+          java -jar Eaglercraft-26.2-u1/Eaglercraft-26.2-u1-Setup.jar --help 2>&1 | head -100 || true
+
+          # The launcher itself installs the portable patcher kit.
+          java -jar Eaglercraft-26.2-u1/Eaglercraft-26.2-u1-Setup.jar             --install-dir "$GITHUB_WORKSPACE/Eaglercraft-26.2-u1/installed"
+
+          test -d Eaglercraft-26.2-u1/installed
+
+          patcher="$(find Eaglercraft-26.2-u1/installed -type f -name 'eagler-patcher' -print -quit || true)"
+          cli_jar="$(find Eaglercraft-26.2-u1/installed -type f -name 'eaglercraft-26.2-java-cli.jar' -print -quit || true)"
+
           if [ -z "$patcher" ]; then
-            patcher="$(find U1-Patcher/runtime -type f \( -name '*patcher*.sh' -o -name '*patcher*.cmd' \) -print -quit)"
-          fi
-
-          cli_jar="$(find U1-Patcher/runtime -type f -name 'eaglercraft-26.2-java-cli.jar' -print -quit)"
-
-          if [ -z "$patcher" ]; then
-            echo "::error::U1-Patcher/portable-kit.zip contains no supported patcher entry point."
-            echo "The complete U1-Patcher runtime was:"
-            find U1-Patcher/runtime -type f -print | sort
+            echo "::error::The reassembled U1-Patcher launcher did not install an eagler-patcher executable."
+            find Eaglercraft-26.2-u1/installed -type f -print | sort
             exit 1
           fi
-
           if [ -z "$cli_jar" ]; then
-            echo "::error::U1-Patcher/portable-kit.zip contains no Java CLI."
-            find U1-Patcher/runtime -type f -print | sort
+            echo "::error::The reassembled U1-Patcher launcher did not install the Java CLI."
+            find Eaglercraft-26.2-u1/installed -type f -print | sort
             exit 1
           fi
 
@@ -75,8 +96,9 @@ jobs:
           echo "EAGLER_PATCHER_ROOT=$(dirname "$patcher")" >> "$GITHUB_ENV"
           echo "EAGLER_PATCHER=$patcher" >> "$GITHUB_ENV"
           echo "EAGLER_JAVA_CLI=$cli_jar" >> "$GITHUB_ENV"
-          echo "Using U1-Patcher entry point: $patcher"
-          echo "Using U1-Patcher Java CLI: $cli_jar"
+          echo "Using actual U1-Patcher launcher output:"
+          echo "  patcher=$patcher"
+          echo "  java-cli=$cli_jar"
 
       - name: Download official Minecraft 26.2 client
         run: |
