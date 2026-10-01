@@ -5,18 +5,43 @@ import shutil
 import sys
 
 ROOT = pathlib.Path(sys.argv[1]).resolve()
-SOURCE = ROOT / "ViaBackport26.2-ClientSide/src/main/java/com/melonman106/vbvclient"
-TARGET = ROOT / "Eaglercraft-26.2-u1"
 
-if not SOURCE.exists():
-    raise SystemExit("VBV source directory missing")
-if not TARGET.exists():
-    raise SystemExit("Generated Eaglercraft-26.2-u1 directory missing")
+# The VBV sources live in THIS repository (next to this script), not inside
+# the generated project that ROOT points at.
+CLIENT_SIDE = pathlib.Path(__file__).resolve().parent.parent
+SOURCE = CLIENT_SIDE / "src/main/java/com/melonman106/vbvclient"
 
-DEST = TARGET / "src/main/java/com/melonman106/vbvclient"
+if not SOURCE.is_dir():
+    raise SystemExit(f"VBV source directory missing: {SOURCE}")
+if not ROOT.is_dir():
+    raise SystemExit(f"Generated project directory missing: {ROOT}")
+
+# create-dev writes a multi-module Gradle project straight into ROOT (the
+# decompiled game code is in a module such as game/). Find the real source root
+# by locating Minecraft.java instead of assuming a fixed layout.
+def find_source_root():
+    for p in sorted(ROOT.rglob("Minecraft.java")):
+        parts = p.parts
+        if "build" in parts:
+            continue
+        if p.parent.name == "client" and p.parent.parent.name == "minecraft":
+            # .../<source root>/net/minecraft/client/Minecraft.java
+            return p.parents[3]
+    return None
+
+TARGET = find_source_root()
+if TARGET is None:
+    print("Project tree (top levels) for debugging:")
+    for p in sorted(ROOT.glob("*")) + sorted(ROOT.glob("*/*")):
+        print("  ", p.relative_to(ROOT))
+    raise SystemExit("Could not find net/minecraft/client/Minecraft.java in the generated project")
+
+print("Using game source root:", TARGET)
+DEST = TARGET / "com/melonman106/vbvclient"
 DEST.mkdir(parents=True, exist_ok=True)
 for src in SOURCE.glob("*.java"):
     shutil.copy2(src, DEST / src.name)
+print("Copied", len(list(SOURCE.glob('*.java'))), "VBV files to", DEST)
 
 def java_files():
     for p in TARGET.rglob("*.java"):
@@ -41,11 +66,11 @@ if minecraft:
             p.write_text(s, encoding="utf-8")
             print("Inserted VBV initialization into", p)
         else:
-            print("Minecraft found, but constructor hook was not identified.")
+            raise SystemExit("Minecraft found, but its constructor hook was not identified")
     else:
         print("VBV initialization hook already present.")
 else:
-    print("Minecraft class was not identified; registry sources were still copied.")
+    raise SystemExit("Minecraft class was not identified; VBV would never initialize")
 
 # Add a native Mods button to the title screen when the generated source uses
 # the modern Screen/Button API. This does not depend on Fabric or ModMenu.
