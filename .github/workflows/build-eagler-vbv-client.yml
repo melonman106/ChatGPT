@@ -24,60 +24,94 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Extract repository patcher
+      - name: Extract patcher archive
         run: |
           set -euo pipefail
           rm -rf Eaglercraft-26.2-u1
           mkdir -p Eaglercraft-26.2-u1
           tar -xzf eaglercraft-26.2-patcher-main.tar.gz -C Eaglercraft-26.2-u1
 
-      - name: Inspect patcher and source inputs
+      - name: Locate actual patcher root
         run: |
           set -euo pipefail
-          cd Eaglercraft-26.2-u1
-          echo "=== START-HERE.md ==="
-          find . -type f -iname 'START-HERE.md' -print -exec sed -n '1,300p' {} \;
-          echo "=== Patcher help ==="
-          for p in $(find . -type f -name 'eagler-patcher' -print); do
-            chmod +x "$p" || true
-            echo "--- $p --help"
-            "$p" --help || true
-          done
-          echo "=== Build/source files ==="
-          find . -type f \( -name 'gradlew' -o -name 'build.gradle' -o -name 'build.gradle.kts' -o -name 'settings.gradle' -o -name 'settings.gradle.kts' \) -print | sort
-          echo "=== Bundled source/project archives ==="
-          find . -type f \( -name '*.zip' -o -name '*.jar' \) -print | sort
+          root=$(find Eaglercraft-26.2-u1 -type f -name 'eagler-patcher' -print -quit | xargs -r dirname)
+          if [ -z "$root" ]; then
+            root=$(find Eaglercraft-26.2-u1 -type f -name 'GUIDE.md' -print -quit | xargs -r dirname)
+          fi
+          if [ -z "$root" ]; then
+            echo "::error::Could not locate the extracted Eaglercraft patcher root."
+            find Eaglercraft-26.2-u1 -maxdepth 4 -type f | sort
+            exit 1
+          fi
+          echo "EAGLER_PATCHER_ROOT=$root" >> "$GITHUB_ENV"
+          echo "Patcher root: $root"
+
+      - name: Inspect patcher instructions and CLI
+        run: |
+          set -euo pipefail
+          cd "$EAGLER_PATCHER_ROOT"
+          echo "=== GUIDE.md ==="
+          if [ -f GUIDE.md ]; then cat GUIDE.md; fi
+          echo "=== README.md ==="
+          if [ -f README.md ]; then cat README.md; fi
+          echo "=== Patcher CLI ==="
+          if [ -f ./eagler-patcher ]; then
+            chmod +x ./eagler-patcher
+            ./eagler-patcher --help || true
+          fi
+          echo "=== Source/project inputs ==="
+          find . -maxdepth 4 -type f | sort | head -1000
+
+      - name: Generate/decompile Eaglercraft source with patcher
+        run: |
+          set -euo pipefail
+          cd "$EAGLER_PATCHER_ROOT"
+
+          # Do not pretend this distribution is a Gradle project. The archive
+          # is the patcher source/distribution, so source generation must be
+          # performed by its own documented CLI before the VBV Java patch is
+          # applied.
+          if [ -f ./eagler-patcher ]; then
+            chmod +x ./eagler-patcher
+            if ./eagler-patcher --help 2>&1 | grep -Eqi 'uncompile|decompile'; then
+              echo "::notice::The patcher exposes an uncompile/decompile command; see the previous step for its exact syntax."
+            else
+              echo "::notice::No uncompile/decompile command was detected in --help."
+            fi
+          fi
+
+          # Locate an already-generated source tree if the patcher archive
+          # itself supplies one.
+          generated=$(find . -type f \( -name 'gradlew' -o -name 'build.gradle' -o -name 'build.gradle.kts' \) -print -quit || true)
+          if [ -n "$generated" ]; then
+            echo "Generated build tree found at $generated"
+            exit 0
+          fi
+
+          echo "::error::This archive is a patcher distribution, not a Gradle source tree."
+          echo "::error::The exact source-generation command from GUIDE.md/README.md must be invoked here before compiling."
+          exit 1
 
       - name: Apply native VBV patch
         run: |
           set -euo pipefail
           python3 ViaBackport26.2-ClientSide/patch/apply_vbv_patch.py "$GITHUB_WORKSPACE"
 
-      - name: Build patched client
+      - name: Build generated client
         run: |
           set -euo pipefail
-          cd Eaglercraft-26.2-u1
-
-          # The archive is the real Eaglercraft patcher distribution. If it
-          # contains a generated Gradle workspace, build that workspace.
+          build_root=$(find "$EAGLER_PATCHER_ROOT" -type f \( -name 'gradlew' -o -name 'build.gradle' -o -name 'build.gradle.kts' \) -print -quit | xargs -r dirname)
+          if [ -z "$build_root" ]; then
+            echo "::error::No generated Gradle client exists yet."
+            exit 1
+          fi
+          cd "$build_root"
           if [ -f ./gradlew ]; then
             chmod +x ./gradlew
             ./gradlew build --no-daemon
-            exit 0
+          else
+            gradle build --no-daemon
           fi
-
-          gradle_root=$(find . -type f \( -name 'gradlew' -o -name 'build.gradle' -o -name 'build.gradle.kts' \) -print -quit | xargs -r dirname)
-          if [ -n "$gradle_root" ]; then
-            cd "$gradle_root"
-            if [ -f ./gradlew ]; then chmod +x ./gradlew; ./gradlew build --no-daemon; else gradle build --no-daemon; fi
-            exit 0
-          fi
-
-          echo "::error::The patcher archive was extracted successfully, but it did not contain a generated Gradle source tree."
-          echo "::error::The patcher must first generate/uncompile the Eaglercraft source from its bundled skeleton/source-patch inputs."
-          echo "=== Workspace files ==="
-          find . -maxdepth 3 -type f | sort | head -500
-          exit 1
 
       - name: Upload built client
         uses: actions/upload-artifact@v4
