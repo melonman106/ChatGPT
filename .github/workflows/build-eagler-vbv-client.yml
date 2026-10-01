@@ -52,12 +52,19 @@ jobs:
         run: |
           set -euo pipefail
           cd Eaglercraft-26.2-u1
-          if [ -x ./gradlew ]; then
+          # The 26.2 u1 workspace may use Gradle Kotlin DSL and may not
+          # preserve the executable bit on gradlew after extraction.
+          if [ -f ./gradlew ]; then
+            chmod +x ./gradlew
             ./gradlew build --no-daemon
-          elif [ -f build.gradle ]; then
+          elif [ -f build.gradle ] || [ -f build.gradle.kts ]; then
             gradle build --no-daemon
           else
-            echo "::error::No supported Gradle build found"
+            echo "::error::No Gradle build files found in Eaglercraft-26.2-u1"
+            echo "Top-level files:"
+            find . -maxdepth 2 -type f | sort | head -200
+            echo "Gradle files anywhere in workspace:"
+            find . -type f \( -name 'gradlew' -o -name 'build.gradle' -o -name 'build.gradle.kts' -o -name 'settings.gradle' -o -name 'settings.gradle.kts' \) | sort | head -200
             exit 1
           fi
 
