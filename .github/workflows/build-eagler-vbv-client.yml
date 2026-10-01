@@ -238,18 +238,10 @@ jobs:
           mkdir -p "$GITHUB_WORKSPACE/ModdedClientSource"
           cp -a "$build_root"/. "$GITHUB_WORKSPACE/ModdedClientSource/"
 
-          # IMPORTANT: all paths below are absolute. The previous workflow stored
-          # "ModdedClientSource/game/..." and then cd'd into ModdedClientSource,
-          # accidentally turning that into ModdedClientSource/ModdedClientSource/...
-          # The generated project has a real Gradle module named game, but it can
-          # also contain Java packages named game, so locate it by its build file.
           modded_root="$GITHUB_WORKSPACE/ModdedClientSource"
           game_dir="$(find "$modded_root" -type f \( -path "*/game/build.gradle" -o -path "*/game/build.gradle.kts" \) -print -quit | xargs -r dirname)"
           if [ -z "$game_dir" ]; then
             echo "::error::Could not locate the copied Gradle game module."
-            echo "=== ModdedClientSource top level ==="
-            find "$modded_root" -maxdepth 2 -print | sort | head -300
-            echo "=== Gradle module files ==="
             find "$modded_root" -type f \( -name 'build.gradle' -o -name 'build.gradle.kts' \) -print | sort | head -300
             exit 1
           fi
@@ -262,9 +254,8 @@ jobs:
           echo "Game module: $game_dir"
           echo "Resources:   $resources"
 
-          # Preserve Eagler-specific skeleton resources (especially pack.png).
-          # The single-HTML deploy script requires pack.png at this exact path.
-          # Only overlay the official Minecraft runtime resources below.
+          # Preserve Eagler-specific skeleton resources, especially pack.png.
+          # Only overlay the official Minecraft runtime resources.
           mkdir -p "$resources"
 
           temp_resources="$(mktemp -d)"
@@ -289,13 +280,10 @@ jobs:
           test -f "$resources/version.json"
           test -f "$resources/pack.mcmeta"
           test -f "$resources/assets/minecraft/lang/en_us.json"
+          test -f "$resources/pack.png"
 
           game_classes="$game_dir/build/classes/java/main"
           mkdir -p "$game_classes"
-
-          echo "=== Installing TeaVM runtime resources ==="
-          echo "Source: $resources"
-          echo "Target: $game_classes"
           cp -a "$resources"/. "$game_classes"/
 
           test -f "$game_classes/version.json"
@@ -304,12 +292,11 @@ jobs:
           test -f "$game_classes/pack.png"
 
           echo "=== TeaVM resource classpath verified ==="
-          ls -lh "$game_classes/version.json" "$game_classes/assets/minecraft/lang/en_us.json"
+          ls -lh "$game_classes/version.json" "$game_classes/pack.png"
 
           single_html_script="$modded_root/wasm-toolchain/build-single-html.js"
           if [ ! -f "$single_html_script" ]; then
             echo "::error::The generated client does not contain wasm-toolchain/build-single-html.js."
-            echo "=== wasm-toolchain files found ==="
             find "$modded_root" -path '*/wasm-toolchain/*' -type f -print | sort || true
             exit 1
           fi
@@ -317,19 +304,54 @@ jobs:
           echo "Found single-HTML builder: $single_html_script"
           node --version
 
+      # This is the expensive-build checkpoint. If the packaging job fails,
+      # GitHub can rerun only that failed job instead of rebuilding TeaVM.
+      - name: Upload packaging checkpoint
+        uses: actions/upload-artifact@v4
+        with:
+          name: vbv-single-html-input
+          path: ModdedClientSource
+          retention-days: 7
+          compression-level: 1
+          if-no-files-found: error
+
+  package:
+    name: Package single-file HTML
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Download packaging checkpoint
+        uses: actions/download-artifact@v5
+        with:
+          name: vbv-single-html-input
+          path: .
+
+      - name: Verify packaging checkpoint
+        run: |
+          set -euo pipefail
+          test -f ModdedClientSource/wasm-toolchain/build-single-html.js
+          test -f ModdedClientSource/game/src/main/resources/pack.png
+          test -f ModdedClientSource/game/build/classes/java/main/pack.png
+          echo "Packaging checkpoint restored successfully."
+          du -sh ModdedClientSource
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
 
       - name: Build single-file HTML client
         working-directory: ModdedClientSource
         run: |
           set -euo pipefail
-          test -f wasm-toolchain/build-single-html.js
-          echo "=== build-single-html.js help ==="
-          node wasm-toolchain/build-single-html.js --help 2>&1 || true
           echo "=== Running single-HTML builder ==="
           node wasm-toolchain/build-single-html.js
           echo "=== Generated HTML files ==="
           find . -type f -name '*.html' -printf '%s %p\n' | sort -nr | head -50
-          html_count=$(find . -type f -name '*.html' | wc -l)
+          html_count="$(find . -type f -name '*.html' | wc -l)"
           if [ "$html_count" -eq 0 ]; then
             echo "::error::build-single-html.js completed but produced no HTML file."
             exit 1
@@ -339,7 +361,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p final-client
-          candidate=$(find ModdedClientSource -type f -name '*.html' -printf '%s %p\n' | sort -nr | head -1 | cut -d' ' -f2-)
+          candidate="$(find ModdedClientSource -type f -name '*.html' -printf '%s %p\n' | sort -nr | head -1 | cut -d' ' -f2-)"
           if [ -z "$candidate" ]; then
             echo "::error::No HTML output was found."
             exit 1
@@ -348,11 +370,10 @@ jobs:
           echo "Final single HTML:"
           ls -lh final-client/Eaglercraft-26.2-VBV-Modded.html
 
-      - name: Upload patched client source and build
+      - name: Upload final client
         uses: actions/upload-artifact@v4
         with:
           name: ViaBackport26.2-ClientSide
-          path: |
-            generated-client
-            ModdedClientSource
-            final-client
+          path: final-client
+          retention-days: 7
+          if-no-files-found: error
