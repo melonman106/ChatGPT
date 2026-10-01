@@ -52,7 +52,8 @@ print("Copied", len(list(SOURCE.glob('*.java'))), "VBV files to", DEST)
 # the generated client's private vbvclient/mods/<id>/ directory and a small
 # Java registry is generated so the native Mods screen can discover it.
 # ---------------------------------------------------------------------------
-MODS_PACK = CLIENT_SIDE / "ModsPack"
+REPO_ROOT = CLIENT_SIDE.parent
+MODS_PACK = REPO_ROOT / "ModsPack"
 GENERATED_PACK_CLASS = DEST / "VBVGeneratedPackMods.java"
 GENERATED_PACK_RESOURCE_ROOT = TARGET.parent / "resources" / "vbvclient" / "mods"
 
