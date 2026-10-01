@@ -36,37 +36,47 @@ jobs:
           echo "57bfcacdf24310d48f462a9a508fe2a59acad8487a8de34bb40963c46183c1bd  build-input/Eaglercraft-26.2-u1-Setup.jar" \
             | sha256sum -c -
 
-      - name: Install complete Eaglercraft patcher kit
+      - name: Prepare U1-Patcher
         run: |
           set -euo pipefail
-          rm -rf Eaglercraft-26.2-u1
-          mkdir -p Eaglercraft-26.2-u1
+          rm -rf U1-Patcher/runtime
+          mkdir -p U1-Patcher/runtime
 
+          # U1-Patcher is the source of the complete portable kit.
           test -f U1-Patcher/portable-kit.zip
-          unzip -q U1-Patcher/portable-kit.zip -d Eaglercraft-26.2-u1
+          unzip -q U1-Patcher/portable-kit.zip -d U1-Patcher/runtime
 
-          patcher="$(find Eaglercraft-26.2-u1 -type f -name 'eagler-patcher' -print -quit)"
-          cli_jar="$(find Eaglercraft-26.2-u1 -type f -name 'eaglercraft-26.2-java-cli.jar' -print -quit)"
+          echo "=== U1-Patcher runtime ==="
+          find U1-Patcher/runtime -maxdepth 5 -type f -print | sort | head -1000
+
+          # Do not assume a hard-coded Eaglercraft-26.2-u1/eagler-patcher path.
+          # Discover the patcher entry point from the U1-Patcher kit itself.
+          patcher="$(find U1-Patcher/runtime -type f -name 'eagler-patcher' -print -quit)"
+          if [ -z "$patcher" ]; then
+            patcher="$(find U1-Patcher/runtime -type f \( -name '*patcher*.sh' -o -name '*patcher*.cmd' \) -print -quit)"
+          fi
+
+          cli_jar="$(find U1-Patcher/runtime -type f -name 'eaglercraft-26.2-java-cli.jar' -print -quit)"
 
           if [ -z "$patcher" ]; then
-            echo "::error::No eagler-patcher was found in U1-Patcher/portable-kit.zip."
-            find Eaglercraft-26.2-u1 -type f -print | sort
+            echo "::error::U1-Patcher/portable-kit.zip contains no supported patcher entry point."
+            echo "The complete U1-Patcher runtime was:"
+            find U1-Patcher/runtime -type f -print | sort
             exit 1
           fi
+
           if [ -z "$cli_jar" ]; then
-            echo "::error::No eaglercraft-26.2-java-cli.jar was found in U1-Patcher/portable-kit.zip."
-            find Eaglercraft-26.2-u1 -type f -print | sort
+            echo "::error::U1-Patcher/portable-kit.zip contains no Java CLI."
+            find U1-Patcher/runtime -type f -print | sort
             exit 1
           fi
 
           chmod +x "$patcher"
-          patcher_root="$(dirname "$patcher")"
-          echo "EAGLER_PATCHER_ROOT=$patcher_root" >> "$GITHUB_ENV"
+          echo "EAGLER_PATCHER_ROOT=$(dirname "$patcher")" >> "$GITHUB_ENV"
           echo "EAGLER_PATCHER=$patcher" >> "$GITHUB_ENV"
           echo "EAGLER_JAVA_CLI=$cli_jar" >> "$GITHUB_ENV"
-          echo "Patcher root: $patcher_root"
-          echo "Patcher: $patcher"
-          echo "Java CLI: $cli_jar"
+          echo "Using U1-Patcher entry point: $patcher"
+          echo "Using U1-Patcher Java CLI: $cli_jar"
 
       - name: Download official Minecraft 26.2 client
         run: |
