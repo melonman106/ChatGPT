@@ -1,0 +1,39 @@
+name: Clean Old VBV Client Files
+
+on:
+  workflow_dispatch:
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Remove obsolete client-side and legacy resource-pack code
+        run: |
+          set -euo pipefail
+
+          rm -rf client-mods
+          rm -rf resourcepacks/ViaBackportVisuals-26.2-Eagler-Overlay
+          rm -rf resourcepacks/ViaBackportVisuals-26.2-VBPlus-26.3-Companion
+
+          # Keep the current server-side ViaBackportVisuals implementation.
+          # Keep U1-Patcher and the Eagler source/build work we add later.
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Nothing to clean."
+            exit 0
+          fi
+
+          git commit -m "Clean obsolete VBV client and resource-pack code"
+          git push origin HEAD:main
