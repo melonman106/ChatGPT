@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
+import json
 import pathlib
 import re
 import shutil
 import sys
+import zipfile
 
 ROOT = pathlib.Path(sys.argv[1]).resolve()
 
@@ -42,6 +44,181 @@ DEST.mkdir(parents=True, exist_ok=True)
 for src in SOURCE.glob("*.java"):
     shutil.copy2(src, DEST / src.name)
 print("Copied", len(list(SOURCE.glob('*.java'))), "VBV files to", DEST)
+
+# ---------------------------------------------------------------------------
+# Import resource-pack mods from ModsPack/.
+#
+# The user only needs to upload ZIP resource packs. Each ZIP is unpacked into
+# the generated client's private vbvclient/mods/<id>/ directory and a small
+# Java registry is generated so the native Mods screen can discover it.
+# ---------------------------------------------------------------------------
+MODS_PACK = CLIENT_SIDE / "ModsPack"
+GENERATED_PACK_CLASS = DEST / "VBVGeneratedPackMods.java"
+GENERATED_PACK_RESOURCE_ROOT = TARGET.parent / "resources" / "vbvclient" / "mods"
+
+def java_string(value):
+    return json.dumps(str(value), ensure_ascii=False)
+
+def text_from_component(value):
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list):
+        return "".join(text_from_component(v) for v in value)
+    if isinstance(value, dict):
+        if "text" in value:
+            return text_from_component(value["text"])
+        if "translate" in value:
+            return str(value["translate"])
+        if "extra" in value:
+            return text_from_component(value["extra"])
+    return str(value)
+
+def safe_mod_id(stem):
+    value = re.sub(r"[^a-zA-Z0-9._-]+", "-", stem.strip().lower())
+    value = re.sub(r"-+", "-", value).strip("-._")
+    return value or "resource-pack-mod"
+
+def display_name(stem):
+    value = re.sub(r"[_-]+", " ", stem).strip()
+    return value or "Resource Pack Mod"
+
+def find_zip_root(names):
+    normalized = [n.replace("\\", "/").lstrip("/") for n in names]
+    for name in normalized:
+        if name == "pack.mcmeta":
+            return ""
+    for prefix in sorted({n.split("/", 1)[0] for n in normalized if "/" in n}):
+        if f"{prefix}/pack.mcmeta" in normalized:
+            return prefix + "/"
+    return ""
+
+def read_pack_metadata(zf, root):
+    description = None
+    meta_name = root + "pack.mcmeta"
+    try:
+        raw = zf.read(meta_name).decode("utf-8")
+        meta = json.loads(raw)
+        pack = meta.get("pack", {}) if isinstance(meta, dict) else {}
+        if isinstance(pack, dict) and "description" in pack:
+            description = text_from_component(pack["description"]).strip()
+    except (KeyError, UnicodeDecodeError, json.JSONDecodeError):
+        pass
+    return description
+
+def extract_resource_pack(zippath, mod_id):
+    destination = GENERATED_PACK_RESOURCE_ROOT / mod_id
+    if destination.exists():
+        shutil.rmtree(destination)
+    destination.mkdir(parents=True, exist_ok=True)
+
+    with zipfile.ZipFile(zippath) as zf:
+        names = [n.replace("\\", "/") for n in zf.namelist()]
+        root = find_zip_root(names)
+        description = read_pack_metadata(zf, root)
+
+        extracted = 0
+        for raw_name in names:
+            name = raw_name.lstrip("/")
+            if not name.startswith(root):
+                continue
+            relative = name[len(root):]
+            if not relative or relative.endswith("/"):
+                continue
+
+            # Keep the parts a client-side resource-pack mod can actually use.
+            if not (
+                relative == "pack.png"
+                or relative == "pack.mcmeta"
+                or relative == "assets"
+                or relative.startswith("assets/")
+                or relative == "data"
+                or relative.startswith("data/")
+            ):
+                continue
+
+            target = destination / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                with zf.open(raw_name) as src, target.open("wb") as dst:
+                    shutil.copyfileobj(src, dst)
+                extracted += 1
+            except KeyError:
+                continue
+
+        if extracted == 0:
+            raise SystemExit(f"{zippath.name}: ZIP contains no supported resource-pack files")
+        return description
+
+pack_entries = []
+if MODS_PACK.is_dir():
+    zip_files = sorted(
+        p for p in MODS_PACK.rglob("*.zip")
+        if p.is_file() and "__MACOSX" not in p.parts
+    )
+    print("ModsPack ZIPs found:", len(zip_files))
+
+    for zippath in zip_files:
+        mod_id = safe_mod_id(zippath.stem)
+        description = extract_resource_pack(zippath, mod_id)
+        if not description:
+            description = f"Resource-pack client mod imported from {zippath.name}."
+        name = display_name(zippath.stem)
+
+        icon = GENERATED_PACK_RESOURCE_ROOT / mod_id / "pack.png"
+        if not icon.is_file():
+            # Resource packs do not have to contain pack.png. Use the project's
+            # standard icon so every imported mod still has an icon.
+            fallback = CLIENT_SIDE / "pack.png"
+            if fallback.is_file():
+                shutil.copy2(fallback, icon)
+
+        mod_json = GENERATED_PACK_RESOURCE_ROOT / mod_id / "mod.json"
+        mod_json.write_text(
+            json.dumps({
+                "id": mod_id,
+                "name": name,
+                "version": "1.0.0-26.2",
+                "authors": "Resource pack",
+                "description": description,
+                "pack": True
+            }, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8"
+        )
+
+        pack_entries.append((mod_id, name, description))
+        print(f"Imported resource-pack mod: {name} ({mod_id}) from {zippath.name}")
+else:
+    print("ModsPack/ does not exist; no uploaded resource-pack mods to import.")
+
+generated_lines = [
+    "package com.melonman106.vbvclient;",
+    "",
+    "/** Generated by apply_vbv_patch.py from ModsPack/*.zip. */",
+    "public final class VBVGeneratedPackMods {",
+    "    private VBVGeneratedPackMods() {}",
+    "",
+    "    public static void register() {",
+]
+for mod_id, name, description in pack_entries:
+    generated_lines.extend([
+        "        VBVClient.registerMod(new VBVModInfo(",
+        f"            {java_string(mod_id)},",
+        f"            {java_string(name)},",
+        '            "1.0.0-26.2",',
+        '            "Resource pack",',
+        f"            {java_string(description)},",
+        f"            {java_string('vbvclient/mods/' + mod_id + '/pack.png')},",
+        "            true",
+        "        ));",
+    ])
+generated_lines.extend([
+    "    }",
+    "}",
+    "",
+])
+GENERATED_PACK_CLASS.write_text("\n".join(generated_lines), encoding="utf-8")
+print("Generated pack-mod registry:", GENERATED_PACK_CLASS)
+print("Imported pack mods:", len(pack_entries))
 
 def java_files():
     for p in TARGET.rglob("*.java"):
