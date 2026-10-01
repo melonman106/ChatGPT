@@ -50,30 +50,90 @@ def java_files():
         except (UnicodeDecodeError, OSError):
             continue
 
-# Initialize the registry once when Minecraft is constructed.
+# ---------------------------------------------------------------------------
+# 1) Discover how this 26.2 decompile opens a screen. Mojang/Eagler renamed
+#    Minecraft.setScreen, so read the real name from Minecraft.java.
+# ---------------------------------------------------------------------------
 minecraft = None
 for p, s in java_files():
     if re.search(r"class\s+Minecraft\b", s) and "static Minecraft" in s:
         minecraft = (p, s)
         break
-
-if minecraft:
-    p, s = minecraft
-    if "VBVClient.init();" not in s:
-        m = re.search(r"(?:public|private|protected)\s+Minecraft\s*\([^)]*\)\s*\{", s)
-        if m:
-            s = s[:m.end()] + "\n        com.melonman106.vbvclient.VBVClient.init();\n" + s[m.end():]
-            p.write_text(s, encoding="utf-8")
-            print("Inserted VBV initialization into", p)
-        else:
-            raise SystemExit("Minecraft found, but its constructor hook was not identified")
-    else:
-        print("VBV initialization hook already present.")
-else:
+if not minecraft:
     raise SystemExit("Minecraft class was not identified; VBV would never initialize")
 
-# Add a native Mods button to the title screen when the generated source uses
-# the modern Screen/Button API. This does not depend on Fabric or ModMenu.
+mc_path, mc_src = minecraft
+SCREEN_METHOD_RE = re.compile(
+    r"(?:public|protected|private)?\s*(?:final\s+)?void\s+(\w+)\(\s*(?:@Nullable\s+)?(?:final\s+)?Screen\s+\w+\s*\)"
+)
+screen_methods = [m.group(1) for m in SCREEN_METHOD_RE.finditer(mc_src)]
+open_name = None
+for preferred in ("setScreen", "setScreenAndShow", "openScreen", "showScreen"):
+    if preferred in screen_methods:
+        open_name = preferred
+        break
+if open_name is None and screen_methods:
+    open_name = screen_methods[0]
+if open_name is None:
+    print("Methods in Minecraft.java that mention Screen:")
+    for line in mc_src.splitlines():
+        if "Screen" in line and "(" in line and ("void" in line or "public" in line):
+            print("   ", line.strip())
+    raise SystemExit("Could not find a method on Minecraft that takes a single Screen")
+print("Screen-opening method on Minecraft:", open_name, "(candidates:", screen_methods, ")")
+
+nav = DEST / "VBVNav.java"
+nav_src = nav.read_text(encoding="utf-8")
+nav.write_text(nav_src.replace(".setScreen(screen)", f".{open_name}(screen)"), encoding="utf-8")
+
+# ---------------------------------------------------------------------------
+# 2) Initialize the registry from the Minecraft constructor.
+#    The call MUST come after super(...)/this(...): the skeleton compiles with
+#    --release 24, which forbids statements before a constructor call.
+# ---------------------------------------------------------------------------
+INIT_CALL = "com.melonman106.vbvclient.VBVClient.init();"
+
+def end_of_ctor_call(text, start):
+    """text[start:] begins with super(/this( ; return index just past the ';'."""
+    i = text.index("(", start)
+    depth = 0
+    while i < len(text):
+        c = text[i]
+        if c == "(":
+            depth += 1
+        elif c == ")":
+            depth -= 1
+            if depth == 0:
+                break
+        i += 1
+    j = text.index(";", i)
+    return j + 1
+
+if INIT_CALL in mc_src:
+    print("VBV initialization hook already present.")
+else:
+    ctor_re = re.compile(r"(?:public|private|protected)\s+Minecraft\s*\([^)]*\)\s*(?:throws\s+[\w.,\s]+)?\{")
+    inserted = False
+    for m in ctor_re.finditer(mc_src):
+        rest = mc_src[m.end():]
+        call = re.match(r"\s*(super|this)\s*\(", rest)
+        if call and call.group(1) == "this":
+            continue  # delegating constructor; the target constructor will run init
+        if call:
+            pos = m.end() + end_of_ctor_call(rest, call.start(1))
+        else:
+            pos = m.end()
+        mc_src = mc_src[:pos] + "\n        " + INIT_CALL + "\n" + mc_src[pos:]
+        mc_path.write_text(mc_src, encoding="utf-8")
+        print("Inserted VBV initialization into", mc_path)
+        inserted = True
+        break
+    if not inserted:
+        raise SystemExit("Minecraft found, but its constructor hook was not identified")
+
+# ---------------------------------------------------------------------------
+# 3) Native Mods button on the title screen.
+# ---------------------------------------------------------------------------
 title = None
 for p, s in java_files():
     if re.search(r"class\s+TitleScreen\b", s) and "extends Screen" in s:
@@ -90,7 +150,7 @@ if title:
             button = """
         this.addRenderableWidget(net.minecraft.client.gui.components.Button.builder(
             net.minecraft.network.chat.Component.literal("Mods"),
-            button -> net.minecraft.client.Minecraft.getInstance().setScreen(
+            button -> com.melonman106.vbvclient.VBVNav.open(
                 new com.melonman106.vbvclient.VBVModsScreen(this)
             )
         ).bounds(this.width / 2 - 100, this.height / 4 + 120, 200, 20).build());
