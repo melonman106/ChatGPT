@@ -357,11 +357,31 @@ jobs:
         uses: actions/download-artifact@v5
         with:
           name: vbv-single-html-input
-          path: .
+          path: checkpoint
 
-      - name: Verify packaging checkpoint
+      - name: Normalize packaging checkpoint
         run: |
           set -euo pipefail
+          rm -rf ModdedClientSource
+
+          echo "=== Artifact layout ==="
+          find checkpoint -maxdepth 5 -type f | sort | head -300
+
+          builder="$(find checkpoint -type f -path '*/wasm-toolchain/build-single-html.js' -print -quit || true)"
+          if [ -z "$builder" ]; then
+            echo "::error::Packaging artifact does not contain wasm-toolchain/build-single-html.js."
+            exit 1
+          fi
+
+          artifact_root="$(dirname "$(dirname "$(dirname "$builder")")")"
+          # If the artifact was downloaded without its original top-level
+          # directory, artifact_root is the actual project root. Otherwise
+          # it is checkpoint/ModdedClientSource.
+          mkdir -p ModdedClientSource
+          cp -a "$artifact_root"/. ModdedClientSource/
+
+          echo "=== Normalized checkpoint ==="
+          echo "Artifact root: $artifact_root"
           test -f ModdedClientSource/wasm-toolchain/build-single-html.js
           test -f ModdedClientSource/game/src/main/resources/pack.png
           test -f ModdedClientSource/game/build/classes/java/main/pack.png
