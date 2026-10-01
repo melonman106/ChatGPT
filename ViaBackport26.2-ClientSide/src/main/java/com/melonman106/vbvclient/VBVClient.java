@@ -28,6 +28,16 @@ public final class VBVClient {
         ));
 
         registerMod(new VBVModInfo(
+            "ukus-armor-hud",
+            "Uku's Armor HUD",
+            "Eagler port 1.0.0",
+            "Uku3lig / Eagler client port",
+            "Four vertical armor slots beside the hotbar showing helmet, chestplate, leggings, boots, and remaining durability.",
+            "vbvclient/mods/ukus-armor-hud/pack.png",
+            false
+        ));
+
+        registerMod(new VBVModInfo(
             "appleskin",
             "AppleSkin",
             "Eagler port 1.0.0",
