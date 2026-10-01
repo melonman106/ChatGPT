@@ -22,7 +22,6 @@ public final class VBVArmorHud {
     public static void render(GuiGraphicsExtractor graphics) {
         Minecraft minecraft = Minecraft.getInstance();
         if (!(minecraft.getCameraEntity() instanceof Player player)) return;
-        if (minecraft.screen != null) return;
 
         EquipmentSlot[] slots = {
             EquipmentSlot.HEAD,
