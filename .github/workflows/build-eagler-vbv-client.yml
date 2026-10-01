@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - "ViaBackport26.2-ClientSide/**"
+      - "ModsPack/**"
       - "eaglercraft-26.2-patcher-main.tar.gz"
       - ".github/workflows/build-eagler-vbv-client.yml"
   workflow_dispatch:
@@ -29,7 +30,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: checkpoint
-          key: eagler-vbv-root-checkpoint-v3-${{ hashFiles('ViaBackport26.2-ClientSide/src/main/java/**/*.java', 'ViaBackport26.2-ClientSide/src/main/resources/**/*.json', 'ViaBackport26.2-ClientSide/patch/**', '.github/workflows/build-eagler-vbv-client.yml') }}
+          key: eagler-vbv-root-checkpoint-v4-${{ hashFiles('ViaBackport26.2-ClientSide/src/main/java/**/*.java', 'ViaBackport26.2-ClientSide/src/main/resources/**/*.json', 'ViaBackport26.2-ClientSide/patch/**', 'ModsPack/**/*.zip', '.github/workflows/build-eagler-vbv-client.yml') }}
 
       - name: Restore repository checkpoint if present
         id: repo_checkpoint
