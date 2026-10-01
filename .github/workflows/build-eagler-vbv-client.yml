@@ -92,6 +92,10 @@ jobs:
             exit 1
           fi
 
+          # Resolve to ABSOLUTE paths. Later steps cd into the patcher root,
+          # so workspace-relative paths would stop resolving there.
+          patcher="$(realpath "$patcher")"
+          cli_jar="$(realpath "$cli_jar")"
           chmod +x "$patcher"
           echo "EAGLER_PATCHER_ROOT=$(dirname "$patcher")" >> "$GITHUB_ENV"
           echo "EAGLER_PATCHER=$patcher" >> "$GITHUB_ENV"
@@ -127,14 +131,19 @@ jobs:
           set -euo pipefail
           rm -rf "$GITHUB_WORKSPACE/generated-client"
 
-          # Use the installed patcher's documented CLI rather than treating
-          # the patcher distribution itself as a Gradle project.
+          # Options below are the patcher's real create-dev CLI (see its --help).
           cd "$EAGLER_PATCHER_ROOT"
           chmod +x "$EAGLER_PATCHER"
 
           "$EAGLER_PATCHER" create-dev \
-            --minecraft-jar "$GITHUB_WORKSPACE/build-input/minecraft-26.2-client.jar" \
-            --output "$GITHUB_WORKSPACE/generated-client"
+            --jar "$GITHUB_WORKSPACE/build-input/minecraft-26.2-client.jar" \
+            --output "$GITHUB_WORKSPACE/generated-client" \
+            --vineflower "$EAGLER_PATCHER_ROOT/inputs/vineflower-1.12.0.jar" \
+            --java17 "$JAVA_HOME/bin/java" \
+            --patch-bundle "$EAGLER_PATCHER_ROOT/source-patch-bundle.zip" \
+            --expected-bundle-sha256 fd944e9cabbebbf4bddce8a39e1b233b3c7d0cd4f860f9cae37550a3fcfa8b02 \
+            --project-skeleton "$EAGLER_PATCHER_ROOT/project-skeleton-v5-teavm-runtime-verified.zip" \
+            --expected-skeleton-sha256 3656a83ed8187e2d859612c566f3aa73e242bf1e4633990c5bb4929e0a846c94
 
           if ! find "$GITHUB_WORKSPACE/generated-client" -type f \
               \( -name 'gradlew' -o -name 'build.gradle' -o -name 'build.gradle.kts' \) \
