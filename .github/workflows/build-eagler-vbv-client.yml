@@ -1,129 +1,67 @@
 name: Build Eaglercraft 26.2 u1 VBV Client
 
 on:
+  push:
+    paths:
+      - "ViaBackport26.2-ClientSide/**"
+      - ".github/workflows/build-eagler-vbv-client.yml"
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Install Java 17
-        uses: actions/setup-java@v4
+      - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
-      - name: Install Node.js 24
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 24
 
-      - name: Download pinned u1 Setup JAR
+      - name: Download pinned Eaglercraft 26.2 u1 Setup JAR
         run: |
           set -euo pipefail
           mkdir -p build-input
-          curl -fL --retry 3 \
-            "https://github.com/melonman106/ChatGPT/releases/download/Modded/Eaglercraft-26.2-u1-Setup.jar" \
-            -o build-input/Eaglercraft-26.2-u1-Setup.jar
+          curl -fL --retry 3 "https://github.com/melonman106/ChatGPT/releases/download/Modded/Eaglercraft-26.2-u1-Setup.jar" -o build-input/Eaglercraft-26.2-u1-Setup.jar
+          echo "57bfcacdf24310d48f462a9a508fe2a59acad8487a8de34bb40963c46183c1bd  build-input/Eaglercraft-26.2-u1-Setup.jar" | sha256sum -c -
 
-          expected="57bfcacdf24310d48f462a9a508fe2a59acad8487a8de34bb40963c46183c1bd"
-          actual="$(sha256sum build-input/Eaglercraft-26.2-u1-Setup.jar | awk '{print $1}')"
-
-          echo "Expected SHA-256: $expected"
-          echo "Actual SHA-256:   $actual"
-          test "$actual" = "$expected"
-
-      - name: Prepare u1 patcher
+      - name: Generate Eaglercraft source
         run: |
           set -euo pipefail
-
-          rm -rf U1-Patcher
-          mkdir -p U1-Patcher
+          rm -rf Eaglercraft-26.2-u1 U1-Patcher
+          mkdir -p Eaglercraft-26.2-u1 U1-Patcher
           unzip -q build-input/Eaglercraft-26.2-u1-Setup.jar -d U1-Patcher
+          java -jar build-input/Eaglercraft-26.2-u1-Setup.jar create-dev Eaglercraft-26.2-u1
 
-          echo "=== U1-Patcher files ==="
-          find U1-Patcher -type f | sort | head -500
-
-          echo "=== Candidate patcher JARs ==="
-          find U1-Patcher -type f -name '*.jar' -print | sort
-
-      - name: Generate editable 26.2 u1 client source
-        shell: bash
+      - name: Apply native VBV patch
         run: |
           set -euo pipefail
+          python3 ViaBackport26.2-ClientSide/patch/apply_vbv_patch.py "$GITHUB_WORKSPACE"
 
-          SETUP_JAR="$PWD/build-input/Eaglercraft-26.2-u1-Setup.jar"
-          OUT="$PWD/Eaglercraft-26.2-u1"
-
-          rm -rf "$OUT"
-
-          echo "Trying the documented create-dev operation..."
-          set +e
-          java -jar "$SETUP_JAR" create-dev "$OUT" 2>&1 | tee create-dev.log
-          status=${PIPESTATUS[0]}
-          set -e
-
-          if [ "$status" -ne 0 ]; then
-            echo "::error::create-dev did not accept this invocation."
-            echo "=== Setup JAR help ==="
-            java -jar "$SETUP_JAR" --help 2>&1 || true
-            echo "=== create-dev help ==="
-            java -jar "$SETUP_JAR" create-dev --help 2>&1 || true
-            exit "$status"
-          fi
-
-          test -d "$OUT"
-          echo "=== Generated project ==="
-          find "$OUT" -maxdepth 5 -type f | sort | head -500
-
-      - name: Switch to Java 25 for standalone compilation
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "25"
-
-      - name: Try compiling the generated client
-        shell: bash
+      - name: Compile patched client
         run: |
           set -euo pipefail
-
-          if [ -f Eaglercraft-26.2-u1/gradlew ]; then
-            cd Eaglercraft-26.2-u1
-            chmod +x gradlew
+          cd Eaglercraft-26.2-u1
+          if [ -x ./gradlew ]; then
             ./gradlew build --no-daemon
-          elif [ -f Eaglercraft-26.2-u1/build.gradle ]; then
-            cd Eaglercraft-26.2-u1
+          elif [ -f build.gradle ]; then
             gradle build --no-daemon
           else
-            echo "::error::Generated project does not contain a Gradle build."
-            find Eaglercraft-26.2-u1 -maxdepth 5 -type f | sort
+            echo "::error::No supported Gradle build found"
             exit 1
           fi
 
-      - name: Commit generated client source
-        run: |
-          set -euo pipefail
-
-          rm -rf build-input
-          rm -f create-dev.log
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          git add -A Eaglercraft-26.2-u1 U1-Patcher
-
-          if git diff --cached --quiet; then
-            echo "No generated source changes to commit."
-            exit 0
-          fi
-
-          git commit -m "Generate Eaglercraft 26.2 u1 client source"
-          git push origin HEAD:main
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ViaBackport26.2-ClientSide
+          path: Eaglercraft-26.2-u1
