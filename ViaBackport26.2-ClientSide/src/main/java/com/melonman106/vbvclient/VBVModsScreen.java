@@ -9,8 +9,8 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 
 /**
- * Built only from Button widgets (no render override, no graphics class) so it
- * does not depend on the renamed 26.2 drawing API. Disabled buttons act as labels.
+ * Native Eagler mod browser. Resource-pack-backed features are listed as mods,
+ * not in a separate resource-pack submenu.
  */
 public final class VBVModsScreen extends Screen {
     private final Screen parent;
@@ -34,10 +34,11 @@ public final class VBVModsScreen extends Screen {
         int y = 44;
         for (VBVModInfo info : entries) {
             final VBVModInfo selected = info;
+            String suffix = selected.resourcePackMod() ? "  [Pack]" : "";
             addRenderableWidget(Button.builder(
-                Component.literal(selected.name() + "  " + selected.version()),
+                Component.literal(selected.name() + "  " + selected.version() + suffix),
                 button -> VBVNav.open(new VBVModDetailsScreen(this, selected))
-            ).bounds(20, y, Math.min(320, width - 40), 22).build());
+            ).bounds(20, y, Math.min(520, width - 40), 22).build());
             y += 26;
             if (y > height - 50) break;
         }
