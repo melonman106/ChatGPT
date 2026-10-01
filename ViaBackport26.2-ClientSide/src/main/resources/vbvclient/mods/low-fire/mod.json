@@ -1,0 +1,6 @@
+{
+  "id": "low-fire",
+  "name": "Low Fire",
+  "description": "Optional lower fire overlay texture for clearer first-person visibility.",
+  "pack": "vbvclient/mods/low-fire/pack.png"
+}
