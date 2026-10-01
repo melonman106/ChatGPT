@@ -269,6 +269,12 @@ jobs:
           # classes directory. Copy the official runtime resources there
           # explicitly instead of relying on Gradle's resource task.
           echo "=== Installing TeaVM runtime resources into game/build/classes/java/main ==="
+          if [ ! -d "$resources" ]; then
+            echo "::error::Expected runtime resource directory does not exist: $resources"
+            echo "=== Game module contents ==="
+            find "$game_dir" -maxdepth 4 -print | sort | head -300
+            exit 1
+          fi
           cp -a "$resources"/. "$game_classes"/
 
           test -f "$game_classes/version.json"
