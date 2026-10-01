@@ -141,90 +141,30 @@ jobs:
 
           # Copy only runtime resources. Do not copy the original compiled Java
           # classes into the Gradle resources directory.
-          for path in version.json pack.mcmeta assets data; do
-            if [ -e "$temp_resources/$path" ]; then
-              cp -a "$temp_resources/$path" "$resources/"
+          # The client JAR must contain the runtime metadata and client assets.
+          # A data/ directory is not guaranteed in a client-only distribution.
+          for path in version.json pack.mcmeta assets; do
+            if [ ! -e "$temp_resources/$path" ]; then
+              echo "::error::Official client JAR is missing required runtime resource: $path"
+              exit 1
             fi
           done
 
-          echo "=== Restored runtime resources ==="
-          printf 'game module: %s\\nresources: %s\\n' "$game_dir" "$resources"
-          test -f "$resources/version.json"
-          test -f "$resources/assets/minecraft/lang/en_us.json"
-          du -sh "$resources"
-          find "$resources" -type f | wc -l
+          jar_args=(
+            -C "$temp_resources" version.json
+            -C "$temp_resources" pack.mcmeta
+            -C "$temp_resources" assets
+          )
 
-      - name: Setup Java 25 for Eaglercraft build
-        uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: "25"
-
-      - name: Build generated Eaglercraft client
-        run: |
-          set -euo pipefail
-          build_root=$(find generated-client -type f             \( -name 'gradlew' -o -name 'build.gradle' -o -name 'build.gradle.kts' \)             -print -quit | xargs -r dirname)
-
-          if [ -z "$build_root" ]; then
-            echo "::error::No generated Gradle client exists after create-dev."
-            exit 1
-          fi
-
-          cd "$build_root"
-
-          if [ -f ./gradlew ]; then
-            chmod +x ./gradlew
-            ./gradlew assemble --no-daemon
+          if [ -e "$temp_resources/data" ]; then
+            jar_args+=(-C "$temp_resources" data)
+            echo "Official client JAR contains data/; injecting it too."
           else
-            gradle assemble --no-daemon
+            echo "Official client JAR has no data/ directory; skipping it."
           fi
-
-      - name: Inject Minecraft runtime resources into game JAR
-        run: |
-          set -euo pipefail
-
-          # Gradle still reports game:processResources as NO-SOURCE in this
-          # generated Eaglercraft project. The standalone TeaVM linker reads
-          # resources from game.jar, so put the complete official 26.2 runtime
-          # resource tree directly into the assembled game JAR.
-          # Identify the root from Gradle's wrapper. Looking for build.gradle can
-          # accidentally select a nested module directory such as game/.
-          build_root=$(find generated-client -type f -name 'gradlew' -print -quit | xargs -r dirname)
-
-          if [ -z "$build_root" ]; then
-            echo "::error::Could not locate the generated Eaglercraft Gradle wrapper."
-            find generated-client -maxdepth 8 -type f -name 'gradlew' -print || true
-            exit 1
-          fi
-
-          # The generated game JAR can have a versioned/generated filename.
-          # Search the entire Gradle root for the actual :game:jar output.
-          game_jar=$(find "$build_root" -type f             -path '*/game/build/libs/*.jar'             ! -name '*-sources.jar'             ! -name '*-dev.jar'             -printf '%s %p\n' | sort -nr | head -1 | cut -d' ' -f2-)
-
-          if [ -z "$game_jar" ]; then
-            echo "::error::Could not locate the assembled game JAR."
-            echo "=== JAR files under generated build root ==="
-            find "$build_root" -type f -name '*.jar' -print | sort || true
-            exit 1
-          fi
-
-          echo "Detected Gradle root: $build_root"
-          echo "Detected game JAR: $game_jar"
-
-          temp_resources="$(mktemp -d)"
-          trap 'rm -rf "$temp_resources"' EXIT
-          unzip -q build-input/minecraft-26.2-client.jar -d "$temp_resources"
-
-          for path in version.json pack.mcmeta assets data; do
-            test -e "$temp_resources/$path"
-          done
 
           echo "Injecting official 26.2 runtime resources into: $game_jar"
-          jar --update --file "$game_jar" \\
-            -C "$temp_resources" version.json \\
-            -C "$temp_resources" pack.mcmeta \\
-            -C "$temp_resources" assets \\
-            -C "$temp_resources" data
+          jar --update --file "$game_jar" "${jar_args[@]}"
 
           echo "=== Required resources in game.jar ==="
           jar --list --file "$game_jar" | grep -E '^(version.json|pack.mcmeta|assets/minecraft/lang/en_us.json|assets/)' | head -30
