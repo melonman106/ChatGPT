@@ -430,6 +430,26 @@ jobs:
           echo "Packaging checkpoint restored successfully."
           du -sh ModdedClientSource
 
+      - name: Setup Java 25
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: Prepare Gradle wrapper for packaging
+        working-directory: ModdedClientSource
+        run: |
+          set -euo pipefail
+          if [ ! -f ./gradlew ]; then
+            echo "::error::Packaging checkpoint is missing gradlew."
+            exit 1
+          fi
+          chmod +x ./gradlew
+          test -x ./gradlew
+          echo "Gradle wrapper is executable."
+          java -version
+          ./gradlew --version --no-daemon
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
