@@ -104,8 +104,27 @@ jobs:
           fi
           resources="$game_dir/src/main/resources"
           # Preserve Eagler-specific skeleton resources (especially pack.png).
-          # Only overlay the official Minecraft runtime resources below.
+          # create-dev can place the Eagler pack image outside the Gradle
+          # resource directory, so locate it before overlaying Minecraft assets.
           mkdir -p "$resources"
+          pack_png="$(find "$game_dir" -type f -name 'pack.png' -print -quit || true)"
+          if [ -z "$pack_png" ]; then
+            pack_png="$(find "$GITHUB_WORKSPACE/generated-client" -type f -path '*/src/main/resources/pack.png' -print -quit || true)"
+          fi
+          if [ -z "$pack_png" ]; then
+            pack_png="$(find "$EAGLER_PATCHER_ROOT" -type f -name 'pack.png' -print -quit || true)"
+          fi
+          if [ -z "$pack_png" ]; then
+            echo "::error::Could not locate the Eaglercraft pack.png required by deploy_wasm_web.sh."
+            echo "=== pack.png candidates under generated-client ==="
+            find "$GITHUB_WORKSPACE/generated-client" -type f -name 'pack.png' -print | sort || true
+            echo "=== pack.png candidates under U1 patcher ==="
+            find "$EAGLER_PATCHER_ROOT" -type f -name 'pack.png' -print | sort || true
+            exit 1
+          fi
+          pack_png="$(realpath "$pack_png")"
+          cp -f "$pack_png" "$resources/pack.png"
+          echo "Preserved Eagler skeleton pack.png from: $pack_png"
           temp_resources="$(mktemp -d)"
           trap 'rm -rf "$temp_resources"' EXIT
           unzip -q build-input/minecraft-26.2-client.jar -d "$temp_resources"
