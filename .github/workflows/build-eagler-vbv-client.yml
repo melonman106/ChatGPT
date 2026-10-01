@@ -25,104 +25,72 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Download pinned Eaglercraft 26.2 u1 Setup
-        run: |
-          set -euo pipefail
-          mkdir -p build-input
-          curl -fL --retry 3 \
-            -o build-input/Eaglercraft-26.2-u1-Setup.jar \
-            "https://github.com/melonman106/ChatGPT/releases/download/Modded/Eaglercraft-26.2-u1-Setup.jar"
-
-          echo "57bfcacdf24310d48f462a9a508fe2a59acad8487a8de34bb40963c46183c1bd  build-input/Eaglercraft-26.2-u1-Setup.jar" \
-            | sha256sum -c -
-
-      - name: Prepare U1-Patcher launcher
+      - name: Download and extract U1 portable-kit.zip
         run: |
           set -euo pipefail
 
-          # U1-Patcher is NOT a directory containing an eagler-patcher
-          # executable. It is the extracted contents of the single-file
-          # Java patcher JAR. The manifest explicitly names:
-          # com.eaglercraft.patcher.SingleFileLauncher
-          test -f U1-Patcher/META-INF/MANIFEST.MF
-          test -f U1-Patcher/com/eaglercraft/patcher/SingleFileLauncher.class
-          test -f U1-Patcher/com/eaglercraft/patcher/SingleFileLauncher\$1.class
-          test -f U1-Patcher/portable-kit.zip
-          test -f U1-Patcher/portable-kit.sha256
+          mkdir -p build-input/u1-portable-kit
 
-          expected="$(tr -d '[:space:]' < U1-Patcher/portable-kit.sha256)"
-          actual="$(sha256sum U1-Patcher/portable-kit.zip | awk '{print $1}')"
-          echo "portable-kit expected: $expected"
-          echo "portable-kit actual:   $actual"
+          curl -fL --retry 3             -o build-input/portable-kit.zip             "https://github.com/melonman106/ChatGPT/releases/download/Modded/portable-kit.zip"
+
+          expected="974c88e396dabebced363aa30bc518e159b0a06d4f430dde8a06525154328d19"
+          actual="$(sha256sum build-input/portable-kit.zip | awk '{print $1}')"
+
+          echo "Expected SHA-256: $expected"
+          echo "Actual SHA-256:   $actual"
+
           test "$actual" = "$expected"
 
-          grep -q '^Main-Class: com.eaglercraft.patcher.SingleFileLauncher'             U1-Patcher/META-INF/MANIFEST.MF
+          unzip -q build-input/portable-kit.zip -d build-input/u1-portable-kit
 
-          rm -rf Eaglercraft-26.2-u1
-          mkdir -p Eaglercraft-26.2-u1
+          echo "=== Extracted U1 portable kit ==="
+          find build-input/u1-portable-kit -type f -print | sort
 
-          # Reassemble the exact single-file launcher from U1-Patcher.
-          # This is the required executable form of the files in U1-Patcher.
-          (cd U1-Patcher && jar cfm             "$GITHUB_WORKSPACE/Eaglercraft-26.2-u1/Eaglercraft-26.2-u1-Setup.jar"             META-INF/MANIFEST.MF .)
-
-          test -s Eaglercraft-26.2-u1/Eaglercraft-26.2-u1-Setup.jar
-
-          echo "=== U1-Patcher files ==="
-          find U1-Patcher -maxdepth 6 -type f -print | sort
-
-          echo "=== Reassembled launcher ==="
-          java -jar Eaglercraft-26.2-u1/Eaglercraft-26.2-u1-Setup.jar --help 2>&1 | head -100 || true
-
-          # The launcher itself installs the portable patcher kit.
-          java -jar Eaglercraft-26.2-u1/Eaglercraft-26.2-u1-Setup.jar             --install-dir "$GITHUB_WORKSPACE/Eaglercraft-26.2-u1/installed"
-
-          test -d Eaglercraft-26.2-u1/installed
-
-          patcher="$(find Eaglercraft-26.2-u1/installed -type f -name 'eagler-patcher' -print -quit || true)"
-          cli_jar="$(find Eaglercraft-26.2-u1/installed -type f -name 'eaglercraft-26.2-java-cli.jar' -print -quit || true)"
+          patcher="$(find build-input/u1-portable-kit -type f -name 'eagler-patcher' -print -quit || true)"
+          cli_jar="$(find build-input/u1-portable-kit -type f -name 'eaglercraft-26.2-java-cli.jar' -print -quit || true)"
 
           if [ -z "$patcher" ]; then
-            echo "::error::The reassembled U1-Patcher launcher did not install an eagler-patcher executable."
-            find Eaglercraft-26.2-u1/installed -type f -print | sort
-            exit 1
-          fi
-          if [ -z "$cli_jar" ]; then
-            echo "::error::The reassembled U1-Patcher launcher did not install the Java CLI."
-            find Eaglercraft-26.2-u1/installed -type f -print | sort
+            echo "::error::portable-kit.zip does not contain eagler-patcher."
             exit 1
           fi
 
-          # Resolve to ABSOLUTE paths. Later steps cd into the patcher root,
-          # so workspace-relative paths would stop resolving there.
+          if [ -z "$cli_jar" ]; then
+            echo "::error::portable-kit.zip does not contain eaglercraft-26.2-java-cli.jar."
+            exit 1
+          fi
+
           patcher="$(realpath "$patcher")"
           cli_jar="$(realpath "$cli_jar")"
+          patcher_root="$(dirname "$patcher")"
+
           chmod +x "$patcher"
-          echo "EAGLER_PATCHER_ROOT=$(dirname "$patcher")" >> "$GITHUB_ENV"
+
+          echo "EAGLER_PATCHER_ROOT=$patcher_root" >> "$GITHUB_ENV"
           echo "EAGLER_PATCHER=$patcher" >> "$GITHUB_ENV"
           echo "EAGLER_JAVA_CLI=$cli_jar" >> "$GITHUB_ENV"
-          echo "Using actual U1-Patcher launcher output:"
+
+          echo "Using portable-kit patcher:"
+          echo "  root=$patcher_root"
           echo "  patcher=$patcher"
           echo "  java-cli=$cli_jar"
 
       - name: Download official Minecraft 26.2 client
         run: |
           set -euo pipefail
-          curl -fL --retry 3 \
-            -o build-input/minecraft-26.2-client.jar \
-            "https://piston-data.mojang.com/v1/objects/2dc72797acbc1b63fc16a11c4ac393605f453754/client.jar"
+          curl -fL --retry 3             -o build-input/minecraft-26.2-client.jar             "https://piston-data.mojang.com/v1/objects/2dc72797acbc1b63fc16a11c4ac393605f453754/client.jar"
 
-          echo "2dc72797acbc1b63fc16a11c4ac393605f453754  build-input/minecraft-26.2-client.jar" \
-            | sha1sum -c -
+          echo "2dc72797acbc1b63fc16a11c4ac393605f453754  build-input/minecraft-26.2-client.jar"             | sha1sum -c -
 
-      - name: Inspect installed patcher
+      - name: Inspect extracted U1 patcher
         run: |
           set -euo pipefail
-          cd "$EAGLER_PATCHER_ROOT"
-          chmod +x "$EAGLER_PATCHER"
-          echo "=== Installed patcher files ==="
+
+          echo "=== Portable kit root ==="
           find "$EAGLER_PATCHER_ROOT" -maxdepth 3 -type f | sort
+
           echo "=== Patcher help ==="
           "$EAGLER_PATCHER" --help 2>&1 || true
+
           echo "=== create-dev help ==="
           "$EAGLER_PATCHER" create-dev --help 2>&1 || true
 
@@ -131,23 +99,12 @@ jobs:
           set -euo pipefail
           rm -rf "$GITHUB_WORKSPACE/generated-client"
 
-          # Options below are the patcher's real create-dev CLI (see its --help).
           cd "$EAGLER_PATCHER_ROOT"
           chmod +x "$EAGLER_PATCHER"
 
-          "$EAGLER_PATCHER" create-dev \
-            --jar "$GITHUB_WORKSPACE/build-input/minecraft-26.2-client.jar" \
-            --output "$GITHUB_WORKSPACE/generated-client" \
-            --vineflower "$EAGLER_PATCHER_ROOT/inputs/vineflower-1.12.0.jar" \
-            --java17 "$JAVA_HOME/bin/java" \
-            --patch-bundle "$EAGLER_PATCHER_ROOT/source-patch-bundle.zip" \
-            --expected-bundle-sha256 fd944e9cabbebbf4bddce8a39e1b233b3c7d0cd4f860f9cae37550a3fcfa8b02 \
-            --project-skeleton "$EAGLER_PATCHER_ROOT/project-skeleton-v5-teavm-runtime-verified.zip" \
-            --expected-skeleton-sha256 3656a83ed8187e2d859612c566f3aa73e242bf1e4633990c5bb4929e0a846c94
+          "$EAGLER_PATCHER" create-dev             --jar "$GITHUB_WORKSPACE/build-input/minecraft-26.2-client.jar"             --output "$GITHUB_WORKSPACE/generated-client"             --vineflower "$EAGLER_PATCHER_ROOT/inputs/vineflower-1.12.0.jar"             --java17 "$JAVA_HOME/bin/java"             --patch-bundle "$EAGLER_PATCHER_ROOT/source-patch-bundle.zip"             --expected-bundle-sha256 fd944e9cabbebbf4bddce8a39e1b233b3c7d0cd4f860f9cae37550a3fcfa8b02             --project-skeleton "$EAGLER_PATCHER_ROOT/project-skeleton-v5-teavm-runtime-verified.zip"             --expected-skeleton-sha256 3656a83ed8187e2d859612c566f3aa73e242bf1e4633990c5bb4929e0a846c94
 
-          if ! find "$GITHUB_WORKSPACE/generated-client" -type f \
-              \( -name 'gradlew' -o -name 'build.gradle' -o -name 'build.gradle.kts' \) \
-              -print -quit | grep -q .; then
+          if ! find "$GITHUB_WORKSPACE/generated-client" -type f               \( -name 'gradlew' -o -name 'build.gradle' -o -name 'build.gradle.kts' \)               -print -quit | grep -q .; then
             echo "::error::create-dev completed but did not produce a Gradle source project."
             find "$GITHUB_WORKSPACE/generated-client" -maxdepth 5 -type f | sort | head -1000
             exit 1
@@ -167,9 +124,7 @@ jobs:
       - name: Build generated Eaglercraft client
         run: |
           set -euo pipefail
-          build_root=$(find generated-client -type f \
-            \( -name 'gradlew' -o -name 'build.gradle' -o -name 'build.gradle.kts' \) \
-            -print -quit | xargs -r dirname)
+          build_root=$(find generated-client -type f             \( -name 'gradlew' -o -name 'build.gradle' -o -name 'build.gradle.kts' \)             -print -quit | xargs -r dirname)
 
           if [ -z "$build_root" ]; then
             echo "::error::No generated Gradle client exists after create-dev."
@@ -178,9 +133,6 @@ jobs:
 
           cd "$build_root"
 
-          # "assemble" compiles everything and builds jars. "build" also runs
-          # :platform:test, which Gradle 9 fails because that module has test
-          # sources but no discoverable tests.
           if [ -f ./gradlew ]; then
             chmod +x ./gradlew
             ./gradlew assemble --no-daemon
