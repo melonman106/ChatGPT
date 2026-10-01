@@ -19,6 +19,36 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Restore repository checkpoint if present
+        id: repo_checkpoint
+        run: |
+          set -euo pipefail
+          checkpoint_dir="$GITHUB_WORKSPACE/ViaBackport26.2-ClientSide/checkpoint"
+          if [ -d "$checkpoint_dir" ] && [ -f "$checkpoint_dir/wasm-toolchain/build-single-html.js" ] && [ -f "$checkpoint_dir/game/build/libs/game.jar" ]; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+            echo "Repository checkpoint found; skipping create-dev, patching, Gradle build, and resource reconstruction."
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "No complete repository checkpoint found; performing the normal build."
+          fi
+
+      - name: Use repository checkpoint as ModdedClientSource
+        if: steps.repo_checkpoint.outputs.found == 'true'
+        run: |
+          set -euo pipefail
+          rm -rf "$GITHUB_WORKSPACE/ModdedClientSource"
+          cp -a "$GITHUB_WORKSPACE/ViaBackport26.2-ClientSide/checkpoint" "$GITHUB_WORKSPACE/ModdedClientSource"
+          test -f "$GITHUB_WORKSPACE/ModdedClientSource/wasm-toolchain/build-single-html.js"
+          test -f "$GITHUB_WORKSPACE/ModdedClientSource/game/build/libs/game.jar"
+          test -f "$GITHUB_WORKSPACE/ModdedClientSource/game/src/main/resources/pack.png"
+          echo "Repository checkpoint restored directly."
+          du -sh "$GITHUB_WORKSPACE/ModdedClientSource"
+
+      - name: Setup Java 17
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Setup Java 17
         uses: actions/setup-java@v5
         with:
@@ -26,6 +56,7 @@ jobs:
           java-version: "17"
 
       - name: Download and extract U1 portable-kit.zip
+        if: steps.repo_checkpoint.outputs.found != 'true'
         run: |
           set -euo pipefail
           mkdir -p build-input/u1-portable-kit
@@ -61,12 +92,14 @@ jobs:
           echo "  java-cli=$cli_jar"
 
       - name: Download official Minecraft 26.2 client
+        if: steps.repo_checkpoint.outputs.found != 'true'
         run: |
           set -euo pipefail
           curl -fL --retry 3 -o build-input/minecraft-26.2-client.jar "https://piston-data.mojang.com/v1/objects/2dc72797acbc1b63fc16a11c4ac393605f453754/client.jar"
           echo "2dc72797acbc1b63fc16a11c4ac393605f453754  build-input/minecraft-26.2-client.jar" | sha1sum -c -
 
       - name: Inspect extracted U1 patcher
+        if: steps.repo_checkpoint.outputs.found != 'true'
         run: |
           set -euo pipefail
           echo "=== Portable kit root ==="
@@ -77,6 +110,7 @@ jobs:
           "$EAGLER_PATCHER" create-dev --help 2>&1 || true
 
       - name: Create editable Eaglercraft source project
+        if: steps.repo_checkpoint.outputs.found != 'true'
         run: |
           set -euo pipefail
           rm -rf "$GITHUB_WORKSPACE/generated-client"
@@ -90,11 +124,13 @@ jobs:
           fi
 
       - name: Apply native VBV patch
+        if: steps.repo_checkpoint.outputs.found != 'true'
         run: |
           set -euo pipefail
           python3 ViaBackport26.2-ClientSide/patch/apply_vbv_patch.py generated-client
 
       - name: Restore Minecraft runtime resources
+        if: steps.repo_checkpoint.outputs.found != 'true'
         run: |
           set -euo pipefail
           game_dir="$(find generated-client -type f \( -path "*/game/build.gradle" -o -path "*/game/build.gradle.kts" \) -print -quit | xargs -r dirname)"
@@ -172,12 +208,14 @@ jobs:
           find "$resources" -type f | wc -l
 
       - name: Setup Java 25 for Eaglercraft build
+        if: steps.repo_checkpoint.outputs.found != 'true'
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "25"
 
       - name: Build generated Eaglercraft client
+        if: steps.repo_checkpoint.outputs.found != 'true'
         run: |
           set -euo pipefail
           build_root="$(find generated-client -type f -name 'gradlew' -print -quit | xargs -r dirname)"
@@ -191,6 +229,7 @@ jobs:
           ./gradlew assemble --no-daemon
 
       - name: Inject Minecraft runtime resources into game JAR
+        if: steps.repo_checkpoint.outputs.found != 'true'
         run: |
           set -euo pipefail
           build_root="$(find generated-client -type f -name 'gradlew' -print -quit | xargs -r dirname)"
@@ -247,11 +286,13 @@ jobs:
           ls -lh "$game_jar"
 
       - name: Setup Node.js for single-HTML packaging
+        if: steps.repo_checkpoint.outputs.found != 'true'
         uses: actions/setup-node@v4
         with:
           node-version: "24"
 
       - name: Prepare ModdedClientSource
+        if: steps.repo_checkpoint.outputs.found != 'true'
         run: |
           set -euo pipefail
 
