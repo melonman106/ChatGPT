@@ -115,6 +115,45 @@ jobs:
           set -euo pipefail
           python3 ViaBackport26.2-ClientSide/patch/apply_vbv_patch.py generated-client
 
+      - name: Restore Minecraft runtime resources
+        run: |
+          set -euo pipefail
+
+          # create-dev decompiles the client code, but the standalone TeaVM linker
+          # also needs the original Minecraft runtime resources on the game JAR
+          # classpath (version.json, language files, textures, sounds, etc.).
+          # The failed standalone link proved these were missing: game:processResources
+          # reported NO-SOURCE and the linker could not find version.json or en_us.json.
+          game_dir="$(find generated-client -type d -name game -print -quit)"
+          if [ -z "$game_dir" ]; then
+            echo "::error::Could not locate the generated game module."
+            exit 1
+          fi
+
+          resources="$game_dir/src/main/resources"
+          rm -rf "$resources"
+          mkdir -p "$resources"
+
+          temp_resources="$(mktemp -d)"
+          trap 'rm -rf "$temp_resources"' EXIT
+
+          unzip -q build-input/minecraft-26.2-client.jar -d "$temp_resources"
+
+          # Copy only runtime resources. Do not copy the original compiled Java
+          # classes into the Gradle resources directory.
+          for path in version.json pack.mcmeta assets data; do
+            if [ -e "$temp_resources/$path" ]; then
+              cp -a "$temp_resources/$path" "$resources/"
+            fi
+          done
+
+          echo "=== Restored runtime resources ==="
+          printf 'game module: %s\\nresources: %s\\n' "$game_dir" "$resources"
+          test -f "$resources/version.json"
+          test -f "$resources/assets/minecraft/lang/en_us.json"
+          du -sh "$resources"
+          find "$resources" -type f | wc -l
+
       - name: Setup Java 25 for Eaglercraft build
         uses: actions/setup-java@v5
         with:
