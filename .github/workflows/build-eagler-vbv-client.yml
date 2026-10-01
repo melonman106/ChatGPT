@@ -43,8 +43,29 @@ jobs:
           java -jar build-input/Eaglercraft-26.2-u1-Setup.jar \
             --install-dir Eaglercraft-26.2-u1
 
-          test -f Eaglercraft-26.2-u1/patcher/java-cli/eagler-patcher
-          test -f Eaglercraft-26.2-u1/patcher/java-cli/eaglercraft-26.2-java-cli.jar
+          # The Setup JAR itself reports a successful installation. Do not
+          # assume a fixed subdirectory: locate the files it actually installed.
+          patcher="$(find Eaglercraft-26.2-u1 -type f -name 'eagler-patcher' -print -quit)"
+          cli_jar="$(find Eaglercraft-26.2-u1 -type f -name 'eaglercraft-26.2-java-cli.jar' -print -quit)"
+
+          if [ -z "$patcher" ]; then
+            echo "::error::Installed Setup kit does not contain eagler-patcher."
+            find Eaglercraft-26.2-u1 -maxdepth 6 -type f | sort
+            exit 1
+          fi
+          if [ -z "$cli_jar" ]; then
+            echo "::error::Installed Setup kit does not contain eaglercraft-26.2-java-cli.jar."
+            find Eaglercraft-26.2-u1 -maxdepth 6 -type f | sort
+            exit 1
+          fi
+
+          patcher_root="$(dirname "$patcher")"
+          echo "EAGLER_PATCHER_ROOT=$patcher_root" >> "$GITHUB_ENV"
+          echo "EAGLER_PATCHER=$patcher" >> "$GITHUB_ENV"
+          echo "EAGLER_JAVA_CLI=$cli_jar" >> "$GITHUB_ENV"
+          echo "Patcher root: $patcher_root"
+          echo "Patcher: $patcher"
+          echo "Java CLI: $cli_jar"
 
       - name: Download official Minecraft 26.2 client
         run: |
@@ -56,57 +77,39 @@ jobs:
           echo "2dc72797acbc1b63fc16a11c4ac393605f453754  build-input/minecraft-26.2-client.jar" \
             | sha1sum -c -
 
-      - name: Inspect patcher CLI
+      - name: Inspect installed patcher
         run: |
           set -euo pipefail
-          cd Eaglercraft-26.2-u1/patcher/java-cli
-          chmod +x ./eagler-patcher
-          ./eagler-patcher --help 2>&1 || true
-          ./eagler-patcher create-dev --help 2>&1 || true
+          cd "$EAGLER_PATCHER_ROOT"
+          chmod +x "$EAGLER_PATCHER"
+          echo "=== Installed patcher files ==="
+          find "$EAGLER_PATCHER_ROOT" -maxdepth 3 -type f | sort
+          echo "=== Patcher help ==="
+          "$EAGLER_PATCHER" --help 2>&1 || true
+          echo "=== create-dev help ==="
+          "$EAGLER_PATCHER" create-dev --help 2>&1 || true
 
       - name: Create editable Eaglercraft source project
         run: |
           set -euo pipefail
-          cd Eaglercraft-26.2-u1/patcher/java-cli
-
-          chmod +x ./eagler-patcher
-
-          # The complete Setup kit contains the pinned Java CLI and all required
-          # Eaglercraft inputs. The source-only tarball does not, which is why
-          # the previous workflow could never create a project.
-          #
-          # Try the CLI forms used by patcher builds across revisions. Every
-          # attempt gets a fresh output directory and is accepted only when it
-          # actually produces a Gradle source tree.
           rm -rf "$GITHUB_WORKSPACE/generated-client"
 
-          attempts=(
-            "create-dev --minecraft-jar $GITHUB_WORKSPACE/build-input/minecraft-26.2-client.jar --output $GITHUB_WORKSPACE/generated-client"
-            "create-dev --client-jar $GITHUB_WORKSPACE/build-input/minecraft-26.2-client.jar --output $GITHUB_WORKSPACE/generated-client"
-            "create-dev --input $GITHUB_WORKSPACE/build-input/minecraft-26.2-client.jar --output $GITHUB_WORKSPACE/generated-client"
-            "create-dev $GITHUB_WORKSPACE/build-input/minecraft-26.2-client.jar $GITHUB_WORKSPACE/generated-client"
-            "create-dev $GITHUB_WORKSPACE/build-input/minecraft-26.2-client.jar --output $GITHUB_WORKSPACE/generated-client"
-          )
+          # Use the installed patcher's documented CLI rather than treating
+          # the patcher distribution itself as a Gradle project.
+          cd "$EAGLER_PATCHER_ROOT"
+          chmod +x "$EAGLER_PATCHER"
 
-          for command in "${attempts[@]}"; do
-            echo "=== Trying: ./eagler-patcher $command ==="
-            rm -rf "$GITHUB_WORKSPACE/generated-client"
-            set +e
-            ./eagler-patcher $command
-            status=$?
-            set -e
+          "$EAGLER_PATCHER" create-dev \
+            --minecraft-jar "$GITHUB_WORKSPACE/build-input/minecraft-26.2-client.jar" \
+            --output "$GITHUB_WORKSPACE/generated-client"
 
-            if [ "$status" -eq 0 ] && find "$GITHUB_WORKSPACE/generated-client" -type f \
-                \( -name 'gradlew' -o -name 'build.gradle' -o -name 'build.gradle.kts' \) \
-                -print -quit | grep -q .; then
-              echo "Eaglercraft source project created successfully."
-              exit 0
-            fi
-          done
-
-          echo "::error::create-dev did not produce a Gradle source project."
-          echo "::error::The exact CLI usage is printed by the Inspect patcher CLI step."
-          exit 1
+          if ! find "$GITHUB_WORKSPACE/generated-client" -type f \
+              \( -name 'gradlew' -o -name 'build.gradle' -o -name 'build.gradle.kts' \) \
+              -print -quit | grep -q .; then
+            echo "::error::create-dev completed but did not produce a Gradle source project."
+            find "$GITHUB_WORKSPACE/generated-client" -maxdepth 5 -type f | sort | head -1000
+            exit 1
+          fi
 
       - name: Apply native VBV patch
         run: |
