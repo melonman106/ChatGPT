@@ -261,54 +261,39 @@ if open_name is None:
 print("Screen-opening method on Minecraft:", open_name, "(candidates:", screen_methods, ")")
 
 # ---------------------------------------------------------------------------
-# 4) Native Armor HUD. Minecraft 26.2 uses the extraction-based Hud API, so
-#    inject our renderer into Hud.extractRenderState.
+# 4) Native Armor HUD. The real Uku's Armor HUD 26.2 implementation injects
+#    at the TAIL of Hud.extractItemHotbar. Do the same in native Eagler
+#    source instead of depending on Fabric/NeoForge mixins.
 # ---------------------------------------------------------------------------
 HUD_CALL = "com.melonman106.vbvclient.VBVArmorHud.render(graphics);"
-
-def find_method_end(text, method_start):
-    brace = text.find("{", method_start)
-    if brace < 0:
-        return None
-    depth = 0
-    i = brace
-    while i < len(text):
-        if text[i] == "{":
-            depth += 1
-        elif text[i] == "}":
-            depth -= 1
-            if depth == 0:
-                return i
-        i += 1
-    return None
 
 hud_path = None
 hud_src = None
 for p, s in java_files():
-    if re.search(r"class\s+Hud\b", s) and "GuiGraphicsExtractor" in s and "extractRenderState" in s:
+    if re.search(r"class\s+Hud\b", s) and "GuiGraphicsExtractor" in s and "extractItemHotbar" in s:
         hud_path, hud_src = p, s
         break
 
 if hud_path is None:
-    raise SystemExit("Hud.java with GuiGraphicsExtractor/extractRenderState was not identified")
+    raise SystemExit("Hud.java with GuiGraphicsExtractor/extractItemHotbar was not identified")
 
 if HUD_CALL in hud_src:
     print("VBV Armor HUD hook already present.")
 else:
     hud_match = re.search(
-        r"(?:public|private|protected)\s+void\s+extractRenderState\s*"
-        r"\(\s*GuiGraphicsExtractor\s+(\w+)\s*,\s*DeltaTracker\s+\w+\s*\)",
+        r"(?:public|private|protected)\s+void\s+extractItemHotbar\s*\([^)]*\)\s*\{",
         hud_src
     )
     if not hud_match:
-        raise SystemExit("Hud.extractRenderState signature was not identified")
+        raise SystemExit("Hud.extractItemHotbar method was not identified")
+
     end = find_method_end(hud_src, hud_match.start())
     if end is None:
-        raise SystemExit("Could not find end of Hud.extractRenderState")
-    graphics_name = hud_match.group(1)
-    hud_src = hud_src[:end] + "\n        com.melonman106.vbvclient.VBVArmorHud.render(" + graphics_name + ");\n    " + hud_src[end:]
+        raise SystemExit("Could not find end of Hud.extractItemHotbar")
+
+    hud_src = hud_src[:end] + "\n        " + HUD_CALL + "\n    " + hud_src[end:]
     hud_path.write_text(hud_src, encoding="utf-8")
-    print("Inserted Armor HUD hook into", hud_path)
+    print("Inserted Armor HUD hook at the end of", hud_path)
 
 
 nav = DEST / "VBVNav.java"
