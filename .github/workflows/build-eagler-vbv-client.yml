@@ -4,11 +4,12 @@ on:
   push:
     paths:
       - "ViaBackport26.2-ClientSide/**"
+      - "eaglercraft-26.2-patcher-main.tar.gz"
       - ".github/workflows/build-eagler-vbv-client.yml"
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
@@ -23,59 +24,62 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-
-      - name: Download pinned Eaglercraft 26.2 u1 Setup JAR
-        run: |
-          set -euo pipefail
-          mkdir -p build-input
-          curl -fL --retry 3 "https://github.com/melonman106/ChatGPT/releases/download/Modded/Eaglercraft-26.2-u1-Setup.jar" -o build-input/Eaglercraft-26.2-u1-Setup.jar
-          echo "57bfcacdf24310d48f462a9a508fe2a59acad8487a8de34bb40963c46183c1bd  build-input/Eaglercraft-26.2-u1-Setup.jar" | sha256sum -c -
-
-      - name: Generate Eaglercraft source
+      - name: Extract repository patcher
         run: |
           set -euo pipefail
           rm -rf Eaglercraft-26.2-u1
-          # The pinned Eaglercraft setup JAR is a patcher/installer. It does not
-          # accept the old "create-dev" command; it expects --install-dir.
-          java -jar build-input/Eaglercraft-26.2-u1-Setup.jar --install-dir Eaglercraft-26.2-u1
-          test -d Eaglercraft-26.2-u1
+          mkdir -p Eaglercraft-26.2-u1
+          tar -xzf eaglercraft-26.2-patcher-main.tar.gz -C Eaglercraft-26.2-u1
 
-      - name: Apply native VBV patch
-        run: |
-          set -euo pipefail
-          python3 ViaBackport26.2-ClientSide/patch/apply_vbv_patch.py "$GITHUB_WORKSPACE"
-
-      - name: Inspect Eaglercraft patcher workspace
+      - name: Inspect patcher and source inputs
         run: |
           set -euo pipefail
           cd Eaglercraft-26.2-u1
           echo "=== START-HERE.md ==="
-          sed -n '1,240p' START-HERE.md
-          echo "=== patcher help ==="
-          ./eagler-patcher --help || true
+          find . -type f -iname 'START-HERE.md' -print -exec sed -n '1,300p' {} \;
+          echo "=== Patcher help ==="
+          for p in $(find . -type f -name 'eagler-patcher' -print); do
+            chmod +x "$p" || true
+            echo "--- $p --help"
+            "$p" --help || true
+          done
+          echo "=== Build/source files ==="
+          find . -type f \( -name 'gradlew' -o -name 'build.gradle' -o -name 'build.gradle.kts' -o -name 'settings.gradle' -o -name 'settings.gradle.kts' \) -print | sort
+          echo "=== Bundled source/project archives ==="
+          find . -type f \( -name '*.zip' -o -name '*.jar' \) -print | sort
 
       - name: Apply native VBV patch
         run: |
           set -euo pipefail
           python3 ViaBackport26.2-ClientSide/patch/apply_vbv_patch.py "$GITHUB_WORKSPACE"
 
-      - name: Build Eaglercraft client
+      - name: Build patched client
         run: |
           set -euo pipefail
           cd Eaglercraft-26.2-u1
+
+          # The archive is the real Eaglercraft patcher distribution. If it
+          # contains a generated Gradle workspace, build that workspace.
           if [ -f ./gradlew ]; then
             chmod +x ./gradlew
             ./gradlew build --no-daemon
-          else
-            echo "::error::The Setup JAR provides a patcher workspace, not a Gradle project."
-            echo "::error::We need the patcher's documented build command before invoking it."
-            exit 1
+            exit 0
           fi
 
-      - name: Upload artifact
+          gradle_root=$(find . -type f \( -name 'gradlew' -o -name 'build.gradle' -o -name 'build.gradle.kts' \) -print -quit | xargs -r dirname)
+          if [ -n "$gradle_root" ]; then
+            cd "$gradle_root"
+            if [ -f ./gradlew ]; then chmod +x ./gradlew; ./gradlew build --no-daemon; else gradle build --no-daemon; fi
+            exit 0
+          fi
+
+          echo "::error::The patcher archive was extracted successfully, but it did not contain a generated Gradle source tree."
+          echo "::error::The patcher must first generate/uncompile the Eaglercraft source from its bundled skeleton/source-patch inputs."
+          echo "=== Workspace files ==="
+          find . -maxdepth 3 -type f | sort | head -500
+          exit 1
+
+      - name: Upload built client
         uses: actions/upload-artifact@v4
         with:
           name: ViaBackport26.2-ClientSide
