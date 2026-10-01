@@ -1,0 +1,11 @@
+{
+  "format": 1,
+  "target": "Eaglercraft 26.2 u1",
+  "modId": "viabackportvisuals-client",
+  "version": "1.0.0-26.2",
+  "sourceRoots": ["src/main/java"],
+  "requiredHooks": ["com.melonman106.vbvclient.VBVClient.init"],
+  "native": true,
+  "fabric": false,
+  "modMenuJar": false
+}
