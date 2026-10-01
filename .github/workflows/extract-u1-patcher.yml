@@ -1,0 +1,51 @@
+name: Extract U1 Patcher
+
+on:
+  workflow_dispatch:
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Download pinned U1 Setup JAR
+        run: |
+          set -euo pipefail
+          mkdir -p download U1-Patcher
+
+          curl -fL --retry 3 \
+            "https://github.com/melonman106/ChatGPT/releases/download/Modded/Eaglercraft-26.2-u1-Setup.jar" \
+            -o download/Eaglercraft-26.2-u1-Setup.jar
+
+          expected="57bfcacdf24310d48f462a9a508fe2a59acad8487a8de34bb40963c46183c1bd"
+          actual="$(sha256sum download/Eaglercraft-26.2-u1-Setup.jar | awk '{print $1}')"
+
+          echo "Expected SHA-256: $expected"
+          echo "Actual SHA-256:   $actual"
+
+          if [ "$actual" != "$expected" ]; then
+            echo "::error::Setup JAR SHA-256 does not match the pinned value."
+            exit 1
+          fi
+
+          echo "SHA-256 verified."
+
+      - name: Extract Setup JAR to U1-Patcher
+        run: |
+          set -euo pipefail
+          rm -rf U1-Patcher
+          mkdir -p U1-Patcher
+
+          unzip -q download/Eaglercraft-26.2-u1-Setup.jar -d U1-Patcher
+
+          echo "Extracted U1-Patcher:"
+          find U1-Patcher -maxdepth 3 -type f | sort | head -300
+
+      - name: Upload extracted U1-Patcher
+        uses: actions/upload-artifact@v4
+        with:
+          name: U1-Patcher
+          path: U1-Patcher/
+          if-no-files-found: error
