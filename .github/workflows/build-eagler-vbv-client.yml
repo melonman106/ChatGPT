@@ -20,11 +20,18 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Restore root checkpoint
+        id: root_checkpoint
+        uses: actions/cache@v4
+        with:
+          path: checkpoint
+          key: eagler-vbv-root-checkpoint-v3-${{ hashFiles('ViaBackport26.2-ClientSide/src/main/java/**/*.java', 'ViaBackport26.2-ClientSide/src/main/resources/**/*.json', 'ViaBackport26.2-ClientSide/patch/**', '.github/workflows/build-eagler-vbv-client.yml') }}
+
       - name: Restore repository checkpoint if present
         id: repo_checkpoint
         run: |
           set -euo pipefail
-          checkpoint_dir="$GITHUB_WORKSPACE/ViaBackport26.2-ClientSide/checkpoint"
+          checkpoint_dir="$GITHUB_WORKSPACE/checkpoint"
           if [ -d "$checkpoint_dir" ] && [ -f "$checkpoint_dir/wasm-toolchain/build-single-html.js" ] && [ -f "$checkpoint_dir/game/build/libs/game.jar" ]; then
             echo "found=true" >> "$GITHUB_OUTPUT"
             echo "Repository checkpoint found; skipping create-dev, patching, Gradle build, and resource reconstruction."
@@ -33,16 +40,16 @@ jobs:
             echo "No complete repository checkpoint found; performing the normal build."
           fi
 
-      - name: Use repository checkpoint as ModdedClientSource
+      - name: Use root checkpoint as ModdedClientSource
         if: steps.repo_checkpoint.outputs.found == 'true'
         run: |
           set -euo pipefail
           rm -rf "$GITHUB_WORKSPACE/ModdedClientSource"
-          cp -a "$GITHUB_WORKSPACE/ViaBackport26.2-ClientSide/checkpoint" "$GITHUB_WORKSPACE/ModdedClientSource"
+          cp -a "$GITHUB_WORKSPACE/checkpoint" "$GITHUB_WORKSPACE/ModdedClientSource"
           test -f "$GITHUB_WORKSPACE/ModdedClientSource/wasm-toolchain/build-single-html.js"
           test -f "$GITHUB_WORKSPACE/ModdedClientSource/game/build/libs/game.jar"
           test -f "$GITHUB_WORKSPACE/ModdedClientSource/game/src/main/resources/pack.png"
-          echo "Repository checkpoint restored directly."
+          echo "Root checkpoint restored directly."
           du -sh "$GITHUB_WORKSPACE/ModdedClientSource"
 
       - name: Setup Java 17
@@ -369,7 +376,37 @@ jobs:
           fi
 
           echo "Found single-HTML builder: $single_html_script"
+
+          # Copy built-in client-mod metadata and pack.png icons into the
+          # generated resource classpath. Resource-pack-backed features are
+          # presented as mods in the native Mods screen.
+          builtin_mods="$GITHUB_WORKSPACE/ViaBackport26.2-ClientSide/src/main/resources/vbvclient/mods"
+          if [ -d "$builtin_mods" ]; then
+            mkdir -p "$resources/vbvclient/mods"
+            cp -a "$builtin_mods"/. "$resources/vbvclient/mods/"
+            for mod_dir in "$resources"/vbvclient/mods/*; do
+              [ -d "$mod_dir" ] || continue
+              if [ ! -f "$mod_dir/pack.png" ]; then
+                cp -f "$GITHUB_WORKSPACE/ViaBackport26.2-ClientSide/pack.png" "$mod_dir/pack.png"
+              fi
+            done
+            mkdir -p "$game_classes/vbvclient/mods"
+            cp -a "$resources"/vbvclient/mods/. "$game_classes/vbvclient/mods/"
+          fi
+
           node --version
+
+      - name: Save root checkpoint
+        if: steps.repo_checkpoint.outputs.found != 'true'
+        run: |
+          set -euo pipefail
+          rm -rf "$GITHUB_WORKSPACE/checkpoint"
+          cp -a "$GITHUB_WORKSPACE/ModdedClientSource" "$GITHUB_WORKSPACE/checkpoint"
+          test -f "$GITHUB_WORKSPACE/checkpoint/wasm-toolchain/build-single-html.js"
+          test -f "$GITHUB_WORKSPACE/checkpoint/game/build/libs/game.jar"
+          test -f "$GITHUB_WORKSPACE/checkpoint/game/src/main/resources/pack.png"
+          echo "Root checkpoint created:"
+          du -sh "$GITHUB_WORKSPACE/checkpoint"
 
       # This is the expensive-build checkpoint. If the packaging job fails,
       # GitHub can rerun only that failed job instead of rebuilding TeaVM.
@@ -454,6 +491,24 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "24"
+
+      - name: Cache npm downloads
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-eagler-vbv-node24-${{ runner.os }}-${{ hashFiles('ModdedClientSource/package.json') }}
+          restore-keys: |
+            npm-eagler-vbv-node24-${{ runner.os }}-
+
+      - name: Install single-HTML packaging dependencies
+        working-directory: ModdedClientSource
+        run: |
+          set -euo pipefail
+          if [ -f package-lock.json ]; then
+            npm ci --no-audit --no-fund
+          else
+            npm install --no-audit --no-fund
+          fi
 
       - name: Build single-file HTML client
         working-directory: ModdedClientSource
