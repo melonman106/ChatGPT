@@ -87,6 +87,7 @@ public final class VBVClient {
             true
         ));
 
+        VBVGeneratedPackMods.register();
         VBVVisualMappings.register(VISUALS);
     }
 
