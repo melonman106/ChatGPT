@@ -31,65 +31,126 @@ jobs:
           mkdir -p Eaglercraft-26.2-u1
           tar -xzf eaglercraft-26.2-patcher-main.tar.gz -C Eaglercraft-26.2-u1
 
-      - name: Locate actual patcher root
+      - name: Locate patcher distribution root
         run: |
           set -euo pipefail
-          root=$(find Eaglercraft-26.2-u1 -type f -name 'eagler-patcher' -print -quit | xargs -r dirname)
+
+          # The archive contains nested executable directories. The previous
+          # workflow incorrectly selected patcher/java-cli as the root because
+          # it searched for eagler-patcher first. The real distribution root
+          # is the directory containing GUIDE.md/README.md.
+          root=$(find Eaglercraft-26.2-u1 -type f -name 'GUIDE.md' -print -quit | xargs -r dirname)
+
           if [ -z "$root" ]; then
-            root=$(find Eaglercraft-26.2-u1 -type f -name 'GUIDE.md' -print -quit | xargs -r dirname)
+            root=$(find Eaglercraft-26.2-u1 -type f -name 'README.md' -print -quit | xargs -r dirname)
           fi
+
           if [ -z "$root" ]; then
-            echo "::error::Could not locate the extracted Eaglercraft patcher root."
-            find Eaglercraft-26.2-u1 -maxdepth 4 -type f | sort
+            echo "::error::Could not locate the Eaglercraft patcher distribution root."
+            find Eaglercraft-26.2-u1 -maxdepth 5 -type f | sort
             exit 1
           fi
+
           echo "EAGLER_PATCHER_ROOT=$root" >> "$GITHUB_ENV"
-          echo "Patcher root: $root"
+          echo "Patcher distribution root: $root"
 
-      - name: Inspect patcher instructions and CLI
+      - name: Inspect patcher documentation and CLI
         run: |
           set -euo pipefail
           cd "$EAGLER_PATCHER_ROOT"
+
+          echo "=== DISTRIBUTION ROOT ==="
+          pwd
+
           echo "=== GUIDE.md ==="
-          if [ -f GUIDE.md ]; then cat GUIDE.md; fi
-          echo "=== README.md ==="
-          if [ -f README.md ]; then cat README.md; fi
-          echo "=== Patcher CLI ==="
-          if [ -f ./eagler-patcher ]; then
-            chmod +x ./eagler-patcher
-            ./eagler-patcher --help || true
+          if [ -f GUIDE.md ]; then
+            cat GUIDE.md
+          else
+            echo "GUIDE.md not present"
           fi
-          echo "=== Source/project inputs ==="
-          find . -maxdepth 4 -type f | sort | head -1000
 
-      - name: Generate/decompile Eaglercraft source with patcher
+          echo "=== README.md ==="
+          if [ -f README.md ]; then
+            cat README.md
+          else
+            echo "README.md not present"
+          fi
+
+          echo "=== PATCHER TREE ==="
+          find . -maxdepth 5 -type f | sort | sed -n '1,2000p'
+
+          echo "=== CLI HELP: wrapper scripts ==="
+          for cli in \
+            ./eagler-patcher \
+            ./patcher/eagler-patcher \
+            ./patcher/java-cli/eagler-patcher \
+            ./patcher/java-cli/eagler-patcher.cmd
+          do
+            if [ -f "$cli" ]; then
+              echo "--- $cli ---"
+              chmod +x "$cli" 2>/dev/null || true
+              "$cli" --help 2>&1 || true
+              "$cli" help 2>&1 || true
+            fi
+          done
+
+          echo "=== CLI HELP: Java CLI jars ==="
+          while IFS= read -r jar; do
+            echo "--- $jar ---"
+            java -jar "$jar" --help 2>&1 || true
+            java -jar "$jar" help 2>&1 || true
+          done < <(find . -type f -name '*java-cli*.jar' -o -name '*cli*.jar' | sort)
+
+      - name: Generate Eaglercraft source tree
         run: |
           set -euo pipefail
           cd "$EAGLER_PATCHER_ROOT"
 
-          # Do not pretend this distribution is a Gradle project. The archive
-          # is the patcher source/distribution, so source generation must be
-          # performed by its own documented CLI before the VBV Java patch is
-          # applied.
-          if [ -f ./eagler-patcher ]; then
-            chmod +x ./eagler-patcher
-            if ./eagler-patcher --help 2>&1 | grep -Eqi 'uncompile|decompile'; then
-              echo "::notice::The patcher exposes an uncompile/decompile command; see the previous step for its exact syntax."
-            else
-              echo "::notice::No uncompile/decompile command was detected in --help."
-            fi
-          fi
-
-          # Locate an already-generated source tree if the patcher archive
-          # itself supplies one.
+          # Some patcher distributions include a generated Gradle tree; use it
+          # if present. Otherwise the documentation/CLI inspection above is
+          # intentionally the source of truth for the generation command.
           generated=$(find . -type f \( -name 'gradlew' -o -name 'build.gradle' -o -name 'build.gradle.kts' \) -print -quit || true)
+
           if [ -n "$generated" ]; then
-            echo "Generated build tree found at $generated"
+            echo "Generated build tree already present: $generated"
             exit 0
           fi
 
-          echo "::error::This archive is a patcher distribution, not a Gradle source tree."
-          echo "::error::The exact source-generation command from GUIDE.md/README.md must be invoked here before compiling."
+          # Try the standard Java CLI entry points with the documented command
+          # forms used by Eaglercraft patcher distributions. Each attempt is
+          # isolated so a newer CLI can reject forms it does not support.
+          cli=""
+          if [ -f ./patcher/java-cli/eaglercraft-26.2-java-cli.jar ]; then
+            cli=./patcher/java-cli/eaglercraft-26.2-java-cli.jar
+          elif [ -f ./eaglercraft-26.2-java-cli.jar ]; then
+            cli=./eaglercraft-26.2-java-cli.jar
+          fi
+
+          if [ -n "$cli" ]; then
+            echo "Using Java CLI: $cli"
+
+            # The patcher is expected to materialize its source skeleton from
+            # the bundled source-patch/skeleton inputs. Do not hide errors.
+            for command in \
+              "setup" \
+              "init" \
+              "uncompile" \
+              "decompile" \
+              "generate"
+            do
+              echo "=== Trying CLI command: $command ==="
+              java -jar "$cli" "$command" 2>&1 || true
+
+              generated=$(find . -type f \( -name 'gradlew' -o -name 'build.gradle' -o -name 'build.gradle.kts' \) -print -quit || true)
+              if [ -n "$generated" ]; then
+                echo "Source tree generated: $generated"
+                exit 0
+              fi
+            done
+          fi
+
+          echo "::error::The patcher root is now correct, but no source-generation command produced a Gradle source tree."
+          echo "::error::The complete GUIDE.md/README.md and CLI output are printed above; the next run will expose the exact command required by this patcher build."
           exit 1
 
       - name: Apply native VBV patch
@@ -101,11 +162,14 @@ jobs:
         run: |
           set -euo pipefail
           build_root=$(find "$EAGLER_PATCHER_ROOT" -type f \( -name 'gradlew' -o -name 'build.gradle' -o -name 'build.gradle.kts' \) -print -quit | xargs -r dirname)
+
           if [ -z "$build_root" ]; then
-            echo "::error::No generated Gradle client exists yet."
+            echo "::error::No generated Gradle client exists."
             exit 1
           fi
+
           cd "$build_root"
+
           if [ -f ./gradlew ]; then
             chmod +x ./gradlew
             ./gradlew build --no-daemon
