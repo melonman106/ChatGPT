@@ -203,10 +203,12 @@ jobs:
           fi
 
           echo "=== Required resources in game.jar ==="
-          jar --list --file "$game_jar" | grep -E '^(version.json|pack.mcmeta|assets/minecraft/lang/en_us.json|assets/)' | head -30
-          jar --list --file "$game_jar" | grep -qx 'version.json'
-          jar --list --file "$game_jar" | grep -qx 'pack.mcmeta'
-          jar --list --file "$game_jar" | grep -qx 'assets/minecraft/lang/en_us.json'
+          jar_contents="$temp_resources/game-jar-contents.txt"
+          jar --list --file "$game_jar" > "$jar_contents"
+          grep -E '^(version.json|pack.mcmeta|assets/minecraft/lang/en_us.json|assets/)' "$jar_contents" | head -30 || true
+          grep -qx 'version.json' "$jar_contents"
+          grep -qx 'pack.mcmeta' "$jar_contents"
+          grep -qx 'assets/minecraft/lang/en_us.json' "$jar_contents"
           echo "=== game.jar size ==="
           ls -lh "$game_jar"
 
