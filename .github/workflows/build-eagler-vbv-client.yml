@@ -132,6 +132,56 @@ jobs:
             exit 1
           fi
 
+      - name: Restore verified Eagler u1 resource skeleton
+        if: steps.repo_checkpoint.outputs.found != 'true'
+        run: |
+          set -euo pipefail
+          skeleton="$EAGLER_PATCHER_ROOT/project-skeleton-v5-teavm-runtime-verified.zip"
+          test -f "$skeleton"
+          temp_skeleton="$(mktemp -d)"
+          trap 'rm -rf "$temp_skeleton"' EXIT
+          unzip -q "$skeleton" -d "$temp_skeleton"
+
+          game_dir="$(find "$GITHUB_WORKSPACE/generated-client" -type f \\( -path '*/game/build.gradle' -o -path '*/game/build.gradle.kts' \\) -print -quit | xargs -r dirname)"
+          if [ -z "$game_dir" ]; then
+            echo "::error::Could not locate generated game module while restoring the verified Eagler skeleton."
+            exit 1
+          fi
+          resources="$game_dir/src/main/resources"
+          mkdir -p "$resources"
+
+          echo "=== Eagler skeleton shader/pipeline candidates ==="
+          find "$temp_skeleton" -type f \\( -iname '*.vsh' -o -iname '*.fsh' -o -iname '*.glsl' -o -iname '*pipeline*.json' \\) -print | sort | head -300 || true
+
+          # create-dev normally incorporates this exact skeleton, but keep a
+          # second deterministic restore here. Some u1 WebGL shader/pipeline
+          # resources are not part of vanilla Minecraft's assets tree.
+          copied=0
+          while IFS= read -r src; do
+            rel="${src#"$temp_skeleton/"}"
+            case "$rel" in
+              */src/main/resources/*)
+                rel_resource="${rel#*/src/main/resources/}"
+                dst="$resources/$rel_resource"
+                mkdir -p "$(dirname "$dst")"
+                if [ ! -e "$dst" ]; then
+                  cp -a "$src" "$dst"
+                  copied=$((copied + 1))
+                fi
+                ;;
+              *) ;;
+            esac
+          done < <(find "$temp_skeleton" -type f \\( -iname '*.vsh' -o -iname '*.fsh' -o -iname '*.glsl' -o -iname '*pipeline*.json' \\) -print | sort)
+
+          echo "Restored missing Eagler shader/pipeline resources: $copied"
+          echo "=== Shader/pipeline resources now in game resources ==="
+          find "$resources" -type f \\( -iname '*.vsh' -o -iname '*.fsh' -o -iname '*.glsl' -o -iname '*pipeline*.json' \\) -print | sort | head -300 || true
+
+          if ! find "$resources" -type f \\( -iname '*.vsh' -o -iname '*.fsh' -o -iname '*.glsl' \\) -print -quit | grep -q .; then
+            echo "::error::Verified Eagler u1 skeleton still contains no shader source files in a src/main/resources tree."
+            exit 1
+          fi
+
       - name: Apply native VBV patch
         if: steps.repo_checkpoint.outputs.found != 'true'
         run: |
