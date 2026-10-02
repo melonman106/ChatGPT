@@ -676,6 +676,59 @@ jobs:
           echo "Final single HTML:"
           ls -lh final-client/Eaglercraft-26.2-VBV-Modded.html
 
+      - name: Report build size changes
+        if: always()
+        run: |
+          set -euo pipefail
+          report="$GITHUB_WORKSPACE/build-size-report.txt"
+          {
+            echo "Eaglercraft 26.2 VBV build size report"
+            echo "Commit: $GITHUB_SHA"
+            echo "Generated: $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+            echo
+            echo "=== Final single HTML ==="
+            if [ -f "$GITHUB_WORKSPACE/final-client/Eaglercraft-26.2-VBV-Modded.html" ]; then
+              stat -c 'bytes=%s' "$GITHUB_WORKSPACE/final-client/Eaglercraft-26.2-VBV-Modded.html"
+              ls -lh "$GITHUB_WORKSPACE/final-client/Eaglercraft-26.2-VBV-Modded.html"
+            else
+              echo "Not produced."
+            fi
+            echo
+            echo "=== Packaging checkpoint ==="
+            if [ -d "$GITHUB_WORKSPACE/ModdedClientSource" ]; then
+              du -sh "$GITHUB_WORKSPACE/ModdedClientSource"
+              game_jar="$(find "$GITHUB_WORKSPACE/ModdedClientSource/game/build/libs" -maxdepth 1 -type f -name '*.jar' ! -name '*-sources.jar' ! -name '*-dev.jar' -print -quit 2>/dev/null || true)"
+              if [ -n "$game_jar" ]; then
+                stat -c 'game.jar bytes=%s' "$game_jar"
+                ls -lh "$game_jar"
+              fi
+            else
+              echo "Not available in package job."
+            fi
+            echo
+            echo "=== Resource tree ==="
+            resources="$(find "$GITHUB_WORKSPACE/ModdedClientSource" -type f -path '*/game/src/main/resources' -print -quit 2>/dev/null || true)"
+            if [ -n "$resources" ]; then
+              du -sh "$(dirname "$resources")" 2>/dev/null || true
+            fi
+            if [ -d "$GITHUB_WORKSPACE/ModdedClientSource/game/src/main/resources" ]; then
+              find "$GITHUB_WORKSPACE/ModdedClientSource/game/src/main/resources" -type f | wc -l | awk '{print "resource files=" $1}'
+              du -sh "$GITHUB_WORKSPACE/ModdedClientSource/game/src/main/resources"
+            fi
+          } | tee "$report"
+          echo
+          echo "=== Build size report ==="
+          cat "$report"
+
+      - name: Upload build size report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-size-report
+          path: build-size-report.txt
+          retention-days: 7
+          if-no-files-found: warn
+
       - name: Final packaging warning summary
         if: always()
         run: |
