@@ -513,7 +513,7 @@ jobs:
               --no-daemon \
               --max-workers=1 \
               -Dorg.gradle.parallel=false \
-              -Dorg.gradle.jvmargs=-Xmx4096m
+              -Dorg.gradle.jvmargs=-Xmx10g
 
             echo "=== WASM-GC output after generateWasmGC ==="
             find "$build_root/target_teavm_wasm_gc" -type f \
