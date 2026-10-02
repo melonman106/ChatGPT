@@ -475,7 +475,7 @@ jobs:
           node --version
 
       - name: Prepare pre-single-file browser test client
-        if: steps.repo_checkpoint.outputs.found != 'true'
+        if: success()
         run: |
           set -euo pipefail
 
@@ -546,7 +546,7 @@ Eaglercraft-26.2-VBV-Modded.html
 EOF
 
       - name: Upload pre-single-file browser client
-        if: steps.repo_checkpoint.outputs.found != 'true'
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: Eaglercraft-26.2-VBV-Dev-Web
