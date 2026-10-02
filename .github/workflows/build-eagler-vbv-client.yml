@@ -515,6 +515,36 @@ jobs:
             npm install --no-audit --no-fund
           fi
 
+      - name: Prepare sounds.epk for single-HTML packaging
+        working-directory: ModdedClientSource
+        run: |
+          set -euo pipefail
+
+          echo "=== Looking for sounds EPK Gradle task ==="
+          tasks="$(./gradlew :target_lwjgl_desktop:tasks --all --console=plain --no-daemon 2>/dev/null || true)"
+          printf '%s\n' "$tasks" | grep -i 'sound.*epk\|epk.*sound' || true
+
+          if printf '%s\n' "$tasks" | grep -Eq '^.*buildSoundsEPK[[:space:]]'; then
+            echo "Running :target_lwjgl_desktop:buildSoundsEPK"
+            ./gradlew :target_lwjgl_desktop:buildSoundsEPK --console=plain --no-daemon --max-workers=1 -Dorg.gradle.parallel=false -Dorg.gradle.jvmargs=-Xmx4096m
+          else
+            echo "No buildSoundsEPK task exposed; searching existing project outputs for sounds.epk."
+          fi
+
+          sounds="$(find . -type f -name 'sounds.epk' -print -quit || true)"
+          if [ -z "$sounds" ]; then
+            echo "::error::No sounds.epk was produced by the generated Eagler project."
+            echo "=== sound-related files/directories ==="
+            find . -type f \( -iname '*sound*' -o -iname '*epk*' \) -print | sort | head -300 || true
+            exit 1
+          fi
+
+          web_dir="$PWD/target_teavm_wasm_gc/build/web"
+          mkdir -p "$web_dir"
+          cp -Lf "$sounds" "$web_dir/sounds.epk"
+          echo "Installed sounds.epk from: $sounds"
+          ls -lh "$web_dir/sounds.epk"
+
       - name: Build single-file HTML client
         working-directory: ModdedClientSource
         run: |
