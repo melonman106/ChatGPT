@@ -5,6 +5,7 @@ on:
     paths:
       - "ViaBackport26.2-ClientSide/**"
       - "ModsPack/**"
+      - "sounds.epk"
       - "eaglercraft-26.2-patcher-main.tar.gz"
       - ".github/workflows/build-eagler-vbv-client.yml"
   workflow_dispatch:
@@ -528,21 +529,27 @@ jobs:
             echo "Running :target_lwjgl_desktop:buildSoundsEPK"
             ./gradlew :target_lwjgl_desktop:buildSoundsEPK --console=plain --no-daemon --max-workers=1 -Dorg.gradle.parallel=false -Dorg.gradle.jvmargs=-Xmx4096m
           else
-            echo "No buildSoundsEPK task exposed; searching existing project outputs for sounds.epk."
-          fi
-
-          sounds="$(find . -type f -name 'sounds.epk' -print -quit || true)"
-          if [ -z "$sounds" ]; then
-            echo "::error::No sounds.epk was produced by the generated Eagler project."
-            echo "=== sound-related files/directories ==="
-            find . -type f \( -iname '*sound*' -o -iname '*epk*' \) -print | sort | head -300 || true
-            exit 1
+            echo "No buildSoundsEPK task exposed; checking the repository root for sounds.epk."
           fi
 
           web_dir="$PWD/target_teavm_wasm_gc/build/web"
           mkdir -p "$web_dir"
-          cp -Lf "$sounds" "$web_dir/sounds.epk"
-          echo "Installed sounds.epk from: $sounds"
+
+          sounds="$(find . -type f -name 'sounds.epk' -print -quit || true)"
+          if [ -n "$sounds" ]; then
+            echo "Using generated sounds.epk from: $sounds"
+            cp -Lf "$sounds" "$web_dir/sounds.epk"
+          elif [ -f "$GITHUB_WORKSPACE/sounds.epk" ]; then
+            echo "Using repository-root sounds.epk"
+            cp -Lf "$GITHUB_WORKSPACE/sounds.epk" "$web_dir/sounds.epk"
+          else
+            echo "::error::No sounds.epk found. Add sounds.epk to the repository root."
+            echo "Expected: $GITHUB_WORKSPACE/sounds.epk"
+            exit 1
+          fi
+
+          test -s "$web_dir/sounds.epk"
+          echo "Installed sounds.epk:"
           ls -lh "$web_dir/sounds.epk"
 
       - name: Build single-file HTML client
