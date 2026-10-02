@@ -334,11 +334,10 @@ jobs:
           jar --update --file "$game_jar" \
             -C "$temp_resources" version.json \
             -C "$temp_resources" pack.mcmeta
-          # Keep the official Minecraft 26.2 shader source tree. Eagler u1's
-          # patched RenderPipelines/WebGL backend loads these resources and
-          # translates them for WebGL; removing them causes "no source for
-          # VERTEX/FRAGMENT shader" failures at runtime.
-          jar --update --file "$game_jar" -C "$temp_resources/assets" .
+          # Do NOT overwrite the generated Eagler shader resources here.
+          # create-dev/build already supplies the Eagler-compatible .vsh/.fsh/.glsl
+          # files in the game module. Injecting raw vanilla 26.2 shaders replaces
+          # those sources and can leave the WebGL client on a black screen.
           if [ -e "$temp_resources/data" ]; then
             echo "Injecting official 26.2 data/ directory too."
             jar --update --file "$game_jar" -C "$temp_resources" data
