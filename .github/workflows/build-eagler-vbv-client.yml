@@ -445,6 +445,11 @@ jobs:
           echo "Repository sounds.epk is present:"
           ls -lh "$GITHUB_WORKSPACE/sounds.epk"
 
+      - name: Initialize packaging warnings
+        run: |
+          set -euo pipefail
+          : > "$GITHUB_WORKSPACE/packaging-warnings.txt"
+
       - name: Download packaging checkpoint
         uses: actions/download-artifact@v5
         with:
@@ -547,6 +552,20 @@ jobs:
           web_dir="$PWD/target_teavm_wasm_gc/build/web"
           mkdir -p "$web_dir"
 
+          # music.epk belongs to the regular TeaVM web-assets build. It is
+          # not required as a user-supplied input for this custom client.
+          # If the regular asset is unavailable, create an empty placeholder
+          # so the single-HTML packager can continue without music data.
+          music="$PWD/target_teavm/build/web/music.epk"
+          if [ -s "$music" ]; then
+            echo "Using existing regular TeaVM music.epk: $music"
+          else
+            echo "WARNING: regular TeaVM music.epk is missing; continuing without music data."
+            echo "WARNING: music.epk is missing; music data was omitted from this build." >> "$GITHUB_WORKSPACE/packaging-warnings.txt"
+            mkdir -p "$(dirname "$music")"
+            : > "$music"
+          fi
+
           sounds="$(find . -type f -name 'sounds.epk' -print -quit || true)"
           if [ -n "$sounds" ]; then
             echo "Using generated sounds.epk from: $sounds"
@@ -563,6 +582,17 @@ jobs:
           test -s "$web_dir/sounds.epk"
           echo "Installed sounds.epk:"
           ls -lh "$web_dir/sounds.epk"
+
+      - name: Show packaging warnings
+        if: always()
+        run: |
+          set -euo pipefail
+          echo "=== Packaging warnings ==="
+          if [ -s "$GITHUB_WORKSPACE/packaging-warnings.txt" ]; then
+            cat "$GITHUB_WORKSPACE/packaging-warnings.txt"
+          else
+            echo "None."
+          fi
 
       - name: Build single-file HTML client
         working-directory: ModdedClientSource
@@ -590,6 +620,19 @@ jobs:
           cp "$candidate" final-client/Eaglercraft-26.2-VBV-Modded.html
           echo "Final single HTML:"
           ls -lh final-client/Eaglercraft-26.2-VBV-Modded.html
+
+      - name: Final packaging warning summary
+        if: always()
+        run: |
+          set -euo pipefail
+          echo "========================================"
+          echo "FINAL BUILD WARNING SUMMARY"
+          echo "========================================"
+          if [ -s "$GITHUB_WORKSPACE/packaging-warnings.txt" ]; then
+            cat "$GITHUB_WORKSPACE/packaging-warnings.txt"
+          else
+            echo "No packaging warnings."
+          fi
 
       - name: Upload final client
         uses: actions/upload-artifact@v4
