@@ -474,6 +474,87 @@ jobs:
 
           node --version
 
+      - name: Prepare pre-single-file browser test client
+        if: steps.repo_checkpoint.outputs.found != 'true'
+        run: |
+          set -euo pipefail
+
+          build_root="$GITHUB_WORKSPACE/ModdedClientSource"
+          dev_dir="$GITHUB_WORKSPACE/dev-web-client"
+          rm -rf "$dev_dir"
+          mkdir -p "$dev_dir"
+
+          cd "$build_root"
+
+          echo "=== Looking for already-built TeaVM browser output ==="
+          candidates=(
+            "$build_root/target_teavm_wasm_gc/javascript_dist"
+            "$build_root/target_teavm_wasm_gc/build/web"
+            "$build_root/target_teavm_javascript/javascript"
+            "$build_root/target_teavm_javascript/build/web"
+          )
+
+          found=0
+          for candidate in "${candidates[@]}"; do
+            if [ -d "$candidate" ] && [ "$(find "$candidate" -type f | wc -l)" -gt 0 ]; then
+              echo "Found browser output: $candidate"
+              cp -a "$candidate"/. "$dev_dir"/
+              found=1
+              break
+            fi
+          done
+
+          if [ "$found" -eq 0 ]; then
+            echo "No browser bundle was produced by the normal Gradle assemble."
+            echo "Generating the WASM-GC browser bundle without running the single-HTML packager."
+            ./gradlew :target_teavm_wasm_gc:makeMainWasmClientBundle --no-daemon --max-workers=1 -Dorg.gradle.parallel=false -Dorg.gradle.jvmargs=-Xmx4096m
+
+            for candidate in               "$build_root/target_teavm_wasm_gc/javascript_dist"               "$build_root/target_teavm_wasm_gc/build/web"; do
+              if [ -d "$candidate" ] && [ "$(find "$candidate" -type f | wc -l)" -gt 0 ]; then
+                echo "Generated browser output: $candidate"
+                cp -a "$candidate"/. "$dev_dir"/
+                found=1
+                break
+              fi
+            done
+          fi
+
+          if [ "$found" -eq 0 ]; then
+            echo "::error::Could not locate a pre-single-file TeaVM browser output."
+            find "$build_root/target_teavm_wasm_gc" -maxdepth 5 -type f -print | sort | head -500 || true
+            exit 1
+          fi
+
+          echo "=== Pre-single-file browser client ==="
+          find "$dev_dir" -maxdepth 3 -type f -printf '%s %p\n' | sort -nr | head -100
+          echo "File count: $(find "$dev_dir" -type f | wc -l)"
+          echo "Total size:"
+          du -sh "$dev_dir"
+
+          cat > "$dev_dir/README-DEV-CLIENT.txt" <<'EOF'
+Pre-single-file Eaglercraft 26.2 VBV browser client
+
+This is the browser build produced before build-single-html.js creates the
+final standalone HTML file.
+
+The browser client may require HTTP/HTTPS rather than file:// depending on
+which TeaVM runtime files are present. On a normal computer, serve this
+directory with a simple web server and open its generated HTML launcher.
+
+The final standalone client is still produced separately as:
+Eaglercraft-26.2-VBV-Modded.html
+EOF
+
+      - name: Upload pre-single-file browser client
+        if: steps.repo_checkpoint.outputs.found != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Eaglercraft-26.2-VBV-Dev-Web
+          path: dev-web-client
+          retention-days: 7
+          compression-level: 1
+          if-no-files-found: error
+
       - name: Save root checkpoint
         if: steps.repo_checkpoint.outputs.found != 'true'
         run: |
