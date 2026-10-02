@@ -199,19 +199,19 @@ jobs:
           echo "=== Restoring runtime resources ==="
           cp -a "$temp_resources/version.json" "$resources/"
           cp -a "$temp_resources/pack.mcmeta" "$resources/"
-          # Overlay official textures/models/lang/etc. but preserve Eagler's shader sources.
-          shader_backup="$(mktemp -d)"
-          trap 'rm -rf "$temp_resources" "$shader_backup"' EXIT
-          if [ -d "$resources/assets/minecraft/shaders" ]; then
-            cp -a "$resources/assets/minecraft/shaders" "$shader_backup/"
-          else
-            echo "::error::Generated Eagler project has no shader resources before vanilla asset restore."
-            exit 1
-          fi
+          # Add official Minecraft assets without overwriting any resources
+          # supplied by the Eagler u1 skeleton. This is intentionally not
+          # limited to a hard-coded shaders/ directory: u1 keeps some
+          # Eagler/WebGL resources outside the vanilla Minecraft shader path.
           mkdir -p "$resources/assets"
-          cp -a "$temp_resources/assets"/. "$resources/assets"/
-          rm -rf "$resources/assets/minecraft/shaders"
-          cp -a "$shader_backup/shaders" "$resources/assets/minecraft/"
+          cp -an "$temp_resources/assets"/. "$resources/assets"/
+          echo "=== Preserved existing Eagler resources while adding vanilla assets ==="
+          if find "$resources" -type f \( -name '*.vsh' -o -name '*.fsh' -o -name '*.glsl' \) -print -quit | grep -q .; then
+            echo "Eagler shader source files detected:"
+            find "$resources" -type f \( -name '*.vsh' -o -name '*.fsh' -o -name '*.glsl' \) -print | sort | head -100
+          else
+            echo "WARNING: no Eagler shader source files were visible in the Gradle resources at this stage."
+          fi
           if [ -e "$temp_resources/data" ]; then
             cp -a "$temp_resources/data" "$resources/"
           else
@@ -382,19 +382,18 @@ jobs:
           fi
 
           cp -a "$temp_resources/version.json" "$resources/"
-          # Overlay vanilla assets while preserving the Eagler shader resources.
-          shader_backup="$(mktemp -d)"
-          if [ -d "$resources/assets/minecraft/shaders" ]; then
-            cp -a "$resources/assets/minecraft/shaders" "$shader_backup/"
-          else
-            echo "::error::Packaging source is missing Eagler shader resources."
-            exit 1
-          fi
+          # Add official assets without overwriting Eagler/u1 resources.
+          # The source project is the authoritative owner of Eagler-specific
+          # WebGL resources, while vanilla files are added only when absent.
           mkdir -p "$resources/assets"
-          cp -a "$temp_resources/assets"/. "$resources/assets"/
-          rm -rf "$resources/assets/minecraft/shaders"
-          cp -a "$shader_backup/shaders" "$resources/assets/minecraft/"
-          rm -rf "$shader_backup"
+          cp -an "$temp_resources/assets"/. "$resources/assets"/
+          echo "=== Preserved Eagler resources in packaging source ==="
+          if find "$resources" -type f \( -name '*.vsh' -o -name '*.fsh' -o -name '*.glsl' \) -print -quit | grep -q .; then
+            echo "Eagler shader source files detected:"
+            find "$resources" -type f \( -name '*.vsh' -o -name '*.fsh' -o -name '*.glsl' \) -print | sort | head -100
+          else
+            echo "WARNING: no Eagler shader source files are visible in packaging resources."
+          fi
           if [ -e "$temp_resources/data" ]; then
             cp -a "$temp_resources/data" "$resources/"
           fi
