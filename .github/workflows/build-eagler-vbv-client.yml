@@ -505,33 +505,61 @@ jobs:
           done
 
           if [ "$found" -eq 0 ]; then
-            echo "No browser bundle was produced by the normal Gradle assemble."
-            echo "The generated project exposes the Eagler build task: buildWasmGC."
-            echo "Using the Eagler build entry point instead of invoking raw TeaVM generateWasmGC."
-            echo "=== Eagler WASM-GC task metadata ==="
-            ./gradlew :target_teavm_wasm_gc:tasks --all --console=plain --no-daemon | grep -E '(^|[[:space:]])(buildWasmGC|generateWasmGC|copyWasmGCRuntime|deployWasmWeb|deploy_wasm_web)' || true
+            echo "No browser bundle was produced by Gradle assemble."
+            echo "Locating the Eagler u1 web deployment script instead of invoking raw TeaVM tasks."
 
-            ./gradlew :target_teavm_wasm_gc:buildWasmGC \
-              --no-daemon \
-              --max-workers=1 \
-              -Dorg.gradle.parallel=false \
-              -Dorg.gradle.jvmargs=-Xmx10g
+            deploy_script="$(find "$build_root" "$GITHUB_WORKSPACE/generated-client" "$EAGLER_PATCHER_ROOT" \
+              -type f \( -name 'deploy_wasm_web.sh' -o -name 'deploy-wasm-web.sh' \) \
+              -print -quit 2>/dev/null || true)"
 
-            echo "=== WASM-GC output after buildWasmGC ==="
-            find "$build_root/target_teavm_wasm_gc" -type f \
+            if [ -z "$deploy_script" ]; then
+              echo "::error::Could not locate deploy_wasm_web.sh in the generated u1 project or portable kit."
+              echo "=== deployment/web scripts ==="
+              find "$build_root" "$GITHUB_WORKSPACE/generated-client" "$EAGLER_PATCHER_ROOT" \
+                -type f \( -iname '*deploy*web*.sh' -o -iname '*wasm*web*.sh' -o -iname '*web*.sh' \) \
+                -print 2>/dev/null | sort | head -200 || true
+              exit 1
+            fi
+
+            echo "Found Eagler u1 deployment script: $deploy_script"
+            echo "=== deploy_wasm_web.sh help/source ==="
+            sed -n '1,240p' "$deploy_script"
+
+            chmod +x "$deploy_script"
+
+            # The u1 script expects the Eagler pack image to be available in
+            # the project. Keep the same pack.png already used by packaging.
+            pack_png="$build_root/game/src/main/resources/pack.png"
+            if [ ! -f "$pack_png" ]; then
+              pack_png="$GITHUB_WORKSPACE/ViaBackport26.2-ClientSide/pack.png"
+            fi
+            test -f "$pack_png"
+
+            # Run the script from its own directory so relative paths and the
+            # u1 web-toolchain layout are resolved exactly as intended.
+            deploy_dir="$(dirname "$deploy_script")"
+            cd "$deploy_dir"
+            set +e
+            bash "./$(basename "$deploy_script")" --help
+            help_status=$?
+            set -e
+            echo "deploy_wasm_web.sh --help exit code: $help_status"
+
+            echo "=== Running Eagler u1 web deployment ==="
+            bash "./$(basename "$deploy_script")"
+
+            echo "=== Browser files produced by Eagler u1 deployment ==="
+            find "$build_root" -type f \
               \( -name '*.wasm' -o -name '*.js' -o -name '*.html' \) \
-              -printf '%s %p\\n' | sort -nr | head -200 || true
+              -printf '%s %p\\n' | sort -nr | head -300 || true
 
-            # TeaVM may place the generated browser files under a task-specific
-            # build directory. Find the directory containing the actual browser
-            # files rather than relying on a guessed output path.
             while IFS= read -r candidate; do
               echo "Found browser-output directory: $candidate"
               cp -a "$candidate"/. "$dev_dir"/
               found=1
               break
             done < <(
-              find "$build_root/target_teavm_wasm_gc" -type f \
+              find "$build_root" -type f \
                 \( -name '*.wasm' -o -name '*.js' -o -name '*.html' \) \
                 -printf '%h\\n' | sort -u
             )
