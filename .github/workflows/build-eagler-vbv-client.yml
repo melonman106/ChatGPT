@@ -199,7 +199,15 @@ jobs:
           echo "=== Restoring runtime resources ==="
           cp -a "$temp_resources/version.json" "$resources/"
           cp -a "$temp_resources/pack.mcmeta" "$resources/"
-          cp -a "$temp_resources/assets" "$resources/"
+          # Overlay official textures/models/lang/etc. but preserve Eagler's shader sources.
+          mkdir -p "$resources/assets"
+          cp -a "$temp_resources/assets"/. "$resources/assets"/
+          rm -rf "$resources/assets/minecraft/shaders"
+          if [ ! -d "$game_dir/src/main/resources/assets/minecraft/shaders" ]; then
+            echo "::error::Eagler shader resources are missing from the generated client."
+            exit 1
+          fi
+          cp -a "$game_dir/src/main/resources/assets/minecraft/shaders" "$resources/assets/minecraft/"
           if [ -e "$temp_resources/data" ]; then
             cp -a "$temp_resources/data" "$resources/"
           else
@@ -222,6 +230,17 @@ jobs:
         with:
           distribution: temurin
           java-version: "25"
+
+      - name: Cache Gradle dependencies and build cache
+        if: steps.repo_checkpoint.outputs.found != 'true'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: eagler-vbv-gradle-${{ runner.os }}-${{ hashFiles('generated-client/**/gradle-wrapper.properties', 'generated-client/**/build.gradle*', 'generated-client/**/gradle.properties') }}
+          restore-keys: |
+            eagler-vbv-gradle-${{ runner.os }}-
 
       - name: Build generated Eaglercraft client
         if: steps.repo_checkpoint.outputs.found != 'true'
@@ -276,7 +295,14 @@ jobs:
           fi
 
           echo "Injecting runtime resources into: $game_jar"
-          jar --update --file "$game_jar"             -C "$temp_resources" version.json             -C "$temp_resources" pack.mcmeta             -C "$temp_resources" assets
+          jar --update --file "$game_jar" \
+            -C "$temp_resources" version.json \
+            -C "$temp_resources" pack.mcmeta
+          # Never inject vanilla shader sources over Eagler's WebGL shader set.
+          assets_stage="$(mktemp -d)"
+          cp -a "$temp_resources/assets"/. "$assets_stage"/
+          rm -rf "$assets_stage/minecraft/shaders"
+          jar --update --file "$game_jar" -C "$assets_stage" .
           if [ -e "$temp_resources/data" ]; then
             echo "Injecting official 26.2 data/ directory too."
             jar --update --file "$game_jar" -C "$temp_resources" data
@@ -352,7 +378,14 @@ jobs:
           fi
 
           cp -a "$temp_resources/version.json" "$resources/"
-          cp -a "$temp_resources/assets" "$resources/"
+          # Overlay vanilla assets while preserving the Eagler shader resources.
+          mkdir -p "$resources/assets"
+          cp -a "$temp_resources/assets"/. "$resources/assets"/
+          rm -rf "$resources/assets/minecraft/shaders"
+          if [ ! -d "$game_dir/src/main/resources/assets/minecraft/shaders" ]; then
+            echo "::error::Eagler shader resources are missing from the generated client."
+            exit 1
+          fi
           if [ -e "$temp_resources/data" ]; then
             cp -a "$temp_resources/data" "$resources/"
           fi
