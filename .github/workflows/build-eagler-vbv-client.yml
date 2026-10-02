@@ -433,6 +433,18 @@ jobs:
       contents: read
       actions: read
     steps:
+      - name: Checkout repository for packaging inputs
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Verify repository sounds.epk
+        run: |
+          set -euo pipefail
+          test -s "$GITHUB_WORKSPACE/sounds.epk"
+          echo "Repository sounds.epk is present:"
+          ls -lh "$GITHUB_WORKSPACE/sounds.epk"
+
       - name: Download packaging checkpoint
         uses: actions/download-artifact@v5
         with:
