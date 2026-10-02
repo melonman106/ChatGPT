@@ -506,61 +506,32 @@ jobs:
 
           if [ "$found" -eq 0 ]; then
             echo "No browser bundle was produced by the normal Gradle assemble."
-            echo "Inspecting the actual WASM-GC Gradle tasks instead of assuming a task name."
+            echo "The generated project exposes the real TeaVM task: generateWasmGC."
+            echo "Running it directly instead of assuming a nonexistent bundle task."
 
-            task_file="$(mktemp)"
-            trap 'rm -f "$task_file"' EXIT
-            ./gradlew :target_teavm_wasm_gc:tasks --all --console=plain --no-daemon > "$task_file"
+            ./gradlew :target_teavm_wasm_gc:generateWasmGC \
+              --no-daemon \
+              --max-workers=1 \
+              -Dorg.gradle.parallel=false \
+              -Dorg.gradle.jvmargs=-Xmx4096m
 
-            echo "=== WASM-GC tasks ==="
-            grep -Ei 'wasm|bundle|web|client' "$task_file" | head -200 || true
+            echo "=== WASM-GC output after generateWasmGC ==="
+            find "$build_root/target_teavm_wasm_gc" -type f \
+              \( -name '*.wasm' -o -name '*.js' -o -name '*.html' \) \
+              -printf '%s %p\\n' | sort -nr | head -200 || true
 
-            task_name="$(
-              awk '
-                /^[[:space:]]*[A-Za-z0-9_.-]+[[:space:]]+-/ {
-                  name=$1
-                  if (name ~ /[Ww]asm/ && name ~ /[Bb]undle/) {
-                    print name
-                  }
-                }
-              ' "$task_file" | head -1
-            )"
-
-            if [ -z "$task_name" ]; then
-              task_name="$(
-                awk '
-                  /^[[:space:]]*[A-Za-z0-9_.-]+[[:space:]]+-/ {
-                    name=$1
-                    if (name ~ /[Ww]asm/ && name ~ /[Cc]lient/) {
-                      print name
-                    }
-                  }
-                ' "$task_file" | head -1
-              )"
-            fi
-
-            if [ -z "$task_name" ]; then
-              echo "::error::The generated project exposes no discoverable WASM-GC bundle/client Gradle task."
-              echo "=== Full target_teavm_wasm_gc task list ==="
-              cat "$task_file"
-              exit 1
-            fi
-
-            echo "Running discovered WASM-GC task: :target_teavm_wasm_gc:$task_name"
-            ./gradlew ":target_teavm_wasm_gc:$task_name" --no-daemon --max-workers=1 -Dorg.gradle.parallel=false -Dorg.gradle.jvmargs=-Xmx4096m
-
-            echo "=== Searching generated project for browser output ==="
+            # TeaVM may place the generated browser files under a task-specific
+            # build directory. Find the directory containing the actual browser
+            # files rather than relying on a guessed output path.
             while IFS= read -r candidate; do
               echo "Found browser-output directory: $candidate"
               cp -a "$candidate"/. "$dev_dir"/
               found=1
               break
             done < <(
-              find "$build_root/target_teavm_wasm_gc" -type f \( \
-                -name '*.wasm' -o \
-                -name '*.js' -o \
-                -name '*.html' \
-              \) -printf '%h\\n' | sort -u
+              find "$build_root/target_teavm_wasm_gc" -type f \
+                \( -name '*.wasm' -o -name '*.js' -o -name '*.html' \) \
+                -printf '%h\\n' | sort -u
             )
           fi
 
