@@ -506,16 +506,18 @@ jobs:
 
           if [ "$found" -eq 0 ]; then
             echo "No browser bundle was produced by the normal Gradle assemble."
-            echo "The generated project exposes the real TeaVM task: generateWasmGC."
-            echo "Running it directly instead of assuming a nonexistent bundle task."
+            echo "The generated project exposes the Eagler build task: buildWasmGC."
+            echo "Using the Eagler build entry point instead of invoking raw TeaVM generateWasmGC."
+            echo "=== Eagler WASM-GC task metadata ==="
+            ./gradlew :target_teavm_wasm_gc:tasks --all --console=plain --no-daemon | grep -E '(^|[[:space:]])(buildWasmGC|generateWasmGC|copyWasmGCRuntime|deployWasmWeb|deploy_wasm_web)' || true
 
-            ./gradlew :target_teavm_wasm_gc:generateWasmGC \
+            ./gradlew :target_teavm_wasm_gc:buildWasmGC \
               --no-daemon \
               --max-workers=1 \
               -Dorg.gradle.parallel=false \
               -Dorg.gradle.jvmargs=-Xmx10g
 
-            echo "=== WASM-GC output after generateWasmGC ==="
+            echo "=== WASM-GC output after buildWasmGC ==="
             find "$build_root/target_teavm_wasm_gc" -type f \
               \( -name '*.wasm' -o -name '*.js' -o -name '*.html' \) \
               -printf '%s %p\\n' | sort -nr | head -200 || true
