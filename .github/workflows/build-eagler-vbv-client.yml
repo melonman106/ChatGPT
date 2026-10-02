@@ -142,7 +142,7 @@ jobs:
           trap 'rm -rf "$temp_skeleton"' EXIT
           unzip -q "$skeleton" -d "$temp_skeleton"
 
-          game_dir="$(find "$GITHUB_WORKSPACE/generated-client" -type f \\( -path '*/game/build.gradle' -o -path '*/game/build.gradle.kts' \\) -print -quit | xargs -r dirname)"
+          game_dir="$(find "$GITHUB_WORKSPACE/generated-client" -type f \( -path '*/game/build.gradle' -o -path '*/game/build.gradle.kts' \) -print -quit | xargs -r dirname)"
           if [ -z "$game_dir" ]; then
             echo "::error::Could not locate generated game module while restoring the verified Eagler skeleton."
             exit 1
@@ -151,7 +151,7 @@ jobs:
           mkdir -p "$resources"
 
           echo "=== Eagler skeleton shader/pipeline candidates ==="
-          find "$temp_skeleton" -type f \\( -iname '*.vsh' -o -iname '*.fsh' -o -iname '*.glsl' -o -iname '*pipeline*.json' \\) -print | sort | head -300 || true
+          find "$temp_skeleton" -type f \( -iname '*.vsh' -o -iname '*.fsh' -o -iname '*.glsl' -o -iname '*pipeline*.json' \) -print | sort | head -300 || true
 
           # create-dev normally incorporates this exact skeleton, but keep a
           # second deterministic restore here. Some u1 WebGL shader/pipeline
@@ -171,13 +171,13 @@ jobs:
                 ;;
               *) ;;
             esac
-          done < <(find "$temp_skeleton" -type f \\( -iname '*.vsh' -o -iname '*.fsh' -o -iname '*.glsl' -o -iname '*pipeline*.json' \\) -print | sort)
+          done < <(find "$temp_skeleton" -type f \( -iname '*.vsh' -o -iname '*.fsh' -o -iname '*.glsl' -o -iname '*pipeline*.json' \) -print | sort)
 
           echo "Restored missing Eagler shader/pipeline resources: $copied"
           echo "=== Shader/pipeline resources now in game resources ==="
-          find "$resources" -type f \\( -iname '*.vsh' -o -iname '*.fsh' -o -iname '*.glsl' -o -iname '*pipeline*.json' \\) -print | sort | head -300 || true
+          find "$resources" -type f \( -iname '*.vsh' -o -iname '*.fsh' -o -iname '*.glsl' -o -iname '*pipeline*.json' \) -print | sort | head -300 || true
 
-          if ! find "$resources" -type f \\( -iname '*.vsh' -o -iname '*.fsh' -o -iname '*.glsl' \\) -print -quit | grep -q .; then
+          if ! find "$resources" -type f \( -iname '*.vsh' -o -iname '*.fsh' -o -iname '*.glsl' \) -print -quit | grep -q .; then
             echo "::error::Verified Eagler u1 skeleton still contains no shader source files in a src/main/resources tree."
             exit 1
           fi
