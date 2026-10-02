@@ -132,121 +132,37 @@ jobs:
             exit 1
           fi
 
-      - name: Restore verified Eagler u1 shader and pipeline resources
+      - name: Verify Eagler u1 rendering patch inputs
         if: steps.repo_checkpoint.outputs.found != 'true'
         run: |
           set -euo pipefail
 
-          skeleton="$EAGLER_PATCHER_ROOT/project-skeleton-v5-teavm-runtime-verified.zip"
           patch_bundle="$EAGLER_PATCHER_ROOT/source-patch-bundle.zip"
-          test -f "$skeleton"
+          skeleton="$EAGLER_PATCHER_ROOT/project-skeleton-v5-teavm-runtime-verified.zip"
           test -f "$patch_bundle"
-
-          game_dir="$(find "$GITHUB_WORKSPACE/generated-client" -type f \( -path '*/game/build.gradle' -o -path '*/game/build.gradle.kts' \) -print -quit | xargs -r dirname)"
-          if [ -z "$game_dir" ]; then
-            echo "::error::Could not locate generated game module while restoring Eagler u1 resources."
-            exit 1
-          fi
-          resources="$game_dir/src/main/resources"
-          mkdir -p "$resources"
+          test -f "$skeleton"
 
           work="$(mktemp -d)"
           trap 'rm -rf "$work"' EXIT
-
-          mkdir -p "$work/skeleton" "$work/patch-bundle"
+          unzip -q "$patch_bundle" -d "$work/patch"
           unzip -q "$skeleton" -d "$work/skeleton"
-          unzip -q "$patch_bundle" -d "$work/patch-bundle"
 
-          echo "=== Eagler resource candidates in verified skeleton ==="
-          find "$work/skeleton" -type f \( \
-            -path '*/pipeline/*' -o \
-            -path '*/shaders/*' -o \
-            -iname '*.vsh' -o -iname '*.fsh' -o -iname '*.glsl' \
-          \) -print | sort | head -500 || true
+          echo "=== Eagler rendering patch files ==="
+          find "$work/patch" -type f \( -iname '*RenderPipeline*' -o -iname '*RenderTarget*' -o -iname '*WebGL2*' \) -print | sort | head -200
 
-          echo "=== Eagler resource candidates in source patch bundle ==="
-          find "$work/patch-bundle" -type f \( \
-            -path '*/pipeline/*' -o \
-            -path '*/shaders/*' -o \
-            -iname '*.vsh' -o -iname '*.fsh' -o -iname '*.glsl' \
-          \) -print | sort | head -500 || true
-
-          copied=0
-          copy_resource_tree() {
-            local root="$1"
-            [ -d "$root" ] || return 0
-
-            while IFS= read -r src; do
-              local rel dst
-              rel="${src#"$root/"}"
-
-              case "$rel" in
-                */src/main/resources/*)
-                  rel="${rel#*/src/main/resources/}"
-                  ;;
-                */assets/*)
-                  rel="${rel#*/assets/}"
-                  rel="assets/${rel}"
-                  ;;
-                */pipeline/*|*/shaders/*)
-                  # Preserve project-relative resource trees when the archive
-                  # does not wrap them in src/main/resources or assets/.
-                  ;;
-                *)
-                  continue
-                  ;;
-              esac
-
-              # Only copy actual Eagler pipeline/shader resources here.
-              case "$rel" in
-                assets/*/pipeline/*|assets/*/shaders/*|*/pipeline/*|*/shaders/*|*.vsh|*.fsh|*.glsl)
-                  dst="$resources/$rel"
-                  mkdir -p "$(dirname "$dst")"
-                  if [ ! -e "$dst" ]; then
-                    cp -a "$src" "$dst"
-                    copied=$((copied + 1))
-                  fi
-                  ;;
-              esac
-            done < <(find "$root" -type f \( \
-              -path '*/pipeline/*' -o \
-              -path '*/shaders/*' -o \
-              -iname '*.vsh' -o -iname '*.fsh' -o -iname '*.glsl' \
-            \) -print | sort)
-          }
-
-          copy_resource_tree "$work/skeleton"
-          copy_resource_tree "$work/patch-bundle"
-
-          echo "=== Generated-client shader/pipeline candidates ==="
-          find "$GITHUB_WORKSPACE/generated-client" -type f \( \
-            -path '*/pipeline/*' -o \
-            -path '*/shaders/*' -o \
-            -iname '*.vsh' -o -iname '*.fsh' -o -iname '*.glsl' \
-          \) -print | sort | head -500 || true
-
-          echo "Restored Eagler shader/pipeline resources: $copied"
-          echo "=== Final Eagler pipeline/shader resources ==="
-          find "$resources" -type f \( \
-            -path '*/pipeline/*' -o \
-            -path '*/shaders/*' -o \
-            -iname '*.vsh' -o -iname '*.fsh' -o -iname '*.glsl' \
-          \) -print | sort | head -500 || true
-
-          pipeline_count="$(find "$resources" -type f -path '*/pipeline/*.json' | wc -l)"
-          shader_count="$(find "$resources" -type f \( -iname '*.vsh' -o -iname '*.fsh' -o -iname '*.glsl' \) | wc -l)"
-          echo "Pipeline JSON count: $pipeline_count"
-          echo "Shader source count: $shader_count"
-
-          # Do not mistake vanilla Java shader files for Eagler resources.
-          # The important u1 resources are its pipeline definitions and
-          # WebGL-compatible shader sources.
-          if [ "$pipeline_count" -eq 0 ] && [ "$shader_count" -eq 0 ]; then
-            echo "::error::No Eagler pipeline definitions or shader sources were restored."
-            echo "=== All files containing 'pipeline', 'solid_block', or 'text' in the u1 inputs ==="
-            find "$work" -type f | grep -Ei 'pipeline|solid_block|text_background|translucent_terrain|flat_clouds' | head -500 || true
+          if ! find "$work/patch" -type f -name 'RenderPipelines.java.delta' -print -quit | grep -q .; then
+            echo "::error::The verified u1 patch bundle does not contain RenderPipelines.java.delta."
             exit 1
           fi
+
+          if ! find "$work/skeleton" -type f -name 'WebGL2RenderPipeline.java' -print -quit | grep -q .; then
+            echo "::error::The verified u1 skeleton does not contain WebGL2RenderPipeline.java."
+            exit 1
+          fi
+
+          echo "Verified u1 rendering implementation and RenderPipelines patch."
+          echo "Vanilla 26.2 shader source files are intentionally retained below:"
+          echo "Eagler u1 consumes the Minecraft shader resource tree through its patched rendering pipeline."
 
       - name: Apply native VBV patch
         if: steps.repo_checkpoint.outputs.found != 'true'
@@ -418,11 +334,11 @@ jobs:
           jar --update --file "$game_jar" \
             -C "$temp_resources" version.json \
             -C "$temp_resources" pack.mcmeta
-          # Never inject vanilla shader sources over Eagler's WebGL shader set.
-          assets_stage="$(mktemp -d)"
-          cp -a "$temp_resources/assets"/. "$assets_stage"/
-          rm -rf "$assets_stage/minecraft/shaders"
-          jar --update --file "$game_jar" -C "$assets_stage" .
+          # Keep the official Minecraft 26.2 shader source tree. Eagler u1's
+          # patched RenderPipelines/WebGL backend loads these resources and
+          # translates them for WebGL; removing them causes "no source for
+          # VERTEX/FRAGMENT shader" failures at runtime.
+          jar --update --file "$game_jar" -C "$temp_resources/assets" .
           if [ -e "$temp_resources/data" ]; then
             echo "Injecting official 26.2 data/ directory too."
             jar --update --file "$game_jar" -C "$temp_resources" data
