@@ -200,14 +200,18 @@ jobs:
           cp -a "$temp_resources/version.json" "$resources/"
           cp -a "$temp_resources/pack.mcmeta" "$resources/"
           # Overlay official textures/models/lang/etc. but preserve Eagler's shader sources.
+          shader_backup="$(mktemp -d)"
+          trap 'rm -rf "$temp_resources" "$shader_backup"' EXIT
+          if [ -d "$resources/assets/minecraft/shaders" ]; then
+            cp -a "$resources/assets/minecraft/shaders" "$shader_backup/"
+          else
+            echo "::error::Generated Eagler project has no shader resources before vanilla asset restore."
+            exit 1
+          fi
           mkdir -p "$resources/assets"
           cp -a "$temp_resources/assets"/. "$resources/assets"/
           rm -rf "$resources/assets/minecraft/shaders"
-          if [ ! -d "$game_dir/src/main/resources/assets/minecraft/shaders" ]; then
-            echo "::error::Eagler shader resources are missing from the generated client."
-            exit 1
-          fi
-          cp -a "$game_dir/src/main/resources/assets/minecraft/shaders" "$resources/assets/minecraft/"
+          cp -a "$shader_backup/shaders" "$resources/assets/minecraft/"
           if [ -e "$temp_resources/data" ]; then
             cp -a "$temp_resources/data" "$resources/"
           else
@@ -379,13 +383,18 @@ jobs:
 
           cp -a "$temp_resources/version.json" "$resources/"
           # Overlay vanilla assets while preserving the Eagler shader resources.
+          shader_backup="$(mktemp -d)"
+          if [ -d "$resources/assets/minecraft/shaders" ]; then
+            cp -a "$resources/assets/minecraft/shaders" "$shader_backup/"
+          else
+            echo "::error::Packaging source is missing Eagler shader resources."
+            exit 1
+          fi
           mkdir -p "$resources/assets"
           cp -a "$temp_resources/assets"/. "$resources/assets"/
           rm -rf "$resources/assets/minecraft/shaders"
-          if [ ! -d "$game_dir/src/main/resources/assets/minecraft/shaders" ]; then
-            echo "::error::Eagler shader resources are missing from the generated client."
-            exit 1
-          fi
+          cp -a "$shader_backup/shaders" "$resources/assets/minecraft/"
+          rm -rf "$shader_backup"
           if [ -e "$temp_resources/data" ]; then
             cp -a "$temp_resources/data" "$resources/"
           fi
