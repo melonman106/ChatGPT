@@ -599,13 +599,26 @@ jobs:
         run: |
           set -euo pipefail
           echo "=== Running single-HTML builder ==="
+          set +e
           node wasm-toolchain/build-single-html.js
+          builder_status=$?
+          set -e
+
           echo "=== Generated HTML files ==="
-          find . -type f -name '*.html' -printf '%s %p\n' | sort -nr | head -50
+          find . -type f -name '*.html' -printf '%s %p\\n' | sort -nr | head -50
           html_count="$(find . -type f -name '*.html' | wc -l)"
+
           if [ "$html_count" -eq 0 ]; then
-            echo "::error::build-single-html.js completed but produced no HTML file."
-            exit 1
+            echo "::error::build-single-html.js failed and produced no HTML file (exit code $builder_status)."
+            exit "$builder_status"
+          fi
+
+          # The Eagler single-HTML builder writes the client HTML before its
+          # optional music-pack export. A missing/invalid music EPK therefore
+          # must not discard an otherwise successfully generated client.
+          if [ "$builder_status" -ne 0 ]; then
+            echo "WARNING: single-HTML builder exited with code $builder_status, but it produced the client HTML."
+            echo "WARNING: optional post-build asset export failed; continuing with the generated HTML." >> "$GITHUB_WORKSPACE/packaging-warnings.txt"
           fi
 
       - name: Select final single HTML
