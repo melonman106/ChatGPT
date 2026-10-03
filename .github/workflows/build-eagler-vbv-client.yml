@@ -315,11 +315,12 @@ jobs:
           jar --update --file "$game_jar" \
             -C "$temp_resources" version.json \
             -C "$temp_resources" pack.mcmeta
-          # Keep the official Minecraft 26.2 shader source tree. Eagler u1's
-          # patched RenderPipelines/WebGL backend loads these resources and
-          # translates them for WebGL; removing them causes "no source for
-          # VERTEX/FRAGMENT shader" failures at runtime.
-          jar --update --file "$game_jar" -C "$temp_resources/assets" .
+          # IMPORTANT: do not inject the raw vanilla assets/ tree into game.jar.
+          # create-dev + Eagler u1 already provide the Eagler-compatible shader
+          # resources. Replacing them with the Mojang client assets causes the
+          # WebGL renderer to request vanilla pipeline resources that have no
+          # Eagler-compatible shader source, producing black-screen/no-source
+          # shader failures.
           if [ -e "$temp_resources/data" ]; then
             echo "Injecting official 26.2 data/ directory too."
             jar --update --file "$game_jar" -C "$temp_resources" data
@@ -435,6 +436,83 @@ jobs:
             cp -a "$resources"/vbvclient/mods/. "$game_classes/vbvclient/mods/"
           fi
           node --version
+      - name: Prepare pre-single-file browser test client
+        if: success()
+        run: |
+          set -euo pipefail
+
+          build_root="$GITHUB_WORKSPACE/ModdedClientSource"
+          dev_dir="$GITHUB_WORKSPACE/dev-web-client"
+          rm -rf "$dev_dir"
+          mkdir -p "$dev_dir"
+          cd "$build_root"
+
+          echo "=== Looking for already-built Eagler u1 browser output ==="
+          web_dir="$build_root/target_teavm_wasm_gc/build/web"
+          if [ -f "$web_dir/index.html" ] && [ -s "$web_dir/classes.wasm" ]; then
+            echo "Existing complete Wasm-GC browser output found."
+          else
+            echo "No complete browser output; using the Eagler-specific incremental Wasm-GC build path."
+            echo "=== Eagler Wasm-GC build tasks ==="
+            ./gradlew :target_teavm_wasm_gc:tasks --all --console=plain --no-daemon | grep -E 'generateWasmGCIncremental|generateWasmGC|copyWasmGCRuntime' || true
+
+            echo "=== Generating Eagler Wasm-GC client classes.wasm ==="
+            # This is the Eagler u1 task. Do NOT call raw generateWasmGC:
+            # that TeaVM entry point walks the desktop/server connection path
+            # and fails on Netty KQueue/Epoll classes.
+            ./gradlew :target_teavm_wasm_gc:generateWasmGCIncremental               --no-daemon               --max-workers=1               -Dorg.gradle.parallel=false               -Dorg.gradle.jvmargs=-Xmx10g
+
+            echo "=== Preparing authenticated TeaVM runtime ==="
+            ./gradlew :target_teavm_wasm_gc:copyWasmGCRuntime               --no-daemon               --max-workers=1               -Dorg.gradle.parallel=false               -Dorg.gradle.jvmargs=-Xmx10g
+
+            gen="$build_root/target_teavm_wasm_gc/build/generated/teavm/wasm-gc"
+            for required in "$gen/classes.wasm" "$gen/classes.wasm-runtime.js"; do
+              if [ ! -s "$required" ]; then
+                echo "::error::Eagler Wasm-GC did not produce required artifact: $required"
+                echo "=== Generated Wasm-GC files ==="
+                find "$build_root/target_teavm_wasm_gc/build/generated/teavm/wasm-gc" -maxdepth 2 -type f -printf '%s %p\n' 2>/dev/null | sort -nr | head -200 || true
+                exit 1
+              fi
+            done
+
+            echo "=== Locating Eagler u1 web deployment script ==="
+            deploy_script="$(find "$build_root" -type f -name 'deploy_wasm_web.sh' -print -quit 2>/dev/null || true)"
+            if [ -z "$deploy_script" ]; then
+              echo "::error::Could not locate deploy_wasm_web.sh in ModdedClientSource."
+              exit 1
+            fi
+            chmod +x "$deploy_script"
+
+            echo "=== Deploying generated Eagler u1 browser files ==="
+            cd "$(dirname "$deploy_script")"
+            bash "./$(basename "$deploy_script")"
+
+            web_dir="$build_root/target_teavm_wasm_gc/build/web"
+            if [ ! -f "$web_dir/index.html" ] || [ ! -s "$web_dir/classes.wasm" ]; then
+              echo "::error::Eagler u1 deployment did not produce a complete browser client."
+              find "$web_dir" -maxdepth 2 -type f -printf '%s %p\n' 2>/dev/null | sort -nr | head -200 || true
+              exit 1
+            fi
+          fi
+
+          cp -a "$web_dir"/. "$dev_dir"/
+          printf '%s\n'             'Pre-single-file Eaglercraft 26.2 VBV browser client'             ''             'This is the Eagler u1 Wasm-GC browser build before build-single-html.js.'             ''             'Use HTTP/HTTPS rather than file:// if the browser blocks local module/Wasm loading.'             > "$dev_dir/README-DEV-CLIENT.txt"
+
+          echo "=== Pre-single-file browser client ==="
+          find "$dev_dir" -maxdepth 3 -type f -printf '%s %p\n' | sort -nr | head -100
+          echo "File count: $(find "$dev_dir" -type f | wc -l)"
+          du -sh "$dev_dir"
+
+      - name: Upload pre-single-file browser client
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Eaglercraft-26.2-VBV-Dev-Web
+          path: dev-web-client
+          retention-days: 7
+          compression-level: 1
+          if-no-files-found: error
+
       - name: Save root checkpoint
         if: steps.repo_checkpoint.outputs.found != 'true'
         run: |
