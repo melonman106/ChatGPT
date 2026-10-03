@@ -78,7 +78,7 @@ public final class ViaBackportVisuals implements ModInitializer {
             "tuff_brick_slab",
             "polished_tuff_slab",
             "bamboo_mosaic_slab",
-            "end_stone_brick_slab",
+            "pale_oak_slab",
             "resin_brick_slab",
             "cinnabar_brick_slab",
             "sulfur_brick_slab"
@@ -155,7 +155,7 @@ public final class ViaBackportVisuals implements ModInitializer {
         ServerTickEvents.END_SERVER_TICK.register(server -> {
             handleRestartCountdown(server);
             if (server.getTickCount() % 20 != 0) return;
-            if (activeMappings == null && mappingRetryTicks < 10) {
+            if (activeMappings == null) {
                 mappingRetryTicks++;
                 installMappings();
             }
@@ -217,29 +217,28 @@ public final class ViaBackportVisuals implements ModInitializer {
         }
     }
 
-    private static void installMappings() {
+    private static boolean installMappings() {
         try {
             if (!Via.getManager().isInitialized()) {
-                LOGGER.warn("ViaVersion is not initialized; visual mappings were not installed.");
-                return;
+                LOGGER.warn("ViaVersion is not initialized; visual mappings will be retried.");
+                return false;
             }
 
             Protocol protocol = Via.getManager().getProtocolManager()
                     .getProtocol(ProtocolVersion.v26_2, ProtocolVersion.v26_3);
 
             if (protocol == null) {
-                LOGGER.warn("Could not find the ViaBackwards 26.3 -> 26.2 protocol.");
-                return;
+                LOGGER.warn("Could not find the ViaBackwards 26.3 -> 26.2 protocol; will retry.");
+                return false;
             }
 
             MappingData mappingData = protocol.getMappingData();
             if (mappingData == null || mappingData.getBlockStateMappings() == null) {
-                LOGGER.warn("ViaBackwards 26.3 -> 26.2 has no block-state mappings.");
-                return;
+                LOGGER.warn("ViaBackwards 26.3 -> 26.2 has no block-state mappings; will retry.");
+                return false;
             }
 
             Mappings mappings = mappingData.getBlockStateMappings();
-            activeMappings = mappings;
             ORIGINAL_MAPPINGS.clear();
             APPLIED.clear();
             PLACEHOLDER_OF.clear();
@@ -283,6 +282,9 @@ public final class ViaBackportVisuals implements ModInitializer {
             strawBed += remapBlockStates(mappings, "minecraft:straw_bed", "minecraft:yellow_bed");
 
             mappingsEnabled = true;
+            activeMappings = mappings;
+            mappingRetryTicks = 0;
+            sanityCheckMappings(mappings);
 
             MappedItem strawBedItem = ViaBackwardsItemBridge.findMappedItem("minecraft:straw_bed");
             if (strawBedItem != null) {
@@ -302,8 +304,29 @@ public final class ViaBackportVisuals implements ModInitializer {
                     "Installed ViaBackportVisuals mappings: wool stairs={}, wool slabs={}, concrete stairs={}, concrete slabs={}, other={}, leaves={}, straw bed={}.",
                     woolStairs, woolSlabs, concreteStairs, concreteSlabs, otherBlocks, leaves, strawBed
             );
+            return true;
         } catch (Throwable t) {
-            LOGGER.error("Failed to install ViaBackportVisuals mappings.", t);
+            LOGGER.error("Failed to install ViaBackportVisuals mappings; will retry.", t);
+            activeMappings = null;
+            return false;
+        }
+    }
+
+    private static void sanityCheckMappings(Mappings mappings) {
+        Block block = getBlock("minecraft:white_wool_stairs");
+        if (block == null) return;
+        for (BlockState state : block.getStateDefinition().getPossibleStates()) {
+            String text = state.toString();
+            if (text.contains("facing=north") && text.contains("half=top")
+                    && text.contains("shape=straight") && text.contains("waterlogged=true")) {
+                int id = Block.BLOCK_STATE_REGISTRY.getId(state);
+                LOGGER.info("VBV sanity check: white_wool_stairs[facing=north,half=top,shape=straight,waterlogged=true] stateId={} mappedTo={}.",
+                        id, mappings.getNewId(id));
+                if (id != 2425) {
+                    LOGGER.warn("VBV sanity check expected source stateId 2425 but found {}. Mapping tables may be from a different 26.3 registry.", id);
+                }
+                return;
+            }
         }
     }
 
