@@ -1,0 +1,64 @@
+name: Inspect Eaglercraft U1.1 patcher
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Download and inspect U1.1 patcher archive
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          archive="$GITHUB_WORKSPACE/eaglercraft-26.2-patcher-main (1).tar.gz"
+          test -s "$archive"
+
+          echo "=== Archive ==="
+          ls -lh "$archive"
+          sha256sum "$archive"
+
+          echo "=== Top-level archive contents ==="
+          tar -tzf "$archive" | head -300
+
+          rm -rf "$GITHUB_WORKSPACE/u1-1-extracted"
+          mkdir -p "$GITHUB_WORKSPACE/u1-1-extracted"
+          tar -xzf "$archive" -C "$GITHUB_WORKSPACE/u1-1-extracted"
+
+          echo "=== Extracted files ==="
+          find "$GITHUB_WORKSPACE/u1-1-extracted" -type f -print | sort | head -1000
+
+          echo "=== Candidate portable kits ==="
+          find "$GITHUB_WORKSPACE/u1-1-extracted" -type f \( -name 'portable-kit.zip' -o -name '*.zip' \) -print | sort
+
+          echo "=== Candidate patchers ==="
+          find "$GITHUB_WORKSPACE/u1-1-extracted" -type f -name 'eagler-patcher' -print | sort
+
+          kit="$(find "$GITHUB_WORKSPACE/u1-1-extracted" -type f -name 'portable-kit.zip' -print -quit || true)"
+          if [ -n "$kit" ]; then
+            echo "=== U1.1 portable-kit.zip ==="
+            ls -lh "$kit"
+            sha256sum "$kit"
+
+            rm -rf "$GITHUB_WORKSPACE/u1-1-kit"
+            mkdir -p "$GITHUB_WORKSPACE/u1-1-kit"
+            unzip -q "$kit" -d "$GITHUB_WORKSPACE/u1-1-kit"
+
+            echo "=== Portable kit contents ==="
+            find "$GITHUB_WORKSPACE/u1-1-kit" -type f -print | sort | head -1500
+
+            echo "=== Skeleton pins ==="
+            grep -R -n -E 'a9172bdd903ea65afd4c87cdb29b500c237c823fdd94789c2e90561b1b049469|70afdce5f622307a6df6095197f6829cd5c1aada7c706ba984727ffe514a353c' "$GITHUB_WORKSPACE/u1-1-kit" 2>/dev/null || true
+          else
+            echo "No portable-kit.zip was found in the U1.1 source archive."
+            echo "The archive may itself be the patcher source tree; inspect the extracted paths above."
+          fi
