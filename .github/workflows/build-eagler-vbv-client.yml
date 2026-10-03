@@ -620,53 +620,80 @@ jobs:
 
           python3 - "$target" <<'PY'
           from pathlib import Path
+          import re
           import sys
 
           path = Path(sys.argv[1])
           text = path.read_text(encoding="utf-8")
           original = text
 
-          replacements = {
-              "io.netty.channel.epoll.EpollEventLoopGroup": "io.netty.channel.nio.NioEventLoopGroup",
-              "io.netty.channel.epoll.EpollServerSocketChannel": "io.netty.channel.socket.nio.NioServerSocketChannel",
-              "io.netty.channel.epoll.EpollSocketChannel": "io.netty.channel.socket.nio.NioSocketChannel",
-              "io.netty.channel.epoll.Epoll": "io.netty.channel.nio.NioEventLoopGroup",
-              "io.netty.channel.kqueue.KQueueEventLoopGroup": "io.netty.channel.nio.NioEventLoopGroup",
-              "io.netty.channel.kqueue.KQueueServerSocketChannel": "io.netty.channel.socket.nio.NioServerSocketChannel",
-              "io.netty.channel.kqueue.KQueueSocketChannel": "io.netty.channel.socket.nio.NioSocketChannel",
-              "io.netty.channel.kqueue.KQueue": "io.netty.channel.nio.NioEventLoopGroup",
-              "EpollEventLoopGroup": "NioEventLoopGroup",
-              "EpollServerSocketChannel": "NioServerSocketChannel",
-              "EpollSocketChannel": "NioSocketChannel",
-              "KQueueEventLoopGroup": "NioEventLoopGroup",
-              "KQueueServerSocketChannel": "NioServerSocketChannel",
-              "KQueueSocketChannel": "NioSocketChannel",
-          }
+          # Minecraft 26.2's server-side EventLoopGroupHolder is not used by
+          # the browser client, but its class is still compiled. The Eagler
+          # classpath intentionally does not ship Netty's native epoll/kqueue
+          # transports. Use Netty 4.2's portable NIO IoHandler instead.
+          text = re.sub(
+              r"^import io\.netty\.channel\.(?:epoll|kqueue)\.[^;]+;\s*\n",
+              "",
+              text,
+              flags=re.MULTILINE,
+          )
+          text = re.sub(
+              r"^import io\.netty\.channel\.nio\.NioEventLoopGroupIoHandler;\s*\n",
+              "",
+              text,
+              flags=re.MULTILINE,
+          )
 
-          for old, new in replacements.items():
-              text = text.replace(old, new)
+          text = text.replace(
+              "EpollIoHandler.newFactory()",
+              "NioIoHandler.newFactory()",
+          )
+          text = text.replace(
+              "KQueueIoHandler.newFactory()",
+              "NioIoHandler.newFactory()",
+          )
+          text = text.replace("Epoll.isAvailable()", "true")
+          text = text.replace("KQueue.isAvailable()", "true")
 
-          text = text.replace("NioEventLoopGroup.isAvailable()", "true")
-          text = text.replace("NioSocketChannel.isAvailable()", "true")
-          text = text.replace("NioServerSocketChannel.isAvailable()", "true")
+          # The correct Netty 4.2 portable handler is NioIoHandler; the
+          # previous patch accidentally referred to the nonexistent
+          # NioEventLoopGroupIoHandler class.
+          text = text.replace("NioEventLoopGroupIoHandler", "NioIoHandler")
 
-          needed = [
+          lines = text.splitlines()
+          imports = {
+              "import io.netty.channel.nio.NioIoHandler;",
               "import io.netty.channel.nio.NioEventLoopGroup;",
               "import io.netty.channel.socket.nio.NioServerSocketChannel;",
               "import io.netty.channel.socket.nio.NioSocketChannel;",
-          ]
-          lines = text.splitlines()
-          for imp in needed:
-              if imp not in lines:
-                  insert_at = 0
-                  for i, line in enumerate(lines):
-                      if line.startswith("import "):
-                          insert_at = i + 1
-                  lines.insert(insert_at, imp)
-          text = "\n".join(lines) + ("\n" if text.endswith("\n") else "")
+          }
+          # Only retain imports that are actually referenced after the
+          # transport rewrite, avoiding duplicate/unused native imports.
+          for imp in list(imports):
+              simple = imp.rsplit(".", 1)[-1][:-1]
+              if simple not in text.split(";", 1)[-1] and simple not in text:
+                  imports.discard(imp)
+
+          # NioIoHandler is required by the two factory methods.
+          imports.add("import io.netty.channel.nio.NioIoHandler;")
+
+          lines = [line for line in lines if not (
+              line.startswith("import io.netty.channel.nio.NioIoHandler;")
+          )]
+          import_indexes = [i for i, line in enumerate(lines) if line.startswith("import ")]
+          insert_at = (import_indexes[-1] + 1) if import_indexes else 0
+          lines.insert(insert_at, "import io.netty.channel.nio.NioIoHandler;")
+          text = "\n".join(lines) + ("\n" if original.endswith("\n") else "")
 
           if text == original:
               raise SystemExit(f"::error::Netty WASM-GC fix made no changes to {path}")
+
+          if "EpollIoHandler" in text or "KQueueIoHandler" in text:
+              raise SystemExit("::error::Native Netty IoHandler references remain after rewrite")
+          if "NioEventLoopGroupIoHandler" in text:
+              raise SystemExit("::error::Invalid NioEventLoopGroupIoHandler reference remains after rewrite")
+          if "Epoll.isAvailable()" in text or "KQueue.isAvailable()" in text:
+              raise SystemExit("::error::Native Netty availability checks remain after rewrite")
 
           path.write_text(text, encoding="utf-8")
           print(f"Patched compiled source: {path}")
@@ -690,6 +717,12 @@ jobs:
         run: |
           set -euo pipefail
           cd "$GITHUB_WORKSPACE/ModdedClientSource"
+
+          # Gradle 9.6 on JDK 25 otherwise launches a smaller client JVM and
+          # then forks the real daemon. Give the launcher the same heap and
+          # explicitly authorize Gradle's native-platform library.
+          export GRADLE_OPTS="-Xmx10g"
+          export JAVA_TOOL_OPTIONS="--enable-native-access=ALL-UNNAMED"
 
           echo "=== Building Eaglercraft WASM-GC web client ==="
           if [ -f "./gradlew" ]; then
@@ -727,6 +760,7 @@ jobs:
           echo "Selected WASM-GC task: $WASM_TASK"
           ./gradlew "$WASM_TASK" \
             --no-daemon \
+            --warning-mode=none \
             --max-workers=1 \
             -Dorg.gradle.parallel=false \
             -Dorg.gradle.jvmargs=-Xmx10g \
