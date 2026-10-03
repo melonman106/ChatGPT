@@ -670,6 +670,11 @@ jobs:
               "KQueueIoHandler.newFactory()",
               "NioIoHandler.newFactory()",
           )
+          # Replace native transport channel class literals with the portable NIO equivalents.
+          text = text.replace("EpollSocketChannel.class", "NioSocketChannel.class")
+          text = text.replace("EpollServerSocketChannel.class", "NioServerSocketChannel.class")
+          text = text.replace("KQueueSocketChannel.class", "NioSocketChannel.class")
+          text = text.replace("KQueueServerSocketChannel.class", "NioServerSocketChannel.class")
           text = text.replace("Epoll.isAvailable()", "true")
           text = text.replace("KQueue.isAvailable()", "true")
 
