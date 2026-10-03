@@ -118,7 +118,6 @@ public final class VBVClient {
         ));
 
         VBVGeneratedPackMods.register();
-        VBVVisualMappings.register(VISUALS);
     }
 
     public static void registerMod(VBVModInfo info) {
