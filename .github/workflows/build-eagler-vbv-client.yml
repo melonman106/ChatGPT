@@ -125,97 +125,105 @@ jobs:
 
           rm -rf "$legacy_root" "$resolved_root"
           mkdir -p "$legacy_root" "$resolved_root"
-
-          # U1.1 keeps the Java CLI/source tooling in u1-1-source/, but the
-          # authenticated binary sidecars are not part of that source archive.
-          # The original U1 portable kit is therefore the fallback source for
-          # ONLY those missing sidecars.
           test -s "$legacy_zip"
           unzip -q -o "$legacy_zip" -d "$legacy_root"
 
-          expected_bundle="fd944e9cabbebbf4bddce8a39e1b233b3c7d0cd4f860f9cae37550a3fcfa8b02"
-          expected_skeleton="a9172bdd903ea65afd4c87cdb29b500c237c823fdd94789c2e90561b1b049469"
+          u11_bundle_sha="fd944e9cabbebbf4bddce8a39e1b233b3c7d0cd4f860f9cae37550a3fcfa8b02"
+          u11_skeleton_sha="a9172bdd903ea65afd4c87cdb29b500c237c823fdd94789c2e90561b1b049469"
+          legacy_skeleton_sha="3656a83ed8187e2d859612c566f3aa73e242bf1e4633990c5bb4929e0a846c94"
 
-          resolve_by_sha() {
-            local label="$1"
-            local expected_sha="$2"
-            local output_name="$3"
-
-            local candidate
-            local sha
-            local source=""
-
-            # First search the U1.1 source tree. Only regular files count.
+          find_sha() {
+            local root="$1"
+            local expected="$2"
+            local candidate sha
             while IFS= read -r -d '' candidate; do
               [ -f "$candidate" ] || continue
               sha="$(sha256sum "$candidate" | cut -d' ' -f1)"
-              if [ "$sha" = "$expected_sha" ]; then
-                source="$candidate"
-                echo "$label: U1.1 -> $candidate" >&2
-                break
+              if [ "$sha" = "$expected" ]; then
+                printf '%s' "$candidate"
+                return 0
               fi
-            done < <(find "$source_root" -type f -name '*.zip' -print0 | sort -z)
+            done < <(find "$root" -type f -name '*.zip' -print0 | sort -z)
+            return 1
+          }
 
-            # Then search the legacy portable kit by content hash, not by a
-            # guessed filename or directory. This handles the old/new filename
-            # difference while guaranteeing the exact authenticated input.
-            if [ -z "$source" ]; then
-              while IFS= read -r -d '' candidate; do
-                [ -f "$candidate" ] || continue
-                sha="$(sha256sum "$candidate" | cut -d' ' -f1)"
-                if [ "$sha" = "$expected_sha" ]; then
-                  source="$candidate"
-                  echo "$label: legacy U1 fallback -> $candidate" >&2
-                  break
-                fi
-              done < <(find "$legacy_root" -type f -name '*.zip' -print0 | sort -z)
+          echo "=== U1.1/legacy input inventory ==="
+          find "$source_root" "$legacy_root" -type f             ( -name '*.zip' -o -name 'eagler-patcher' )             -printf '%p\n' | sort || true
+
+          u11_bundle="$(find_sha "$source_root" "$u11_bundle_sha" || true)"
+          u11_skeleton="$(find_sha "$source_root" "$u11_skeleton_sha" || true)"
+
+          if [ -n "$u11_bundle" ] && [ -n "$u11_skeleton" ]; then
+            # Full U1.1 input set is present: use the U1.1 patcher and its
+            # Netty-fix skeleton.
+            cp -Lf "$u11_bundle" "$resolved_root/source-patch-bundle.zip"
+            cp -Lf "$u11_skeleton" "$resolved_root/project-skeleton-u1-nettyfix.zip"
+
+            echo "EAGLER_PATCHER=$source_root/patcher/java-cli/eagler-patcher" >> "$GITHUB_ENV"
+            echo "EAGLER_PATCH_BUNDLE=$resolved_root/source-patch-bundle.zip" >> "$GITHUB_ENV"
+            echo "EAGLER_PROJECT_SKELETON=$resolved_root/project-skeleton-u1-nettyfix.zip" >> "$GITHUB_ENV"
+            echo "EAGLER_PATCH_BUNDLE_SHA256=$u11_bundle_sha" >> "$GITHUB_ENV"
+            echo "EAGLER_PROJECT_SKELETON_SHA256=$u11_skeleton_sha" >> "$GITHUB_ENV"
+            echo "EAGLER_EXPECTED_SKELETON_SHA256=$u11_skeleton_sha" >> "$GITHUB_ENV"
+            echo "EAGLER_PATCHER_MODE=u1.1" >> "$GITHUB_ENV"
+
+            echo "U1.1 complete input set found."
+          else
+            # The U1.1 source archive does not contain its binary sidecars.
+            # If the new accepted skeleton is unavailable, do NOT feed an old
+            # skeleton to the U1.1 CLI. Instead fall back as a matched set to
+            # the original U1 portable patcher + its own skeleton.
+            legacy_patcher="$(find "$legacy_root" -type f -name 'eagler-patcher' -print -quit || true)"
+            legacy_bundle="$(find_sha "$legacy_root" "$u11_bundle_sha" || true)"
+            legacy_skeleton="$(find_sha "$legacy_root" "$legacy_skeleton_sha" || true)"
+
+            if [ -z "$legacy_patcher" ]; then
+              echo "::error::Legacy U1 eagler-patcher was not found inside portable-kit.zip."
+              exit 1
             fi
-
-            if [ -z "$source" ]; then
-              echo "::error::Could not resolve $label with expected SHA256 $expected_sha"
-              echo "=== U1.1 ZIP files ==="
-              find "$source_root" -type f -name '*.zip' -printf '%s %p\n' | sort || true
-              echo "=== Legacy U1 ZIP files ==="
-              find "$legacy_root" -type f -name '*.zip' -printf '%s %p\n' | sort || true
+            if [ -z "$legacy_bundle" ]; then
+              echo "::error::Legacy U1 source-patch-bundle.zip with SHA $u11_bundle_sha was not found."
+              exit 1
+            fi
+            if [ -z "$legacy_skeleton" ]; then
+              echo "::error::Legacy U1 project skeleton with SHA $legacy_skeleton_sha was not found."
+              echo "=== Legacy skeleton candidates and hashes ==="
+              find "$legacy_root" -type f -name '*.zip' -print0 |
+                while IFS= read -r -d '' f; do
+                  printf '%s  %s\n' "$(sha256sum "$f" | cut -d' ' -f1)" "$f"
+                done | sort || true
               exit 1
             fi
 
-            # Normalize both old and new layouts to stable, known paths.
-            # create-dev and later verification MUST use these exact paths.
-            cp -Lf "$source" "$resolved_root/$output_name"
-            test -f "$resolved_root/$output_name"
-            test -s "$resolved_root/$output_name"
-            printf '%s' "$resolved_root/$output_name"
-          }
+            cp -Lf "$legacy_bundle" "$resolved_root/source-patch-bundle.zip"
+            cp -Lf "$legacy_skeleton" "$resolved_root/project-skeleton-v5-teavm-runtime-verified.zip"
 
-          patch_bundle="$(resolve_by_sha 'Source patch bundle' "$expected_bundle" 'source-patch-bundle.zip')"
-          skeleton="$(resolve_by_sha 'Project skeleton' "$expected_skeleton" 'project-skeleton-u1-nettyfix.zip')"
+            chmod +x "$legacy_patcher"
+            echo "EAGLER_PATCHER=$legacy_patcher" >> "$GITHUB_ENV"
+            echo "EAGLER_PATCH_BUNDLE=$resolved_root/source-patch-bundle.zip" >> "$GITHUB_ENV"
+            echo "EAGLER_PROJECT_SKELETON=$resolved_root/project-skeleton-v5-teavm-runtime-verified.zip" >> "$GITHUB_ENV"
+            echo "EAGLER_PATCH_BUNDLE_SHA256=$u11_bundle_sha" >> "$GITHUB_ENV"
+            echo "EAGLER_PROJECT_SKELETON_SHA256=$legacy_skeleton_sha" >> "$GITHUB_ENV"
+            echo "EAGLER_EXPECTED_SKELETON_SHA256=$legacy_skeleton_sha" >> "$GITHUB_ENV"
+            echo "EAGLER_PATCHER_MODE=legacy-u1" >> "$GITHUB_ENV"
 
-          bundle_sha256="$(sha256sum "$patch_bundle" | cut -d' ' -f1)"
-          skeleton_sha256="$(sha256sum "$skeleton" | cut -d' ' -f1)"
+            echo "U1.1 sidecars incomplete; falling back to the complete legacy U1 patcher/input set."
+            echo "Legacy patcher:  $legacy_patcher"
+            echo "Legacy bundle:   $resolved_root/source-patch-bundle.zip"
+            echo "Legacy skeleton: $resolved_root/project-skeleton-v5-teavm-runtime-verified.zip"
+          fi
 
-          test -f "$patch_bundle"
-          test -f "$skeleton"
-          test "$bundle_sha256" = "$expected_bundle"
-          test "$skeleton_sha256" = "$expected_skeleton"
+          test -f "$EAGLER_PATCHER"
+          test -f "$EAGLER_PATCH_BUNDLE"
+          test -f "$EAGLER_PROJECT_SKELETON"
+          test "$(sha256sum "$EAGLER_PATCH_BUNDLE" | cut -d' ' -f1)" = "$EAGLER_PATCH_BUNDLE_SHA256"
+          test "$(sha256sum "$EAGLER_PROJECT_SKELETON" | cut -d' ' -f1)" = "$EAGLER_EXPECTED_SKELETON_SHA256"
 
-          echo "EAGLER_PATCH_BUNDLE=$patch_bundle" >> "$GITHUB_ENV"
-          echo "EAGLER_PROJECT_SKELETON=$skeleton" >> "$GITHUB_ENV"
-          echo "EAGLER_PATCH_BUNDLE_SHA256=$bundle_sha256" >> "$GITHUB_ENV"
-          echo "EAGLER_PROJECT_SKELETON_SHA256=$skeleton_sha256" >> "$GITHUB_ENV"
-
-          echo "=== Final resolved U1 input map ==="
-          printf 'U1.1 source root:       %s\n' "$source_root"
-          printf 'Legacy U1 portable kit: %s\n' "$legacy_zip"
-          printf 'Resolved input root:    %s\n' "$resolved_root"
-          printf 'Patcher:                %s\n' "$EAGLER_PATCHER"
-          printf 'Patch bundle:           %s\n' "$patch_bundle"
-          printf 'Project skeleton:       %s\n' "$skeleton"
-          printf 'Patch bundle SHA256:    %s\n' "$bundle_sha256"
-          printf 'Skeleton SHA256:        %s\n' "$skeleton_sha256"
-          echo "=== Resolved files ==="
-          ls -lh "$resolved_root"/*
-          file "$resolved_root"/*
+          echo "=== Final resolved input map ==="
+          printf 'mode=%s\npatcher=%s\npatch_bundle=%s\nproject_skeleton=%s\n'             "$EAGLER_PATCHER_MODE" "$EAGLER_PATCHER" "$EAGLER_PATCH_BUNDLE" "$EAGLER_PROJECT_SKELETON"
+          printf 'patch_bundle_sha256=%s\nskeleton_sha256=%s\n'             "$EAGLER_PATCH_BUNDLE_SHA256" "$EAGLER_PROJECT_SKELETON_SHA256"
+          ls -lh "$EAGLER_PATCH_BUNDLE" "$EAGLER_PROJECT_SKELETON" "$EAGLER_PATCHER"
+          file "$EAGLER_PATCH_BUNDLE" "$EAGLER_PROJECT_SKELETON" "$EAGLER_PATCHER"
 
       - name: Download official Minecraft 26.2 client
         if: steps.repo_checkpoint.outputs.found != 'true'
@@ -251,7 +259,7 @@ jobs:
           rm -rf "$GITHUB_WORKSPACE/generated-client"
           cd "$EAGLER_PATCHER_ROOT"
           chmod +x "$EAGLER_PATCHER"
-          "$EAGLER_PATCHER" create-dev             --jar "$GITHUB_WORKSPACE/build-input/minecraft-26.2-client.jar"             --output "$GITHUB_WORKSPACE/generated-client"             --vineflower "$GITHUB_WORKSPACE/build-input/vineflower-1.12.0.jar"             --java17 "$JAVA_HOME/bin/java"             --patch-bundle "$EAGLER_PATCH_BUNDLE"             --expected-bundle-sha256 fd944e9cabbebbf4bddce8a39e1b233b3c7d0cd4f860f9cae37550a3fcfa8b02             --project-skeleton "$EAGLER_PROJECT_SKELETON"             --expected-skeleton-sha256 a9172bdd903ea65afd4c87cdb29b500c237c823fdd94789c2e90561b1b049469
+          "$EAGLER_PATCHER" create-dev             --jar "$GITHUB_WORKSPACE/build-input/minecraft-26.2-client.jar"             --output "$GITHUB_WORKSPACE/generated-client"             --vineflower "$GITHUB_WORKSPACE/build-input/vineflower-1.12.0.jar"             --java17 "$JAVA_HOME/bin/java"             --patch-bundle "$EAGLER_PATCH_BUNDLE"             --expected-bundle-sha256 "$EAGLER_PATCH_BUNDLE_SHA256"             --project-skeleton "$EAGLER_PROJECT_SKELETON"             --expected-skeleton-sha256 "$EAGLER_EXPECTED_SKELETON_SHA256"
           if ! find "$GITHUB_WORKSPACE/generated-client" -type f \( -name 'gradlew' -o -name 'build.gradle' -o -name 'build.gradle.kts' \) -print -quit | grep -q .; then
             echo "::error::create-dev completed but did not produce a Gradle source project."
             find "$GITHUB_WORKSPACE/generated-client" -maxdepth 5 -type f | sort | head -1000
