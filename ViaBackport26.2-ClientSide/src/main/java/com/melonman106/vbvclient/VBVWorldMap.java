@@ -10,13 +10,10 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.level.ChunkPos;
 
 /**
  * Lightweight client-side explored-chunk world map for Eaglercraft 26.2.
- *
- * A chunk is recorded when the local player enters it. No server-side
- * component is required.
+ * A chunk is recorded when the local player enters it. No server component is required.
  */
 public final class VBVWorldMap {
     private static final Map<String, Set<Long>> EXPLORED = new HashMap<>();
@@ -26,11 +23,23 @@ public final class VBVWorldMap {
 
     public static void tick() {
         Minecraft minecraft = Minecraft.getInstance();
-        if (!(minecraft.getCameraEntity() instanceof Player player)) return;
-        if (minecraft.level == null) return;
+        if (!(minecraft.getCameraEntity() instanceof Player player) || minecraft.level == null) return;
 
-        ChunkPos chunk = new ChunkPos(player.blockPosition());
-        exploredSet(worldKey(minecraft), true).add(chunk.toLong());
+        int chunkX = Math.floorDiv(BlockPos.containing(player.getX(), player.getY(), player.getZ()).getX(), 16);
+        int chunkZ = Math.floorDiv(BlockPos.containing(player.getX(), player.getY(), player.getZ()).getZ(), 16);
+        exploredSet(worldKey(minecraft), true).add(pack(chunkX, chunkZ));
+    }
+
+    public static long pack(int chunkX, int chunkZ) {
+        return ((long) chunkX << 32) ^ (chunkZ & 0xFFFFFFFFL);
+    }
+
+    public static int chunkX(long packed) {
+        return (int) (packed >> 32);
+    }
+
+    public static int chunkZ(long packed) {
+        return (int) packed;
     }
 
     public static void open(Screen parent) {
@@ -56,7 +65,7 @@ public final class VBVWorldMap {
 
     public static String worldKey(Minecraft minecraft) {
         if (minecraft.level == null) return "unknown";
-        String levelName = minecraft.level.dimension().location().toString();
+        String levelName = minecraft.level.dimension().toString();
         String server = minecraft.getCurrentServer() == null
             ? "singleplayer"
             : minecraft.getCurrentServer().ip;
@@ -70,11 +79,11 @@ public final class VBVWorldMap {
 
     public static int playerBlockX() {
         Minecraft minecraft = Minecraft.getInstance();
-        return minecraft.player == null ? 0 : BlockPos.containing(minecraft.player.getX(), minecraft.player.getY(), minecraft.player.getZ()).getX();
+        return minecraft.player == null ? 0 : (int) minecraft.player.getX();
     }
 
     public static int playerBlockZ() {
         Minecraft minecraft = Minecraft.getInstance();
-        return minecraft.player == null ? 0 : BlockPos.containing(minecraft.player.getX(), minecraft.player.getY(), minecraft.player.getZ()).getZ();
+        return minecraft.player == null ? 0 : (int) minecraft.player.getZ();
     }
 }
