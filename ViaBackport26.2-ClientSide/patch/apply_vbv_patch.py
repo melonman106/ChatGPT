@@ -296,7 +296,7 @@ if open_name is None:
     raise SystemExit("Could not find a method on Minecraft that takes a single Screen")
 print("Screen-opening method on Minecraft:", open_name, "(candidates:", screen_methods, ")")
 
-HUD_CALL = "com.melonman106.vbvclient.VBVArmorHud.render(graphics);"
+HUD_CALL = "com.melonman106.vbvclient.VBVSimpleHud.render(graphics);"
 
 hud_path = None
 hud_src = None
