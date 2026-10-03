@@ -10,7 +10,6 @@ public final class VBVClient {
     public static final String VERSION = "1.0.0-26.2";
 
     private static final Map<String, VBVModInfo> MODS = new LinkedHashMap<>();
-    private static final VBVVisualRegistry VISUALS = new VBVVisualRegistry();
 
     private VBVClient() {}
 
@@ -77,15 +76,6 @@ public final class VBVClient {
             false
         ));
 
-        registerMod(new VBVModInfo(
-            "better-clouds",
-            "Better Clouds",
-            "1.0.0-26.2",
-            "Eagler client",
-            "Optional built-in cloud textures for the Eaglercraft client.",
-            "vbvclient/mods/better-clouds/pack.png",
-            true
-        ));
 
         registerMod(new VBVModInfo(
             "dark-ui",
@@ -97,15 +87,6 @@ public final class VBVClient {
             true
         ));
 
-        registerMod(new VBVModInfo(
-            "low-fire",
-            "Low Fire",
-            "1.0.0-26.2",
-            "Eagler client",
-            "Optional lower fire overlay texture for clearer first-person visibility.",
-            "vbvclient/mods/low-fire/pack.png",
-            true
-        ));
 
         registerMod(new VBVModInfo(
             "connected-glass",
@@ -126,9 +107,5 @@ public final class VBVClient {
 
     public static Collection<VBVModInfo> getMods() {
         return Collections.unmodifiableCollection(MODS.values());
-    }
-
-    public static VBVVisualRegistry visuals() {
-        return VISUALS;
     }
 }
