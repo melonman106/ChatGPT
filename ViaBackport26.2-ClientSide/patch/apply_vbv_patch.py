@@ -369,6 +369,25 @@ else:
     if not inserted:
         raise SystemExit("Minecraft found, but its constructor hook was not identified")
 
+// Hook the local player's current chunk into the explored-chunk tracker.
+MAP_TICK_CALL = "com.melonman106.vbvclient.VBVWorldMap.tick();"
+if MAP_TICK_CALL not in mc_src:
+    tick_candidates = list(re.finditer(
+        r"(?:public|protected|private)\\s+void\\s+tick\\s*\\(\\s*\\)\\s*\\{",
+        mc_src
+    ))
+    if not tick_candidates:
+        raise SystemExit("Minecraft.tick() was not identified; explored chunks cannot be tracked")
+    tick_match = tick_candidates[0]
+    tick_end = find_method_end(mc_src, tick_match.start())
+    if tick_end is None:
+        raise SystemExit("Could not find end of Minecraft.tick()")
+    mc_src = mc_src[:tick_end] + "\\n        " + MAP_TICK_CALL + "\\n    " + mc_src[tick_end:]
+    mc_path.write_text(mc_src, encoding="utf-8")
+    print("Inserted explored-chunk tracking hook into", mc_path)
+else:
+    print("Explored-chunk tracking hook already present.")
+
 title = None
 for p, s in java_files():
     if re.search(r"class\s+TitleScreen\b", s) and "extends Screen" in s:
