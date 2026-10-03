@@ -116,7 +116,9 @@ jobs:
         if: steps.repo_checkpoint.outputs.found != 'true'
         run: |
           set -euo pipefail
-          curl -fL --retry 3 -o build-input/minecraft-26.2-client.jar "https://piston-data.mojang.com/v1/objects/2dc72797acbc1b63fc16a11c4ac393605f453754/client.jar"
+          # curl does not create its parent directory.
+          mkdir -p "$GITHUB_WORKSPACE/build-input"
+          curl -fL --retry 3 -o "$GITHUB_WORKSPACE/build-input/minecraft-26.2-client.jar" "https://piston-data.mojang.com/v1/objects/2dc72797acbc1b63fc16a11c4ac393605f453754/client.jar"
           echo "2dc72797acbc1b63fc16a11c4ac393605f453754  build-input/minecraft-26.2-client.jar" | sha1sum -c -
       - name: Inspect extracted U1.1 patcher
         if: steps.repo_checkpoint.outputs.found != 'true'
