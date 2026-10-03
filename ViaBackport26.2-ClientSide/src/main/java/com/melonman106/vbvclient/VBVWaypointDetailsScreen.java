@@ -37,6 +37,7 @@ public final class VBVWaypointDetailsScreen extends Screen {
         graphics.fill(0, 0, width, height, 0xFF151515);
         graphics.drawCenteredString(font, title, width / 2, height / 2 - 80, 0xFFFFFFFF);
         String coords = "X " + waypoint.x() + "  Y " + waypoint.y() + "  Z " + waypoint.z();\n        graphics.text(font, coords, width / 2 - font.width(coords) / 2, height / 2 - 55, 0xFFCCCCCC, true);
+        // Waypoint coordinates are rendered beneath the title.
         super.extractRenderState(graphics, mouseX, mouseY, partialTick);
     }
 }
