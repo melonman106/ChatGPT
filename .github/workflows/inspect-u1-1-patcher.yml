@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   inspect:
@@ -36,6 +36,26 @@ jobs:
 
           echo "=== Extracted files ==="
           find "$GITHUB_WORKSPACE/u1-1-extracted" -type f -print | sort | head -1000
+
+          # Keep a checked-in copy of the U1.1 source tree so the main build
+          # does not depend on reconstructing the source tree from the tarball
+          # on every run.
+          rm -rf "$GITHUB_WORKSPACE/u1-1-source"
+          mkdir -p "$GITHUB_WORKSPACE/u1-1-source"
+          tar -xzf "$archive" -C "$GITHUB_WORKSPACE/u1-1-source" --strip-components=1
+          rm -rf "$GITHUB_WORKSPACE/u1-1-source/.git"
+
+          cd "$GITHUB_WORKSPACE"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A u1-1-source
+          if git diff --cached --quiet; then
+            echo "Checked-in U1.1 source is already current."
+          else
+            git commit -m "Add extracted U1.1 patcher source"
+            git push
+            echo "Committed extracted U1.1 source."
+          fi
 
           echo "=== Candidate portable kits ==="
           find "$GITHUB_WORKSPACE/u1-1-extracted" -type f \( -name 'portable-kit.zip' -o -name '*.zip' \) -print | sort
