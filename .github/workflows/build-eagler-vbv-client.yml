@@ -746,7 +746,7 @@ jobs:
           if [ ! -f "$source_dir/index.html" ]; then
             echo "::error::WASM-GC web build is missing target_teavm_wasm_gc/build/web/index.html."
             echo "=== Available WASM/HTML output ==="
-            find "$build_root" -type f \( -name '*.wasm' -o -name '*.html' \) -printf '%s %p\\n' 2>/dev/null | sort -nr | head -200 || true
+            find "$build_root" -type f \( -name '*.wasm' -o -name '*.html' \) -printf '%s %p\n' 2>/dev/null | sort -nr | head -200 || true
             exit 1
           fi
 
@@ -755,14 +755,14 @@ jobs:
           cp -a "$source_dir"/. "$output_dir"/
           find "$output_dir" -type f \( -name '*.br' -o -name '*.gz' -o -name '*.meta' -o -name '*.sha256' \) -delete
 
-          printf '%s\\n' \\
-            'name = "my-eagler-client"' \\
-            'main = "worker.js"' \\
-            'compatibility_date = "2026-09-29"' \\
-            '' \\
-            '[[r2_buckets]]' \\
-            'binding = "GAME"' \\
-            'bucket_name = "my-eagler-client-files"' \\
+          printf '%s\n' \
+            'name = "my-eagler-client"' \
+            'main = "worker.js"' \
+            'compatibility_date = "2026-09-29"' \
+            '' \
+            '[[r2_buckets]]' \
+            'binding = "GAME"' \
+            'bucket_name = "my-eagler-client-files"' \
             > "$output_dir/wrangler.toml.example"
 
           cat > "$output_dir/worker.js" <<'EOF'
@@ -795,16 +795,16 @@ jobs:
           };
           EOF
 
-          printf '%s\\n' \\
-            'Cloudflare R2 deployment bundle' \\
-            '' \\
-            'Upload the CONTENTS of this folder to the ROOT of your R2 bucket.' \\
-            'The raw .wasm files are intentionally included.' \\
-            'Edit wrangler.toml.example before deploying the Worker.' \\
+          printf '%s\n' \
+            'Cloudflare R2 deployment bundle' \
+            '' \
+            'Upload the CONTENTS of this folder to the ROOT of your R2 bucket.' \
+            'The raw .wasm files are intentionally included.' \
+            'Edit wrangler.toml.example before deploying the Worker.' \
             > "$output_dir/README-CLOUDFLARE.txt"
 
           echo "=== Cloudflare R2 bundle ==="
-          find "$output_dir" -type f -printf '%s %p\\n' | sort -nr | head -100
+          find "$output_dir" -type f -printf '%s %p\n' | sort -nr | head -100
           echo "File count: $(find "$output_dir" -type f | wc -l)"
           du -sh "$output_dir"
 
