@@ -34,7 +34,7 @@ public final class VBVWorldMap {
     }
 
     public static void open(Screen parent) {
-        Minecraft.getInstance().setScreen(new VBVWorldMapScreen(parent));
+        VBVNav.open(new VBVWorldMapScreen(parent));
     }
 
     public static Set<Long> explored(String world) {
