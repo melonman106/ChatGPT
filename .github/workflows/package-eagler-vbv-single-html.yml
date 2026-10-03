@@ -40,8 +40,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: npm
-          cache-dependency-path: "ViaBackport26.2-ClientSide/../package-lock.json"
 
       - name: Download successful WASM-GC checkpoint artifact
         run: |
