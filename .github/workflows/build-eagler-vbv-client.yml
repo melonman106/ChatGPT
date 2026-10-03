@@ -897,6 +897,22 @@ jobs:
             exit 1
           fi
 
+          # deploy_wasm_web.sh intentionally creates symlinks for generated
+          # payloads. That is fine inside the build workspace, but the
+          # validation and R2 artifact must contain real files, not symlinks
+          # pointing at paths outside build/web.
+          echo "=== Materializing deployed web symlinks ==="
+          while IFS= read -r -d '' link; do
+            target="$(readlink -f "$link")"
+            if [ -z "$target" ] || [ ! -f "$target" ]; then
+              echo "::error::Web output symlink has no valid file target: $link -> $(readlink "$link" || true)"
+              exit 1
+            fi
+            rm -f "$link"
+            cp -f "$target" "$link"
+            echo "Materialized: $link"
+          done < <(find "$web_dir" -maxdepth 1 -type l -print0)
+
           echo "=== Verifying RAW WASM files before precompression ==="
           wasm_count="$(find "$web_dir" -maxdepth 1 -type f -name '*.wasm' | wc -l)"
           if [ "$wasm_count" -lt 1 ]; then
