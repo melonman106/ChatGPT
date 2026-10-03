@@ -35,6 +35,14 @@ public final class VBVModDetailsScreen extends Screen {
         label(info.resourcePackMod() ? "Type: Resource-pack client mod" : "Type: Native client mod");
         label("pack.png: " + info.iconPath());
 
+        if ("simple-hud-enhanced".equals(info.id())) {
+            addRenderableWidget(Button.builder(
+                Component.literal("Config"),
+                button -> VBVNav.open(new VBVSimpleHudConfigScreen(this))
+            ).bounds(width / 2 - 50, labelY + 4, 100, 20).build());
+            labelY += 28;
+        }
+
         String text = String.valueOf(info.description());
         while (!text.isEmpty() && labelY < height - 50) {
             int cut = Math.min(text.length(), 60);
