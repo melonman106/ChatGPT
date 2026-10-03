@@ -904,6 +904,7 @@ compatibility_date = "2026-09-29"
 binding = "GAME"
 bucket_name = "my-eagler-client-files"
 EOF
+          sed -i 's/^/          /' "$output_dir/wrangler.toml.example"
 
           cat > "$output_dir/worker.js" <<'EOF'
 export default {
@@ -934,6 +935,7 @@ export default {
   }
 };
 EOF
+          sed -i 's/^/          /' "$output_dir/worker.js"
 
           printf '%s\\n' \\
             'Cloudflare R2 deployment bundle' \\
