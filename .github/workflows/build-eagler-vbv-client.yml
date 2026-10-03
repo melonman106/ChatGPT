@@ -753,7 +753,7 @@ jobs:
           workers="$(nproc)"
           if [ "$workers" -gt 6 ]; then workers=6; fi
           echo "Using up to ${workers} Gradle workers."
-          export GRADLE_OPTS="-Xmx10g"
+          export GRADLE_OPTS="-Xmx10g -Xss4m"
           export JAVA_TOOL_OPTIONS="--enable-native-access=ALL-UNNAMED"
 
           echo "=== Building Eaglercraft WASM-GC web client ==="
@@ -811,7 +811,7 @@ jobs:
             --init-script "$GITHUB_WORKSPACE/vbv-ci.init.gradle" \
             --max-workers=1 \
             -Dorg.gradle.parallel=false \
-            -Dorg.gradle.jvmargs=-Xmx10g \
+            -Dorg.gradle.jvmargs="-Xmx10g -Xss4m" \
             --stacktrace \
             --info
 
