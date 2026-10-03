@@ -640,45 +640,42 @@ jobs:
           # Gradle 9.1 deprecated map-style dependency declarations. The
           # generated Eagler project still uses them for the 15 source
           # artifacts reported by the build. Convert only declarations whose
-          # classifier is exactly \\"sources\\"; normal dependency maps are left untouched.
+          # classifier is exactly "sources"; normal dependency maps are untouched.
           python3 - <<'PY'
           from pathlib import Path
           import re
 
           root = Path.cwd()
-          pattern = re.compile(
-              r'''(?P<indent>^[ \\t]*)(?P<conf>\\w+)\\s+'''
-              r'''(?P<body>(?:group\\s*[:=]\\s*[\\\"\\'][^\\\"\\']+[\\\"\\']|'''
-              r'''name\\s*[:=]\\s*[\\\"\\'][^\\\"\\']+[\\\"\\']|'''
-              r'''version\\s*[:=]\\s*[\\\"\\'][^\\\"\\']+[\\\"\\']|'''
-              r'''classifier\\s*[:=]\\s*[\\\"\\']sources[\\\"\\']|'''
-              r'''[ ,])+)''', re.MULTILINE)
 
-          def convert(m):
-              body = m.group('body')
-              def val(key):
-                  x = re.search(rf'\\b{key}\\s*[:=]\\s*[\\\"\\']([^\\\"\\']+)[\\\"\\']', body)
-                  return x.group(1) if x else None
-              group, name, version = val('group'), val('name'), val('version')
-              classifier = val('classifier')
-              if not (group and name and version and classifier == 'sources'):
-                  return m.group(0)
-              return f'{m.group("indent")}{m.group("conf")} "{group}:{name}:{version}:sources"'
+          # Handles the generated Gradle/Groovy form:
+          # implementation group: 'g', name: 'n', version: 'v', classifier: 'sources'
+          # and the equivalent double-quoted form. Keep this deliberately
+          # narrow so unrelated map-style dependencies are never rewritten.
+          pattern = re.compile(
+              r"""(?m)^(?P<indent>[ \\t]*)(?P<conf>[A-Za-z_][A-Za-z0-9_]*)[ \\t]+"""
+              r"""group[ \\t]*:[ \\t]*['"](?P<group>[^'"]+)['"][ \\t]*,[ \\t]*"""
+              r"""name[ \\t]*:[ \\t]*['"](?P<name>[^'"]+)['"][ \\t]*,[ \\t]*"""
+              r"""version[ \\t]*:[ \\t]*['"](?P<version>[^'"]+)['"][ \\t]*,[ \\t]*"""
+              r"""classifier[ \\t]*:[ \\t]*['"]sources['"][ \\t]*$"""
+          )
 
           changed = 0
-          for path in root.rglob('*.gradle'):
+          replacements = 0
+          for path in sorted(root.rglob("*.gradle")) + sorted(root.rglob("*.gradle.kts")):
               old = path.read_text()
-              new = pattern.sub(convert, old)
+              new, count = pattern.subn(
+                  lambda m: (
+                      f'{m.group("indent")}{m.group("conf")} '
+                      f'"{m.group("group")}:{m.group("name")}:{m.group("version")}:sources"'
+                  ),
+                  old,
+              )
               if new != old:
                   path.write_text(new)
                   changed += 1
-          for path in root.rglob('*.gradle.kts'):
-              old = path.read_text()
-              new = pattern.sub(convert, old)
-              if new != old:
-                  path.write_text(new)
-                  changed += 1
-          print(f'Patched {changed} Gradle build files.')
+                  replacements += count
+
+          print(f"Patched {changed} Gradle build files; converted {replacements} source dependencies.")
           PY
 
           echo "=== Remaining multi-string source dependency declarations ==="
