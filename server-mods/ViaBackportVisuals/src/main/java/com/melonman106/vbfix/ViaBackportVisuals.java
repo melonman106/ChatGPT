@@ -360,9 +360,9 @@ public final class ViaBackportVisuals implements ModInitializer {
                     : placeholderStates.get(stateKey(sourceState));
 
             if (placeholderState == null) {
-                LOGGER.warn("No matching placeholder state for {} state {} using {}.",
+                placeholderState = placeholder.defaultBlockState();
+                LOGGER.debug("No exact placeholder state for {} state {} using {}; using placeholder default state.",
                         sourceId, sourceState, placeholderId);
-                continue;
             }
 
             int placeholderStateId = Block.BLOCK_STATE_REGISTRY.getId(placeholderState);
@@ -458,7 +458,11 @@ public final class ViaBackportVisuals implements ModInitializer {
     }
 
     public static BlockState getMiningReferenceState(BlockState state) {
-        String id = BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();
+        Block block = state.getBlock();
+        BlockState cached = MINING_REFERENCE_CACHE.get(block);
+        if (cached != null) return cached;
+
+        String id = BuiltInRegistries.BLOCK.getKey(block).toString();
         String referenceId = null;
 
         if (id.endsWith("_wool_stairs") || id.endsWith("_wool_slab")) {
@@ -484,7 +488,10 @@ public final class ViaBackportVisuals implements ModInitializer {
 
         if (referenceId == null) return null;
         Block reference = getBlock(referenceId);
-        return reference == null ? null : reference.defaultBlockState();
+        if (reference == null) return null;
+        BlockState referenceState = reference.defaultBlockState();
+        MINING_REFERENCE_CACHE.put(block, referenceState);
+        return referenceState;
     }
 
     private static Block getBlock(String id) {
