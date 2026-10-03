@@ -609,80 +609,81 @@ jobs:
         run: |
           set -euo pipefail
           cd "$GITHUB_WORKSPACE/ModdedClientSource"
-          python3 - <<'PY'
+
+          target="game/src/main/java/net/minecraft/server/network/EventLoopGroupHolder.java"
+          if [ ! -f "$target" ]; then
+            echo "::error::Expected compiled EventLoopGroupHolder.java was not found at $target"
+            echo "=== EventLoopGroupHolder candidates ==="
+            find . -type f -name EventLoopGroupHolder.java -print | sort
+            exit 1
+          fi
+
+          python3 - "$target" <<'PY'
           from pathlib import Path
+          import sys
 
-          candidates = list(Path('.').glob('**/EventLoopGroupHolder.java'))
-          if not candidates:
-              raise SystemExit('::error::EventLoopGroupHolder.java was not found in ModdedClientSource')
-          if len(candidates) > 1:
-              raise SystemExit('::error::Multiple EventLoopGroupHolder.java files found: ' + ', '.join(map(str, candidates)))
-
-          path = candidates[0]
-          text = path.read_text(encoding='utf-8')
+          path = Path(sys.argv[1])
+          text = path.read_text(encoding="utf-8")
           original = text
 
-          # WASM-GC/Eagler has no native desktop Netty transports. Keep the
-          # normal NIO transport, but remove references to Epoll/KQueue classes
-          # so TeaVM never tries to resolve their missing native implementations.
           replacements = {
-              'io.netty.channel.epoll.EpollEventLoopGroup': 'io.netty.channel.nio.NioEventLoopGroup',
-              'io.netty.channel.epoll.EpollServerSocketChannel': 'io.netty.channel.socket.nio.NioServerSocketChannel',
-              'io.netty.channel.epoll.EpollSocketChannel': 'io.netty.channel.socket.nio.NioSocketChannel',
-              'io.netty.channel.epoll.Epoll': 'io.netty.channel.nio.NioEventLoopGroup',
-              'io.netty.channel.kqueue.KQueueEventLoopGroup': 'io.netty.channel.nio.NioEventLoopGroup',
-              'io.netty.channel.kqueue.KQueueServerSocketChannel': 'io.netty.channel.socket.nio.NioServerSocketChannel',
-              'io.netty.channel.kqueue.KQueueSocketChannel': 'io.netty.channel.socket.nio.NioSocketChannel',
-              'io.netty.channel.kqueue.KQueue': 'io.netty.channel.nio.NioEventLoopGroup',
-              'EpollEventLoopGroup': 'NioEventLoopGroup',
-              'EpollServerSocketChannel': 'NioServerSocketChannel',
-              'EpollSocketChannel': 'NioSocketChannel',
-              'KQueueEventLoopGroup': 'NioEventLoopGroup',
-              'KQueueServerSocketChannel': 'NioServerSocketChannel',
-              'KQueueSocketChannel': 'NioSocketChannel',
+              "io.netty.channel.epoll.EpollEventLoopGroup": "io.netty.channel.nio.NioEventLoopGroup",
+              "io.netty.channel.epoll.EpollServerSocketChannel": "io.netty.channel.socket.nio.NioServerSocketChannel",
+              "io.netty.channel.epoll.EpollSocketChannel": "io.netty.channel.socket.nio.NioSocketChannel",
+              "io.netty.channel.epoll.Epoll": "io.netty.channel.nio.NioEventLoopGroup",
+              "io.netty.channel.kqueue.KQueueEventLoopGroup": "io.netty.channel.nio.NioEventLoopGroup",
+              "io.netty.channel.kqueue.KQueueServerSocketChannel": "io.netty.channel.socket.nio.NioServerSocketChannel",
+              "io.netty.channel.kqueue.KQueueSocketChannel": "io.netty.channel.socket.nio.NioSocketChannel",
+              "io.netty.channel.kqueue.KQueue": "io.netty.channel.nio.NioEventLoopGroup",
+              "EpollEventLoopGroup": "NioEventLoopGroup",
+              "EpollServerSocketChannel": "NioServerSocketChannel",
+              "EpollSocketChannel": "NioSocketChannel",
+              "KQueueEventLoopGroup": "NioEventLoopGroup",
+              "KQueueServerSocketChannel": "NioServerSocketChannel",
+              "KQueueSocketChannel": "NioSocketChannel",
           }
+
           for old, new in replacements.items():
               text = text.replace(old, new)
 
-          # The availability checks must not call a missing native class.
-          # After the type replacement, any remaining availability checks are
-          # simply forced to the browser-safe NIO path.
-          text = text.replace('NioEventLoopGroup.isAvailable()', 'true')
-          text = text.replace('NioSocketChannel.isAvailable()', 'true')
-          text = text.replace('NioServerSocketChannel.isAvailable()', 'true')
+          text = text.replace("NioEventLoopGroup.isAvailable()", "true")
+          text = text.replace("NioSocketChannel.isAvailable()", "true")
+          text = text.replace("NioServerSocketChannel.isAvailable()", "true")
 
-          # Add NIO imports when the original class only imported native types.
           needed = [
-              'import io.netty.channel.nio.NioEventLoopGroup;',
-              'import io.netty.channel.socket.nio.NioServerSocketChannel;',
-              'import io.netty.channel.socket.nio.NioSocketChannel;',
+              "import io.netty.channel.nio.NioEventLoopGroup;",
+              "import io.netty.channel.socket.nio.NioServerSocketChannel;",
+              "import io.netty.channel.socket.nio.NioSocketChannel;",
           ]
           lines = text.splitlines()
           for imp in needed:
               if imp not in lines:
                   insert_at = 0
                   for i, line in enumerate(lines):
-                      if line.startswith('import '):
+                      if line.startswith("import "):
                           insert_at = i + 1
                   lines.insert(insert_at, imp)
-          text = '\\n'.join(lines) + ('\\n' if text.endswith('\\n') else '')
+          text = "\n".join(lines) + ("\n" if text.endswith("\n") else "")
 
           if text == original:
-              raise SystemExit(f'::error::Netty WASM-GC fix made no changes to {path}')
+              raise SystemExit(f"::error::Netty WASM-GC fix made no changes to {path}")
 
-          path.write_text(text, encoding='utf-8')
-          print(f'Patched {path}')
+          path.write_text(text, encoding="utf-8")
+          print(f"Patched compiled source: {path}")
           PY
 
-          echo "=== Remaining native Netty references ==="
-          if grep -RInE 'io\\.netty\\.channel\\.(epoll|kqueue)|\\b(Epoll|KQueue)[A-Za-z]*' -- */src/main/java 2>/dev/null | head -100; then
-            echo "::warning::Native Netty references remain outside the patched EventLoopGroupHolder; inspect them if TeaVM reports another missing class."
+          echo "=== EventLoopGroupHolder candidates (source copy is intentionally untouched) ==="
+          find . -type f -name EventLoopGroupHolder.java -print | sort
+
+          echo "=== Remaining native Netty references in compiled Java sources ==="
+          if grep -RInE 'io\.netty\.channel\.(epoll|kqueue)|\b(Epoll|KQueue)[A-Za-z]*' game/src/main/java 2>/dev/null | head -100; then
+            echo "::warning::Native Netty references remain in game/src/main/java; inspect them if TeaVM reports another missing class."
           else
-            echo "No Epoll/KQueue references remain in Java sources."
+            echo "No Epoll/KQueue references remain in game/src/main/java."
           fi
 
-          echo "=== Patched EventLoopGroupHolder ==="
-          sed -n '1,220p' "$(find . -type f -name EventLoopGroupHolder.java -print -quit)"
+          echo "=== Patched compiled EventLoopGroupHolder ==="
+          sed -n '1,220p' "$target"
 
       - name: Build WASM-GC web client
         if: success()
