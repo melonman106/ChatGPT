@@ -61,7 +61,7 @@ jobs:
           # read-only GITHUB_TOKEN.
           download_url="$url"
           curl_auth_args=()
-          if [[ "$url" =~ ^https://github\\.com/([^/]+/[^/]+)/actions/runs/[0-9]+/artifacts/([0-9]+)/?$ ]]; then
+          if [[ "$url" =~ ^https://github\.com/([^/]+/[^/]+)/actions/runs/[0-9]+/artifacts/([0-9]+)/?$ ]]; then
             repo_from_url="${BASH_REMATCH[1]}"
             artifact_id_from_url="${BASH_REMATCH[2]}"
             download_url="https://api.github.com/repos/${repo_from_url}/actions/artifacts/${artifact_id_from_url}/zip"
@@ -72,7 +72,7 @@ jobs:
             )
             echo "Detected GitHub artifact URL; using authenticated artifact API."
             echo "Artifact: $artifact_id_from_url"
-          elif [[ "$url" =~ ^https://api\\.github\\.com/repos/[^/]+/[^/]+/actions/artifacts/[0-9]+/zip/?$ ]]; then
+          elif [[ "$url" =~ ^https://api\.github\.com/repos/[^/]+/[^/]+/actions/artifacts/[0-9]+/zip/?$ ]]; then
             curl_auth_args=(
               -H "Authorization: Bearer $GITHUB_TOKEN"
               -H "Accept: application/vnd.github+json"
