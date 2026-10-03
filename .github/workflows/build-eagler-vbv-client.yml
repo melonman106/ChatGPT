@@ -624,6 +624,31 @@ jobs:
           java -version
           ./gradlew --stop >/dev/null 2>&1 || true
 
+          # The restored build checkpoint was produced by the main Eagler build
+          # under JDK 25. That can leave teavm-compat classes at class-file
+          # version 69 (or, in the failing run, version 68). TeaVM 0.13.0 is
+          # being executed by this JDK 17 process, so those cached classes are
+          # not loadable. Recompile the TeaVM compatibility plugin under JDK 17
+          # and bypass the Gradle build cache for this compile.
+          echo "=== Recompiling Eagler TeaVM compatibility plugin for JDK 17 ==="
+          ./gradlew :teavm-compat:clean :teavm-compat:compileJava \
+            --no-daemon --no-build-cache --max-workers=1 \
+            -Dorg.gradle.parallel=false \
+            -Dorg.gradle.jvmargs=-Xmx4g --stacktrace --info
+
+          plugin_class="$(find teavm-compat/build/classes/java/main -type f \\
+            -name 'EaglerTeaVMCompatPlugin.class' -print -quit)"
+          if [ -z "$plugin_class" ]; then
+            echo "::error::EaglerTeaVMCompatPlugin.class was not rebuilt."
+            exit 1
+          fi
+          plugin_major="$(javap -verbose "$plugin_class" | awk '/major version:/ {print $3; exit}')"
+          echo "EaglerTeaVMCompatPlugin class-file major version: $plugin_major"
+          if [ "$plugin_major" != "61" ]; then
+            echo "::error::EaglerTeaVMCompatPlugin is still not Java 17 bytecode (expected major version 61)."
+            exit 1
+          fi
+
           teavm_log="$GITHUB_WORKSPACE/teavm-javascript-build.log"
           set +e
           if ./gradlew :target_teavm:tasks --all --console=plain --no-daemon 2>/dev/null | grep -qE '^buildEaglerJS([[:space:]]|$)'; then
