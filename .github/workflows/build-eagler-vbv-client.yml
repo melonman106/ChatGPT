@@ -591,6 +591,79 @@ jobs:
             cp -a "$resources"/vbvclient/mods/. "$game_classes/vbvclient/mods/"
           fi
           node --version
+      - name: Build WASM-GC web client
+        if: success()
+        run: |
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE/ModdedClientSource"
+
+          echo "=== Building Eaglercraft WASM-GC web client ==="
+          if [ -f "./gradlew" ]; then
+            chmod +x ./gradlew
+          else
+            echo "::error::ModdedClientSource is missing gradlew."
+            exit 1
+          fi
+
+          echo "=== WASM-GC Gradle tasks ==="
+          ./gradlew :target_teavm_wasm_gc:tasks --all --console=plain --no-daemon > wasm-gc-tasks.txt 2>&1 || {
+            cat wasm-gc-tasks.txt
+            exit 1
+          }
+          grep -E '(^|:)generateWasmGC|(^|:)buildEagler' wasm-gc-tasks.txt | head -100 || true
+
+          # This task is the Eagler u1 WASM-GC web output task. It must
+          # generate target_teavm_wasm_gc/build/web/index.html and the raw
+          # .wasm payloads consumed by the Cloudflare R2 bundle.
+          if ./gradlew :target_teavm_wasm_gc:tasks --all --console=plain --no-daemon 2>/dev/null |
+              grep -qE '^generateWasmGCIncremental([[:space:]]|$)'; then
+            WASM_TASK=":target_teavm_wasm_gc:generateWasmGCIncremental"
+          elif ./gradlew :target_teavm_wasm_gc:tasks --all --console=plain --no-daemon 2>/dev/null |
+              grep -qE '^buildWasmGC([[:space:]]|$)'; then
+            WASM_TASK=":target_teavm_wasm_gc:buildWasmGC"
+          elif ./gradlew :target_teavm_wasm_gc:tasks --all --console=plain --no-daemon 2>/dev/null |
+              grep -qE '^build([[:space:]]|$)'; then
+            WASM_TASK=":target_teavm_wasm_gc:build"
+          else
+            echo "::error::No supported WASM-GC build task was found."
+            cat wasm-gc-tasks.txt
+            exit 1
+          fi
+
+          echo "Selected WASM-GC task: $WASM_TASK"
+          ./gradlew "$WASM_TASK" \
+            --no-daemon \
+            --max-workers=1 \
+            -Dorg.gradle.parallel=false \
+            -Dorg.gradle.jvmargs=-Xmx10g \
+            --stacktrace \
+            --info
+
+          web_dir="$GITHUB_WORKSPACE/ModdedClientSource/target_teavm_wasm_gc/build/web"
+          if [ ! -f "$web_dir/index.html" ]; then
+            echo "::error::WASM-GC build completed without generating target_teavm_wasm_gc/build/web/index.html."
+            echo "=== WASM-GC build directories ==="
+            find "$GITHUB_WORKSPACE/ModdedClientSource/target_teavm_wasm_gc/build" -maxdepth 4 -type d -print 2>/dev/null | sort || true
+            echo "=== Available WASM/HTML output ==="
+            find "$GITHUB_WORKSPACE/ModdedClientSource" -type f \\( -name '*.wasm' -o -name '*.html' \\) -printf '%s %p\\n' 2>/dev/null | sort -nr | head -200 || true
+            exit 1
+          fi
+
+          wasm_count="$(find "$web_dir" -type f -name '*.wasm' | wc -l)"
+          if [ "$wasm_count" -lt 1 ]; then
+            echo "::error::WASM-GC web directory exists but contains no .wasm files."
+            find "$web_dir" -maxdepth 3 -type f -printf '%s %p\\n' | sort -nr | head -200 || true
+            exit 1
+          fi
+
+          echo "=== WASM-GC web output generated ==="
+          echo "index.html:"
+          ls -lh "$web_dir/index.html"
+          echo "WASM files: $wasm_count"
+          find "$web_dir" -type f -name '*.wasm' -printf '%s %p\\n' | sort -nr
+          echo "Total web output:"
+          du -sh "$web_dir"
+
       - name: Prepare Cloudflare R2 web bundle
         if: success()
         run: |
