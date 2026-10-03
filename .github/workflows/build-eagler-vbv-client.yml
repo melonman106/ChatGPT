@@ -524,11 +524,22 @@ jobs:
             ls -lh "$runtime"
 
             echo "=== Locating Eagler u1 web deployment script ==="
-            deploy_script="$(find "$build_root" "$GITHUB_WORKSPACE/generated-client" "$EAGLER_PATCHER_ROOT"               -type f ( -name 'deploy_wasm_web.sh' -o -name 'deploy-wasm-web.sh' )               -print -quit 2>/dev/null || true)"
+            deploy_script=""
+            for root in "$build_root" "$GITHUB_WORKSPACE/generated-client" "$EAGLER_PATCHER_ROOT"; do
+              [ -d "$root" ] || continue
+              deploy_script="$(find "$root" -type f -name 'deploy_wasm_web.sh' -print -quit 2>/dev/null || true)"
+              [ -n "$deploy_script" ] && break
+              deploy_script="$(find "$root" -type f -name 'deploy-wasm-web.sh' -print -quit 2>/dev/null || true)"
+              [ -n "$deploy_script" ] && break
+            done
 
             if [ -z "$deploy_script" ]; then
               echo "::error::Could not locate deploy_wasm_web.sh in the generated u1 project or portable kit."
-              find "$build_root" "$GITHUB_WORKSPACE/generated-client" "$EAGLER_PATCHER_ROOT"                 -type f ( -iname '*deploy*web*.sh' -o -iname '*wasm*web*.sh' -o -iname '*web*.sh' )                 -print 2>/dev/null | sort | head -200 || true
+              for root in "$build_root" "$GITHUB_WORKSPACE/generated-client" "$EAGLER_PATCHER_ROOT"; do
+                [ -d "$root" ] || continue
+                find "$root" -type f -name '*deploy*web*.sh' -print 2>/dev/null || true
+                find "$root" -type f -name '*wasm*web*.sh' -print 2>/dev/null || true
+              done | sort -u | head -200 || true
               exit 1
             fi
 
