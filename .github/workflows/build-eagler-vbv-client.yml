@@ -120,6 +120,15 @@ jobs:
           mkdir -p "$GITHUB_WORKSPACE/build-input"
           curl -fL --retry 3 -o "$GITHUB_WORKSPACE/build-input/minecraft-26.2-client.jar" "https://piston-data.mojang.com/v1/objects/2dc72797acbc1b63fc16a11c4ac393605f453754/client.jar"
           echo "2dc72797acbc1b63fc16a11c4ac393605f453754  build-input/minecraft-26.2-client.jar" | sha1sum -c -
+      - name: Prepare Vineflower 1.12.0
+        if: steps.repo_checkpoint.outputs.found != 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/build-input"
+          vineflower="$GITHUB_WORKSPACE/build-input/vineflower-1.12.0.jar"
+          curl -fL --retry 3 -o "$vineflower" "https://github.com/Vineflower/vineflower/releases/download/1.12.0/vineflower-1.12.0.jar"
+          echo "1dfcfe974395734fa467ce620661c7623d05ba83670de0529b1fbd63ff548b9d  $vineflower" | sha256sum -c -
+          test -s "$vineflower"
       - name: Inspect extracted U1.1 patcher
         if: steps.repo_checkpoint.outputs.found != 'true'
         run: |
@@ -137,7 +146,7 @@ jobs:
           rm -rf "$GITHUB_WORKSPACE/generated-client"
           cd "$EAGLER_PATCHER_ROOT"
           chmod +x "$EAGLER_PATCHER"
-          "$EAGLER_PATCHER" create-dev             --jar "$GITHUB_WORKSPACE/build-input/minecraft-26.2-client.jar"             --output "$GITHUB_WORKSPACE/generated-client"             --vineflower "$EAGLER_PATCHER_ROOT/inputs/vineflower-1.12.0.jar"             --java17 "$JAVA_HOME/bin/java"             --patch-bundle "$EAGLER_PATCHER_ROOT/source-patch-bundle.zip"             --expected-bundle-sha256 fd944e9cabbebbf4bddce8a39e1b233b3c7d0cd4f860f9cae37550a3fcfa8b02             --project-skeleton "$EAGLER_PATCHER_ROOT/project-skeleton-v5-teavm-runtime-verified.zip"             --expected-skeleton-sha256 a9172bdd903ea65afd4c87cdb29b500c237c823fdd94789c2e90561b1b049469
+          "$EAGLER_PATCHER" create-dev             --jar "$GITHUB_WORKSPACE/build-input/minecraft-26.2-client.jar"             --output "$GITHUB_WORKSPACE/generated-client"             --vineflower "$GITHUB_WORKSPACE/build-input/vineflower-1.12.0.jar"             --java17 "$JAVA_HOME/bin/java"             --patch-bundle "$EAGLER_PATCHER_ROOT/source-patch-bundle.zip"             --expected-bundle-sha256 fd944e9cabbebbf4bddce8a39e1b233b3c7d0cd4f860f9cae37550a3fcfa8b02             --project-skeleton "$EAGLER_PATCHER_ROOT/project-skeleton-v5-teavm-runtime-verified.zip"             --expected-skeleton-sha256 a9172bdd903ea65afd4c87cdb29b500c237c823fdd94789c2e90561b1b049469
           if ! find "$GITHUB_WORKSPACE/generated-client" -type f \( -name 'gradlew' -o -name 'build.gradle' -o -name 'build.gradle.kts' \) -print -quit | grep -q .; then
             echo "::error::create-dev completed but did not produce a Gradle source project."
             find "$GITHUB_WORKSPACE/generated-client" -maxdepth 5 -type f | sort | head -1000
