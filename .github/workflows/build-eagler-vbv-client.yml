@@ -158,17 +158,16 @@ jobs:
           if [ -n "$u11_bundle" ] && [ -n "$u11_skeleton" ]; then
             # Full U1.1 input set is present: use the U1.1 patcher and its
             # Netty-fix skeleton.
-            cp -Lf "$u11_bundle" "$resolved_root/source-patch-bundle.zip"
-            cp -Lf "$u11_skeleton" "$resolved_root/project-skeleton-u1-nettyfix.zip"
+            resolved_patcher="$source_root/patcher/java-cli/eagler-patcher"
+            resolved_bundle="$resolved_root/source-patch-bundle.zip"
+            resolved_skeleton="$resolved_root/project-skeleton-u1-nettyfix.zip"
+            resolved_bundle_sha="$u11_bundle_sha"
+            resolved_skeleton_sha="$u11_skeleton_sha"
+            resolved_mode="u1.1"
+            cp -Lf "$u11_bundle" "$resolved_bundle"
+            cp -Lf "$u11_skeleton" "$resolved_skeleton"
 
-            echo "EAGLER_PATCHER=$source_root/patcher/java-cli/eagler-patcher" >> "$GITHUB_ENV"
-            echo "EAGLER_PATCH_BUNDLE=$resolved_root/source-patch-bundle.zip" >> "$GITHUB_ENV"
-            echo "EAGLER_PROJECT_SKELETON=$resolved_root/project-skeleton-u1-nettyfix.zip" >> "$GITHUB_ENV"
-            echo "EAGLER_PATCH_BUNDLE_SHA256=$u11_bundle_sha" >> "$GITHUB_ENV"
-            echo "EAGLER_PROJECT_SKELETON_SHA256=$u11_skeleton_sha" >> "$GITHUB_ENV"
-            echo "EAGLER_EXPECTED_SKELETON_SHA256=$u11_skeleton_sha" >> "$GITHUB_ENV"
-            echo "EAGLER_PATCHER_MODE=u1.1" >> "$GITHUB_ENV"
-
+  
             echo "U1.1 complete input set found."
           else
             # The U1.1 source archive does not contain its binary sidecars.
@@ -197,37 +196,52 @@ jobs:
               exit 1
             fi
 
-            cp -Lf "$legacy_bundle" "$resolved_root/source-patch-bundle.zip"
-            cp -Lf "$legacy_skeleton" "$resolved_root/project-skeleton-v5-teavm-runtime-verified.zip"
+            resolved_patcher="$legacy_patcher"
+            resolved_bundle="$resolved_root/source-patch-bundle.zip"
+            resolved_skeleton="$resolved_root/project-skeleton-v5-teavm-runtime-verified.zip"
+            resolved_bundle_sha="$u11_bundle_sha"
+            resolved_skeleton_sha="$legacy_skeleton_sha"
+            resolved_mode="legacy-u1"
+            cp -Lf "$legacy_bundle" "$resolved_bundle"
+            cp -Lf "$legacy_skeleton" "$resolved_skeleton"
 
-            chmod +x "$legacy_patcher"
-            echo "EAGLER_PATCHER=$legacy_patcher" >> "$GITHUB_ENV"
-            echo "EAGLER_PATCH_BUNDLE=$resolved_root/source-patch-bundle.zip" >> "$GITHUB_ENV"
-            echo "EAGLER_PROJECT_SKELETON=$resolved_root/project-skeleton-v5-teavm-runtime-verified.zip" >> "$GITHUB_ENV"
-            echo "EAGLER_PATCH_BUNDLE_SHA256=$u11_bundle_sha" >> "$GITHUB_ENV"
-            echo "EAGLER_PROJECT_SKELETON_SHA256=$legacy_skeleton_sha" >> "$GITHUB_ENV"
-            echo "EAGLER_EXPECTED_SKELETON_SHA256=$legacy_skeleton_sha" >> "$GITHUB_ENV"
-            echo "EAGLER_PATCHER_MODE=legacy-u1" >> "$GITHUB_ENV"
-
+            chmod +x "$resolved_patcher"
+  
             echo "U1.1 sidecars incomplete; falling back to the complete legacy U1 patcher/input set."
             echo "Legacy patcher:  $legacy_patcher"
             echo "Legacy bundle:   $resolved_root/source-patch-bundle.zip"
             echo "Legacy skeleton: $resolved_root/project-skeleton-v5-teavm-runtime-verified.zip"
           fi
 
-          test -f "$EAGLER_PATCHER"
-          test -f "$EAGLER_PATCH_BUNDLE"
-          test -f "$EAGLER_PROJECT_SKELETON"
-          test "$(sha256sum "$EAGLER_PATCH_BUNDLE" | cut -d' ' -f1)" = "$EAGLER_PATCH_BUNDLE_SHA256"
-          test "$(sha256sum "$EAGLER_PROJECT_SKELETON" | cut -d' ' -f1)" = "$EAGLER_EXPECTED_SKELETON_SHA256"
+          # GITHUB_ENV only affects subsequent workflow steps, so keep local
+          # resolved_* variables for validation in this step.
+          test -f "$resolved_patcher"
+          test -f "$resolved_bundle"
+          test -f "$resolved_skeleton"
+          test "$(sha256sum "$resolved_bundle" | cut -d' ' -f1)" = "$resolved_bundle_sha"
+          test "$(sha256sum "$resolved_skeleton" | cut -d' ' -f1)" = "$resolved_skeleton_sha"
+
+          {
+            echo "EAGLER_PATCHER=$resolved_patcher"
+            echo "EAGLER_PATCH_BUNDLE=$resolved_bundle"
+            echo "EAGLER_PROJECT_SKELETON=$resolved_skeleton"
+            echo "EAGLER_PATCH_BUNDLE_SHA256=$resolved_bundle_sha"
+            echo "EAGLER_PROJECT_SKELETON_SHA256=$resolved_skeleton_sha"
+            echo "EAGLER_EXPECTED_SKELETON_SHA256=$resolved_skeleton_sha"
+            echo "EAGLER_PATCHER_MODE=$resolved_mode"
+          } >> "$GITHUB_ENV"
 
           echo "=== Final resolved input map ==="
-          printf 'mode=%s\npatcher=%s\npatch_bundle=%s\nproject_skeleton=%s\n' \
-            "$EAGLER_PATCHER_MODE" "$EAGLER_PATCHER" "$EAGLER_PATCH_BUNDLE" "$EAGLER_PROJECT_SKELETON"
-          printf 'patch_bundle_sha256=%s\nskeleton_sha256=%s\n' \
-            "$EAGLER_PATCH_BUNDLE_SHA256" "$EAGLER_PROJECT_SKELETON_SHA256"
-          ls -lh "$EAGLER_PATCH_BUNDLE" "$EAGLER_PROJECT_SKELETON" "$EAGLER_PATCHER"
-          file "$EAGLER_PATCH_BUNDLE" "$EAGLER_PROJECT_SKELETON" "$EAGLER_PATCHER"
+          printf 'mode=%s
+patcher=%s
+patch_bundle=%s
+project_skeleton=%s
+'             "$resolved_mode" "$resolved_patcher" "$resolved_bundle" "$resolved_skeleton"
+          printf 'patch_bundle_sha256=%s
+skeleton_sha256=%s
+'             "$resolved_bundle_sha" "$resolved_skeleton_sha"
+          ls -lh "$resolved_bundle" "$resolved_skeleton" "$resolved_patcher"
+          file "$resolved_bundle" "$resolved_skeleton" "$resolved_patcher"
 
       - name: Download official Minecraft 26.2 client
         if: steps.repo_checkpoint.outputs.found != 'true'
