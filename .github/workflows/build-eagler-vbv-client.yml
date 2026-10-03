@@ -817,6 +817,45 @@ jobs:
             --stacktrace \
             --info
 
+          # TeaVM's Gradle task produces the source HTML under src/web and
+          # classes.wasm under build/generated. The U1 deployment pipeline then
+          # links the precise client/mesh/server images, installs the authenticated
+          # TeaVM runtime glue, builds assets.epk, and assembles the hosted web
+          # directory. Do that explicit deployment stage before checking build/web.
+          cd "$GITHUB_WORKSPACE/ModdedClientSource"
+          export EAGLER_USE_DEDICATED_SERVER_WASM="1"
+
+          echo "=== Linking precise WASM-GC client ==="
+          node wasm-toolchain/link-web-target-standalone.js client
+
+          echo "=== Linking precise WASM-GC mesh worker ==="
+          node wasm-toolchain/link-web-target-standalone.js mesh
+
+          echo "=== Linking precise WASM-GC server worker ==="
+          node wasm-toolchain/link-server-standalone.js
+
+          echo "=== Building hosted asset bundle ==="
+          ./gradlew :target_lwjgl_desktop:buildAssetsEPK \
+            --console=plain \
+            --no-daemon \
+            --max-workers=1 \
+            -Dorg.gradle.parallel=false \
+            -Dorg.gradle.jvmargs="-Xmx10g -Xss4m -XX:MaxMetaspaceSize=768m -XX:+UseG1GC"
+
+          assets_epk="$GITHUB_WORKSPACE/ModdedClientSource/target_lwjgl_desktop/build/epk/assets.epk"
+          if [ ! -s "$assets_epk" ]; then
+            echo "::error::buildAssetsEPK did not produce assets.epk."
+            exit 1
+          fi
+          mkdir -p "$GITHUB_WORKSPACE/ModdedClientSource/target_teavm/build/web"
+          cp -f "$assets_epk" "$GITHUB_WORKSPACE/ModdedClientSource/target_teavm/build/web/assets.epk"
+
+          echo "=== Deploying Eagler U1 WASM-GC web output ==="
+          bash wasm-toolchain/deploy_wasm_web.sh
+
+          echo "=== Precompressing hosted web output ==="
+          bash wasm-toolchain/precompress-web.sh
+
           web_dir="$GITHUB_WORKSPACE/ModdedClientSource/target_teavm_wasm_gc/build/web"
           if [ ! -f "$web_dir/index.html" ]; then
             echo "::error::WASM-GC build completed without generating target_teavm_wasm_gc/build/web/index.html."
