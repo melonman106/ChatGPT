@@ -27,7 +27,7 @@ public final class VBVSimpleHud {
         }
         if (VBVSimpleHudConfig.lightLevel) y = text(graphics, "Light: " + minecraft.level.getMaxLocalRawBrightness(player.blockPosition()), x, y, line);
         if (VBVSimpleHudConfig.gameTime) {
-            long ticks = minecraft.level.getDayTime() % 24000L;
+            long ticks = minecraft.level.getGameTime() % 24000L;
             long hours = (ticks / 1000L + 6L) % 24L;
             long minutes = (ticks % 1000L) * 60L / 1000L;
             y = text(graphics, String.format(java.util.Locale.ROOT, "Game time: %02d:%02d", hours, minutes), x, y, line);
