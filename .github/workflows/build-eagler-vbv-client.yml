@@ -68,7 +68,7 @@ jobs:
         uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: "17.0.21"
+          java-version: "17.0.20"
 
       - name: Prepare checked-in U1.1 patcher source
         if: steps.repo_checkpoint.outputs.found != 'true'
@@ -410,7 +410,7 @@ jobs:
         uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: "25.0.5"
+          java-version: "25.0.4"
 
       - name: Cache Gradle dependencies and build cache
         if: steps.repo_checkpoint.outputs.found != 'true'
@@ -739,6 +739,15 @@ jobs:
           # Gradle 9.6 on JDK 25 otherwise launches a smaller client JVM and
           # then forks the real daemon. Give the launcher the same heap and
           # explicitly authorize Gradle's native-platform library.
+          max_mem_mb="$(awk '/MemTotal:/ {print int($2/1024)}' /proc/meminfo)"
+          echo "Runner memory: ${max_mem_mb} MiB"
+          if [ "$max_mem_mb" -lt 12000 ]; then
+            echo "::error::Runner has less than 12 GiB RAM; refusing high-memory parallel WASM build."
+            exit 1
+          fi
+          workers="$(nproc)"
+          if [ "$workers" -gt 6 ]; then workers=6; fi
+          echo "Using up to ${workers} Gradle workers."
           export GRADLE_OPTS="-Xmx10g"
           export JAVA_TOOL_OPTIONS="--enable-native-access=ALL-UNNAMED"
 
