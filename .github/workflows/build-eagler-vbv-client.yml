@@ -654,7 +654,15 @@ jobs:
           retention-days: 7
           if-no-files-found: warn
 
-          echo "=== Locating generated JavaScript browser output ==="
+      - name: Locate generated JavaScript browser output
+        if: success()
+        run: |
+          set -euo pipefail
+          build_root="$GITHUB_WORKSPACE/ModdedClientSource"
+          dev_dir="$GITHUB_WORKSPACE/dev-web-client"
+          web_dir="$build_root/target_teavm/build/web"
+          js_dir="$build_root/target_teavm/javascript"
+
           web_dir="$build_root/target_teavm/build/web"
           js_dir="$build_root/target_teavm/javascript"
 
