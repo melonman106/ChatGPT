@@ -853,31 +853,41 @@ jobs:
           echo "=== Deploying Eagler U1 WASM-GC web output ==="
           bash wasm-toolchain/deploy_wasm_web.sh
 
+          web_dir="$GITHUB_WORKSPACE/ModdedClientSource/target_teavm_wasm_gc/build/web"
+          if [ ! -f "$web_dir/index.html" ]; then
+            echo "::error::WASM-GC deployment completed without generating target_teavm_wasm_gc/build/web/index.html."
+            echo "=== Available WASM/HTML output ==="
+            find "$GITHUB_WORKSPACE/ModdedClientSource" -type f \( -name '*.wasm' -o -name '*.html' \) -printf '%s %p\\n' 2>/dev/null | sort -nr | head -200 || true
+            exit 1
+          fi
+
+          echo "=== Verifying RAW WASM files before precompression ==="
+          wasm_count="$(find "$web_dir" -maxdepth 1 -type f -name '*.wasm' | wc -l)"
+          if [ "$wasm_count" -lt 1 ]; then
+            echo "::error::U1 deployment produced no raw .wasm files before precompression."
+            find "$web_dir" -maxdepth 2 -type f -printf '%s %p\\n' | sort -nr | head -200 || true
+            exit 1
+          fi
+
+          # precompress-web.sh intentionally removes the raw .wasm files after
+          # creating the .br/.gz variants. Keep a copy so the final R2 bundle
+          # contains the actual raw WASM payloads as well.
+          raw_wasm_dir="$GITHUB_WORKSPACE/ModdedClientSource/raw-wasm-web"
+          rm -rf "$raw_wasm_dir"
+          mkdir -p "$raw_wasm_dir"
+          cp -f "$web_dir"/*.wasm "$raw_wasm_dir"/
+
           echo "=== Precompressing hosted web output ==="
           bash wasm-toolchain/precompress-web.sh
 
-          web_dir="$GITHUB_WORKSPACE/ModdedClientSource/target_teavm_wasm_gc/build/web"
-          if [ ! -f "$web_dir/index.html" ]; then
-            echo "::error::WASM-GC build completed without generating target_teavm_wasm_gc/build/web/index.html."
-            echo "=== WASM-GC build directories ==="
-            find "$GITHUB_WORKSPACE/ModdedClientSource/target_teavm_wasm_gc/build" -maxdepth 4 -type d -print 2>/dev/null | sort || true
-            echo "=== Available WASM/HTML output ==="
-            find "$GITHUB_WORKSPACE/ModdedClientSource" -type f \( -name '*.wasm' -o -name '*.html' \) -printf '%s %p\n' 2>/dev/null | sort -nr | head -200 || true
-            exit 1
-          fi
-
-          wasm_count="$(find "$web_dir" -type f -name '*.wasm' | wc -l)"
-          if [ "$wasm_count" -lt 1 ]; then
-            echo "::error::WASM-GC web directory exists but contains no .wasm files."
-            find "$web_dir" -maxdepth 3 -type f -printf '%s %p\\n' | sort -nr | head -200 || true
-            exit 1
-          fi
+          cp -f "$raw_wasm_dir"/*.wasm "$web_dir"/
+          rm -rf "$raw_wasm_dir"
 
           echo "=== WASM-GC web output generated ==="
           echo "index.html:"
           ls -lh "$web_dir/index.html"
-          echo "WASM files: $wasm_count"
-          find "$web_dir" -type f -name '*.wasm' -printf '%s %p\\n' | sort -nr
+          echo "Raw WASM files: $(find "$web_dir" -maxdepth 1 -type f -name '*.wasm' | wc -l)"
+          find "$web_dir" -maxdepth 1 -type f -name '*.wasm' -printf '%s %p\\n' | sort -nr
           echo "Total web output:"
           du -sh "$web_dir"
 
