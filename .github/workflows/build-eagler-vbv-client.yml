@@ -232,14 +232,12 @@ jobs:
           } >> "$GITHUB_ENV"
 
           echo "=== Final resolved input map ==="
-          printf 'mode=%s
-patcher=%s
-patch_bundle=%s
-project_skeleton=%s
-'             "$resolved_mode" "$resolved_patcher" "$resolved_bundle" "$resolved_skeleton"
-          printf 'patch_bundle_sha256=%s
-skeleton_sha256=%s
-'             "$resolved_bundle_sha" "$resolved_skeleton_sha"
+          echo "mode=$resolved_mode"
+          echo "patcher=$resolved_patcher"
+          echo "patch_bundle=$resolved_bundle"
+          echo "project_skeleton=$resolved_skeleton"
+          echo "patch_bundle_sha256=$resolved_bundle_sha"
+          echo "skeleton_sha256=$resolved_skeleton_sha"
           ls -lh "$resolved_bundle" "$resolved_skeleton" "$resolved_patcher"
           file "$resolved_bundle" "$resolved_skeleton" "$resolved_patcher"
 
