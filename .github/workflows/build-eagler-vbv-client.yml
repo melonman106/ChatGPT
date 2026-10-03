@@ -23,6 +23,9 @@ permissions:
   contents: read
   actions: read
 
+env:
+  GITHUB_TOKEN: ${{ github.token }}
+
 concurrency:
   group: eagler-vbv-client-${{ github.ref }}
   cancel-in-progress: true
