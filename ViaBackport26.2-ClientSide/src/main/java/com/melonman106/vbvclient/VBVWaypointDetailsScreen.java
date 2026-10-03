@@ -16,18 +16,19 @@ public final class VBVWaypointDetailsScreen extends Screen {
         this.waypoint = waypoint;
     }
 
+    private void centered(GuiGraphicsExtractor graphics, String text, int y, int color) {
+        graphics.text(font, text, width / 2 - font.width(text) / 2, y, color, true);
+    }
+
     @Override
     protected void init() {
         super.init();
-        addRenderableWidget(Button.builder(Component.literal("Center on Map"), button -> {
-            VBVNav.open(new VBVWorldMapScreen(parent));
-        }).bounds(width / 2 - 70, height / 2 - 30, 140, 20).build());
-
+        addRenderableWidget(Button.builder(Component.literal("Center on Map"), button -> VBVNav.open(new VBVWorldMapScreen(parent)))
+            .bounds(width / 2 - 70, height / 2 - 30, 140, 20).build());
         addRenderableWidget(Button.builder(Component.literal("Delete"), button -> {
             VBVWorldMap.removeWaypoint(VBVWorldMap.worldKey(Minecraft.getInstance()), waypoint.id());
             VBVNav.open(parent);
         }).bounds(width / 2 - 70, height / 2, 140, 20).build());
-
         addRenderableWidget(Button.builder(Component.literal("Back"), button -> VBVNav.open(parent))
             .bounds(width / 2 - 50, height - 30, 100, 20).build());
     }
@@ -35,10 +36,9 @@ public final class VBVWaypointDetailsScreen extends Screen {
     @Override
     public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
         graphics.fill(0, 0, width, height, 0xFF151515);
-        graphics.drawCenteredString(font, title, width / 2, height / 2 - 80, 0xFFFFFFFF);
+        centered(graphics, title.getString(), height / 2 - 80, 0xFFFFFFFF);
         String coords = "X " + waypoint.x() + "  Y " + waypoint.y() + "  Z " + waypoint.z();
-        graphics.text(font, coords, width / 2 - font.width(coords) / 2, height / 2 - 55, 0xFFCCCCCC, true);
-        // Waypoint coordinates are rendered beneath the title.
+        centered(graphics, coords, height / 2 - 55, 0xFFCCCCCC);
         super.extractRenderState(graphics, mouseX, mouseY, partialTick);
     }
 }
