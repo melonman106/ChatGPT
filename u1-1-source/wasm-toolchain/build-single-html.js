@@ -408,11 +408,9 @@ const meshWasm = read("mesh-worker.wasm");
 const serverWasm = read("server-worker.wasm");
 const assets = read("assets.epk");
 const sounds = read("sounds.epk");
-if (!fs.existsSync(musicSource)) {
-  fail(`missing music EPK at ${musicSource}; build the regular TeaVM web assets first`);
-}
-const music = withMusic ? fs.readFileSync(musicSource) : null;
-const favicon = fs.readFileSync(path.join(repo, "game", "src", "main", "resources", "pack.png"));
+const music = withMusic ? (fs.existsSync(musicSource) ? fs.readFileSync(musicSource) : fail(`--with-music requested but music.epk is unavailable`)) : null;
+const faviconPath = path.join(repo, "game", "src", "main", "resources", "pack.png");
+const favicon = fs.existsSync(faviconPath) ? fs.readFileSync(faviconPath) : fs.readFileSync(path.join(webDir, "favicon.png"));
 const decoderJs = browserDecoderSource(
   fs.readFileSync(path.join(decoderRoot, "brotli_dec_wasm.js"), "utf8")
 );
@@ -772,7 +770,7 @@ console.log(`  music.epk:       ${(music ? music.length : 0).toLocaleString()} B
 console.log(`  output HTML:     ${outputBytes.toLocaleString()} B (${(outputBytes / 1_000_000).toFixed(2)} MB)`);
 console.log(`[single-html] wrote ${output}`);
 
-if (withoutMusic) {
+if (withoutMusic && fs.existsSync(musicSource)) {
   const musicPack = spawnSync(process.execPath, [
     path.join(repo, "wasm-toolchain", "export-music-resource-pack.js"),
     musicSource,
