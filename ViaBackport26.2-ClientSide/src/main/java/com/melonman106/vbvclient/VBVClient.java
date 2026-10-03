@@ -21,7 +21,7 @@ public final class VBVClient {
             "ViaBackportVisuals Client",
             VERSION,
             "melonman106",
-            "Native client-side visual compatibility for 26.3 blocks translated to Eaglercraft 26.2.",
+            "Native client-side mod suite for Eaglercraft 26.2 u1.",
             "vbvclient/mods/viabackportvisuals/pack.png",
             false
         ));
