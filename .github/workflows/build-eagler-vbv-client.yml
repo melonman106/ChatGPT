@@ -695,7 +695,7 @@ jobs:
           restore-keys: |
             vbv-teavm-wasm-v2-${{ hashFiles('ViaBackport26.2-ClientSide/src/main/java/**/*.java', 'ViaBackport26.2-ClientSide/src/main/resources/**/*.json', 'ViaBackport26.2-ClientSide/patch/**', 'ModsPack/**/*.zip', 'u1-1-source/**', 'U1-Patcher/portable-kit.zip', '.github/workflows/build-eagler-vbv-client.yml') }}-
       - name: Apply WASM-GC Netty transport source fix
-        if: success()
+        if: success() && inputs.compiled_zip_url == ''
         run: |
           set -euo pipefail
           cd "$GITHUB_WORKSPACE/ModdedClientSource"
