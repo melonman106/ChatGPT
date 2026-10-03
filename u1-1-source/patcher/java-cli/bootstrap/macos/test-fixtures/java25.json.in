@@ -1,0 +1,14 @@
+{
+  "binary": {
+    "architecture": "@ARCH@",
+    "image_type": "jdk",
+    "os": "mac"
+  },
+  "package": {
+    "checksum": "@SHA@",
+    "checksum_link": "https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.4.1+1/OpenJDK25U-jdk_@ARCH@_mac_hotspot_25.0.4.1_1.tar.gz.sha256.txt",
+    "link": "https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.4.1+1/OpenJDK25U-jdk_@ARCH@_mac_hotspot_25.0.4.1_1.tar.gz"
+  },
+  "release_name": "jdk-25.0.4.1+1",
+  "vendor": "eclipse"
+}

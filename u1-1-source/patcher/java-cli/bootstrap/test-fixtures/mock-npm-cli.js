@@ -1,0 +1,1 @@
+/* Fake npm CLI used only by the offline bootstrap contract test. */

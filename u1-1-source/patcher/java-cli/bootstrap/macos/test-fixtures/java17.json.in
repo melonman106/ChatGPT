@@ -1,0 +1,14 @@
+{
+  "binary": {
+    "architecture": "@ARCH@",
+    "image_type": "jdk",
+    "os": "mac"
+  },
+  "package": {
+    "checksum": "@SHA@",
+    "checksum_link": "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.20.1+1/OpenJDK17U-jdk_@ARCH@_mac_hotspot_17.0.20.1_1.tar.gz.sha256.txt",
+    "link": "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.20.1+1/OpenJDK17U-jdk_@ARCH@_mac_hotspot_17.0.20.1_1.tar.gz"
+  },
+  "release_name": "jdk-17.0.20.1+1",
+  "vendor": "eclipse"
+}

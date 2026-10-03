@@ -1,0 +1,10 @@
+[
+  {
+    "package": {
+      "checksum": "@SHA@",
+      "checksum_link": "https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.4%2B1/OpenJDK25U-jdk_x64_linux_hotspot_25.0.4_1.tar.gz.sha256.txt",
+      "link": "https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.4%2B1/OpenJDK25U-jdk_x64_linux_hotspot_25.0.4_1.tar.gz"
+    },
+    "release_name": "jdk-25.0.4+1"
+  }
+]
