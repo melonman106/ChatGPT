@@ -8,6 +8,7 @@ on:
       - "sounds.epk"
       - "eaglercraft-26.2-patcher-main.tar.gz"
       - "eaglercraft-26.2-patcher-main (1).tar.gz"
+      - "u1-1-source/**"
       - ".github/workflows/build-eagler-vbv-client.yml"
   workflow_dispatch:
 
@@ -63,85 +64,53 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Extract and build U1.1 patcher source
+      - name: Prepare checked-in U1.1 patcher source
         if: steps.repo_checkpoint.outputs.found != 'true'
         run: |
           set -euo pipefail
 
-          archive="$GITHUB_WORKSPACE/eaglercraft-26.2-patcher-main (1).tar.gz"
-          test -s "$archive"
+          source_root="$GITHUB_WORKSPACE/u1-1-source"
+          if [ ! -f "$source_root/patcher/java-cli/eagler-patcher" ]; then
+            echo "::error::Checked-in U1.1 source is missing."
+            echo "Run the 'Inspect Eaglercraft U1.1 patcher' workflow once. It now extracts the tarball and commits u1-1-source/ to the repository."
+            exit 1
+          fi
 
-          expected_archive_sha256="2eee58a17681d34b6db5730c0f18c9c33694fd89ca1c6feccd7a9f90bf162de1"
-          actual_archive_sha256="$(sha256sum "$archive" | awk '{print $1}')"
-          echo "Expected U1.1 source archive SHA-256: $expected_archive_sha256"
-          echo "Actual U1.1 source archive SHA-256:   $actual_archive_sha256"
-          test "$actual_archive_sha256" = "$expected_archive_sha256"
+          patcher_root="$source_root/patcher/java-cli"
+          chmod +x "$patcher_root/eagler-patcher"
 
-          rm -rf "$GITHUB_WORKSPACE/u1-1-source" "$GITHUB_WORKSPACE/build-input/u1-1"
-          mkdir -p "$GITHUB_WORKSPACE/u1-1-source" "$GITHUB_WORKSPACE/build-input/u1-1"
-          tar -xzf "$archive" -C "$GITHUB_WORKSPACE/u1-1-source" --strip-components=1
+          echo "=== Checked-in U1.1 source ==="
+          du -sh "$source_root"
+          echo "Patcher: $patcher_root/eagler-patcher"
 
-          patcher_root="$GITHUB_WORKSPACE/u1-1-source/patcher/java-cli"
-          test -f "$patcher_root/eagler-patcher"
-          test -f "$patcher_root/build.sh"
-          test -f "$patcher_root/make-portable.sh"
-          test -f "$GITHUB_WORKSPACE/u1-1-source/patcher/project-skeleton/export_skeleton.py"
-          chmod +x "$patcher_root/eagler-patcher" "$patcher_root/build.sh" "$patcher_root/make-portable.sh"
-
-          echo "=== U1.1 source tree ==="
-          find "$GITHUB_WORKSPACE/u1-1-source/patcher/java-cli" -maxdepth 2 -type f | sort | head -300
+          echo "=== U1.1 patcher build inputs ==="
+          find "$source_root/patcher" -maxdepth 4 -type f \
+            \( -name '*.zip' -o -name '*.jar' -o -name 'build.sh' -o -name 'eagler-patcher' \) \
+            -printf '%p\n' | sort | head -500
 
           echo "=== Building U1.1 Java CLI patcher ==="
           cd "$patcher_root"
           ./build.sh
 
-          echo "=== Building U1.1 portable kit ==="
-          ./make-portable.sh
+          cli_jar="$patcher_root/build/eaglercraft-26.2-java-cli.jar"
+          test -s "$cli_jar"
 
-          portable_kit="$(find "$patcher_root" "$GITHUB_WORKSPACE/u1-1-source" -type f -name 'portable-kit.zip' -print -quit || true)"
-          if [ -z "$portable_kit" ]; then
-            echo "::error::U1.1 make-portable.sh completed but no portable-kit.zip was produced."
-            find "$patcher_root" -maxdepth 4 -type f | sort | tail -300
-            exit 1
-          fi
+          # U1.1's source archive is the authoritative patcher workspace.
+          # Do not run make-portable.sh here: that packaging step expects
+          # the separate iwa/ tree, which is intentionally not present in
+          # the checked-in patcher source archive.
+          echo "Using the U1.1 source workspace directly; skipping make-portable.sh."
 
-          portable_kit="$(realpath "$portable_kit")"
-          cp -f "$portable_kit" "$GITHUB_WORKSPACE/build-input/u1-1/portable-kit.zip"
-
-          echo "=== U1.1 portable kit ==="
-          ls -lh "$GITHUB_WORKSPACE/build-input/u1-1/portable-kit.zip"
-          sha256sum "$GITHUB_WORKSPACE/build-input/u1-1/portable-kit.zip"
-
-          rm -rf "$GITHUB_WORKSPACE/build-input/u1-1/portable-kit"
-          unzip -q "$GITHUB_WORKSPACE/build-input/u1-1/portable-kit.zip" -d "$GITHUB_WORKSPACE/build-input/u1-1/portable-kit"
-
-          patcher="$(find "$GITHUB_WORKSPACE/build-input/u1-1/portable-kit" -type f -name 'eagler-patcher' -print -quit || true)"
-          cli_jar="$(find "$GITHUB_WORKSPACE/build-input/u1-1/portable-kit" -type f -name 'eaglercraft-26.2-java-cli.jar' -print -quit || true)"
-          if [ -z "$patcher" ]; then
-            echo "::error::U1.1 portable kit does not contain eagler-patcher."
-            exit 1
-          fi
-          if [ -z "$cli_jar" ]; then
-            echo "::error::U1.1 portable kit does not contain eaglercraft-26.2-java-cli.jar."
-            exit 1
-          fi
-
-          patcher="$(realpath "$patcher")"
+          patcher="$(realpath "$patcher_root/eagler-patcher")"
           cli_jar="$(realpath "$cli_jar")"
-          patcher_root="$(dirname "$patcher")"
-          chmod +x "$patcher"
 
           echo "EAGLER_PATCHER_ROOT=$patcher_root" >> "$GITHUB_ENV"
           echo "EAGLER_PATCHER=$patcher" >> "$GITHUB_ENV"
           echo "EAGLER_JAVA_CLI=$cli_jar" >> "$GITHUB_ENV"
 
-          echo "Using U1.1 patcher:"
-          echo "  root=$patcher_root"
-          echo "  patcher=$patcher"
-          echo "  java-cli=$cli_jar"
-
-          echo "=== U1.1 skeleton/hash pins ==="
-          grep -R -n -E 'a9172bdd903ea65afd4c87cdb29b500c237c823fdd94789c2e90561b1b049469|be269c8f139cc5faaa45e9c44700e89a54ba602114eee3d981b53e4ab6642ff2|29debc98a2af488464d6ec813531f879f2c3c399ec8fbdba3c18378a4adc3d86' "$GITHUB_WORKSPACE/u1-1-source" 2>/dev/null || true
+          echo "=== U1.1 source inputs after build ==="
+          find "$source_root/patcher" -maxdepth 6 -type f \
+            \( -name '*.zip' -o -name '*.jar' \) -printf '%s %p\n' | sort -nr | head -500
 
       - name: Download official Minecraft 26.2 client
         if: steps.repo_checkpoint.outputs.found != 'true'
