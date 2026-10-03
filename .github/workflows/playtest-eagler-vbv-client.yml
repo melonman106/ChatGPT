@@ -1,0 +1,195 @@
+name: Eaglercraft 26.2 VBV Play Test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  playtest:
+    name: Browser play test
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Find latest successful client build
+        id: build
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          run_json="$(gh run list             --repo "${{ github.repository }}"             --workflow "Build Eaglercraft 26.2 u1 VBV Client"             --status success             --limit 10             --json databaseId,headSha,createdAt)"
+
+          run_id="$(printf '%s' "$run_json" | jq -r '.[0].databaseId' | head -1)"
+          if [ -z "$run_id" ] || [ "$run_id" = "null" ]; then
+            echo "::error::No successful Eagler client build is available to play-test yet."
+            exit 1
+          fi
+
+          echo "Using successful build run: $run_id"
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+
+      - name: Download latest built client
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          rm -rf playtest-client
+          mkdir -p playtest-client
+          gh run download "${{ steps.build.outputs.run_id }}"             --repo "${{ github.repository }}"             --name "ViaBackport26.2-ClientSide"             --dir playtest-client
+
+          client="$(find playtest-client -type f -name '*.html' -print -quit)"
+          if [ -z "$client" ]; then
+            echo "::error::The successful build did not contain a final HTML client artifact."
+            find playtest-client -maxdepth 3 -type f -print || true
+            exit 1
+          fi
+
+          cp "$client" playtest-client/index.html
+          echo "Play-test client:"
+          ls -lh playtest-client/index.html
+
+      - name: Install Chromium and Playwright
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm init -y >/dev/null 2>&1
+          npm install --no-audit --no-fund playwright
+          npx playwright install --with-deps chromium
+
+      - name: Start client web server
+        shell: bash
+        run: |
+          set -euo pipefail
+          nohup python3 -m http.server 8080 --directory playtest-client > web-server.log 2>&1 &
+          echo $! > web-server.pid
+          sleep 2
+          curl -fsS http://127.0.0.1:8080/index.html >/dev/null
+          echo "Client server is running."
+
+      - name: Launch client and play-test
+        shell: bash
+        run: |
+          set -uo pipefail
+          cat > playtest.mjs <<'EOF'
+          import { chromium } from 'playwright';
+
+          const browser = await chromium.launch({
+            headless: true,
+            args: [
+              '--use-angle=swiftshader',
+              '--enable-webgl',
+              '--ignore-gpu-blocklist',
+              '--disable-dev-shm-usage'
+            ]
+          });
+
+          const context = await browser.newContext({
+            viewport: { width: 1280, height: 720 }
+          });
+
+          const page = await context.newPage();
+          const errors = [];
+          const consoleErrors = [];
+          const failedRequests = [];
+
+          page.on('pageerror', e => errors.push(String(e)));
+          page.on('console', msg => {
+            if (msg.type() === 'error') consoleErrors.push(msg.text());
+          });
+          page.on('requestfailed', req => {
+            failedRequests.push({
+              url: req.url(),
+              failure: req.failure()?.errorText ?? 'unknown'
+            });
+          });
+
+          console.log('Loading modded Eagler client...');
+          await page.goto('http://127.0.0.1:8080/index.html', {
+            waitUntil: 'domcontentloaded',
+            timeout: 30000
+          });
+
+          await page.screenshot({ path: 'playtest-01-loaded.png', fullPage: true });
+
+          // Give the Eagler client time to initialize its WebGL/HTML5 game.
+          await page.waitForTimeout(30000);
+          await page.screenshot({ path: 'playtest-02-after-startup.png', fullPage: true });
+
+          // Focus the game and perform basic player-style input.
+          await page.mouse.click(640, 360);
+          await page.keyboard.down('w');
+          await page.waitForTimeout(3000);
+          await page.keyboard.up('w');
+
+          await page.keyboard.down('a');
+          await page.waitForTimeout(1500);
+          await page.keyboard.up('a');
+
+          await page.mouse.move(700, 360);
+          await page.mouse.down({ button: 'left' });
+          await page.waitForTimeout(500);
+          await page.mouse.up({ button: 'left' });
+
+          await page.screenshot({ path: 'playtest-03-input.png', fullPage: true });
+
+          console.log('Page title:', await page.title());
+          console.log('Canvases:', await page.locator('canvas').count());
+          console.log('Page errors:', errors.length);
+          console.log('Console errors:', consoleErrors.length);
+          console.log('Failed requests:', failedRequests.length);
+
+          if (errors.length) {
+            console.log('=== PAGE ERRORS ===');
+            for (const e of errors) console.log(e);
+          }
+          if (consoleErrors.length) {
+            console.log('=== CONSOLE ERRORS ===');
+            for (const e of consoleErrors) console.log(e);
+          }
+          if (failedRequests.length) {
+            console.log('=== FAILED REQUESTS ===');
+            for (const e of failedRequests) console.log(JSON.stringify(e));
+          }
+
+          // A canvas is required for the actual Eagler game renderer.
+          if (await page.locator('canvas').count() === 0) {
+            console.error('PLAY TEST FAILED: no game canvas was created.');
+            await browser.close();
+            process.exit(2);
+          }
+
+          // Browser-level JS errors are treated as a failed client test.
+          if (errors.length > 0) {
+            console.error('PLAY TEST FAILED: JavaScript page errors occurred.');
+            await browser.close();
+            process.exit(3);
+          }
+
+          console.log('PLAY TEST PASSED: client loaded, created a canvas, and accepted keyboard/mouse input.');
+          await browser.close();
+          EOF
+
+          node playtest.mjs
+
+      - name: Upload play-test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Eaglercraft-26.2-VBV-Play-Test
+          path: |
+            playtest-01-loaded.png
+            playtest-02-after-startup.png
+            playtest-03-input.png
+            web-server.log
+          retention-days: 7
+          if-no-files-found: warn
