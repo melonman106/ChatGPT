@@ -14,9 +14,6 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 90
-    defaults:
-      run:
-        working-directory: ModdedClientSource
     env:
       # TeaVM Wasm-GC builds of a full game need a big heap.
       GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx6g -Dorg.gradle.daemon=false"
@@ -31,13 +28,32 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      - name: Make gradlew executable
-        run: chmod +x ./gradlew
+      - name: Locate the Eagler project (folder containing gradlew + wasm-toolchain)
+        run: |
+          set -euo pipefail
+          echo "=== Top-level repo contents ==="
+          ls -la
+          echo "=== gradlew files (depth <= 4) ==="
+          find . -maxdepth 4 -name gradlew -not -path './.git/*' || true
+          echo "=== deploy_wasm_web.sh files ==="
+          find . -maxdepth 5 -name deploy_wasm_web.sh -not -path './.git/*' || true
+
+          DEPLOY=$(find . -maxdepth 5 -name deploy_wasm_web.sh -not -path './.git/*' | head -n1 || true)
+          if [ -z "$DEPLOY" ]; then
+            echo "::error::deploy_wasm_web.sh is not in this checkout. ModdedClientSource is probably created by a step in your OLD workflow (download/unzip/clone). Copy that step in before this one."
+            exit 1
+          fi
+          # .../<project>/wasm-toolchain/deploy_wasm_web.sh -> <project>
+          PROJ=$(cd "$(dirname "$DEPLOY")/.." && pwd)
+          echo "PROJ=$PROJ" >> "$GITHUB_ENV"
+          echo "Using project dir: $PROJ"
+          chmod +x "$PROJ/gradlew"
 
       - name: Discover TeaVM / EPK task names
         id: discover
         run: |
           set -euo pipefail
+          cd "$PROJ"
 
           # Print every task name in a project that matches a regex (exact task names only).
           find_tasks() {
@@ -73,6 +89,7 @@ jobs:
       - name: Build JS target (produces assets.epk / sounds.epk)
         run: |
           set -euo pipefail
+          cd "$PROJ"
           ARGS=()
           [ -n "${{ steps.discover.outputs.js_gen }}" ] && ARGS+=(":target_teavm:generateJavaScript")
           for t in ${{ steps.discover.outputs.epk_tasks }}; do ARGS+=(":target_teavm:$t"); done
@@ -85,6 +102,7 @@ jobs:
       - name: Build Wasm-GC client, mesh worker and server worker
         run: |
           set -euo pipefail
+          cd "$PROJ"
           ARGS=(":target_teavm_wasm_gc:generateWasmGC")
           [ -n "${{ steps.discover.outputs.wasm_mesh }}" ]   && ARGS+=(":target_teavm_wasm_gc_mesh:generateWasmGC")
           [ -n "${{ steps.discover.outputs.wasm_server }}" ] && ARGS+=(":target_teavm_wasm_gc_server:generateWasmGC")
@@ -94,6 +112,7 @@ jobs:
       - name: Verify every artifact deploy_wasm_web.sh needs
         run: |
           set -euo pipefail
+          cd "$PROJ"
           missing=0
           for f in \
             target_teavm_wasm_gc/build/generated/teavm/wasm-gc/classes.wasm \
@@ -114,11 +133,13 @@ jobs:
           fi
 
       - name: Deploy (assemble web folder)
-        run: bash wasm-toolchain/deploy_wasm_web.sh
+        run: |
+          cd "$PROJ"
+          bash wasm-toolchain/deploy_wasm_web.sh
 
       - name: Upload web build
         uses: actions/upload-artifact@v4
         with:
           name: eagler-wasm-web
-          path: ModdedClientSource/target_teavm_wasm_gc/build/web
+          path: ${{ env.PROJ }}/target_teavm_wasm_gc/build/web
           if-no-files-found: error
