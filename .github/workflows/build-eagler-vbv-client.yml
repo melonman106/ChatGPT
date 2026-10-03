@@ -951,12 +951,18 @@ jobs:
           du -sh "$GITHUB_WORKSPACE/checkpoint"
       # This is the expensive-build checkpoint for the raw WASM web build.
       # GitHub can rerun only that failed job instead of rebuilding TeaVM.
+      # Do not upload TeaVM's incremental directory: its generated class/method
+      # names contain characters such as <, >, and : that upload-artifact rejects
+      # on Windows-compatible filesystems. The Gradle/TeaVM cache above still
+      # preserves that directory for incremental compilation.
       - name: Upload WASM-GC failure checkpoint
         if: always() && env.MODDED_CLIENT_SOURCE_READY == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: vbv-wasm-build-checkpoint
-          path: ModdedClientSource
+          path: |
+            ModdedClientSource
+            !ModdedClientSource/target_teavm_wasm_gc/build/teavm-incremental/**
           retention-days: 7
           compression-level: 1
           if-no-files-found: error
