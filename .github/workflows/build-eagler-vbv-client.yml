@@ -758,9 +758,25 @@ jobs:
           fi
 
           echo "Selected WASM-GC task: $WASM_TASK"
+
+          # Keep the generated vanilla 26.2 source clean under JDK 25:
+          # javac otherwise emits removal/deprecation diagnostics for legacy
+          # APIs such as Object.finalize(). These are upstream source warnings,
+          # not VBV code errors. Configure the CI compiler once for all
+          # subprojects rather than editing the generated Minecraft sources.
+          cat > "$GITHUB_WORKSPACE/vbv-ci.init.gradle" <<'GRADLE'
+          allprojects {
+              tasks.withType(JavaCompile).configureEach {
+                  options.compilerArgs.add("-Xlint:none")
+                  options.compilerArgs.add("-nowarn")
+              }
+          }
+          GRADLE
+
           ./gradlew "$WASM_TASK" \
             --no-daemon \
             --warning-mode=none \
+            --init-script "$GITHUB_WORKSPACE/vbv-ci.init.gradle" \
             --max-workers=1 \
             -Dorg.gradle.parallel=false \
             -Dorg.gradle.jvmargs=-Xmx10g \
