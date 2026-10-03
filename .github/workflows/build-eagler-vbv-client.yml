@@ -612,11 +612,35 @@ jobs:
           ./gradlew :target_teavm:tasks --all --console=plain --no-daemon 2>&1 |             grep -E 'buildEaglerJS|generateJavaScript|stageClient|packageClient' || true
 
           echo "=== Building the Eagler JavaScript client ==="
+          # TeaVM 0.9.x is the JavaScript compiler used by the 26.2 u1
+          # browser target. Run the compiler itself on JDK 17; the main
+          # Eagler build may use JDK 25, but the older TeaVM compiler is
+          # not reliable when launched from JDK 25.
+          if [ -n "${JAVA_HOME_17_X64:-}" ]; then
+            export JAVA_HOME="$JAVA_HOME_17_X64"
+            export PATH="$JAVA_HOME/bin:$PATH"
+          fi
+          echo "TeaVM compiler Java:"
+          java -version
+          ./gradlew --stop >/dev/null 2>&1 || true
+
+          teavm_log="$GITHUB_WORKSPACE/teavm-javascript-build.log"
+          set +e
           if ./gradlew :target_teavm:tasks --all --console=plain --no-daemon 2>/dev/null | grep -qE '^buildEaglerJS([[:space:]]|$)'; then
-            ./gradlew :target_teavm:buildEaglerJS               --no-daemon               --max-workers=1               -Dorg.gradle.parallel=false               -Dorg.gradle.jvmargs=-Xmx10g
+            echo "Using :target_teavm:buildEaglerJS."
+            ./gradlew :target_teavm:buildEaglerJS                 --no-daemon                 --max-workers=1                 -Dorg.gradle.parallel=false                 -Dorg.gradle.jvmargs=-Xmx10g                 --stacktrace --info 2>&1 | tee "$teavm_log"
           else
-            echo "Friendly buildEaglerJS task is unavailable; using generateJavaScript."
-            ./gradlew :target_teavm:generateJavaScript               --no-daemon               --max-workers=1               -Dorg.gradle.parallel=false               -Dorg.gradle.jvmargs=-Xmx10g
+            echo "Friendly buildEaglerJS task is unavailable; using :target_teavm:generateJavaScript."
+            ./gradlew :target_teavm:generateJavaScript                 --no-daemon                 --max-workers=1                 -Dorg.gradle.parallel=false                 -Dorg.gradle.jvmargs=-Xmx10g                 --stacktrace --info 2>&1 | tee "$teavm_log"
+          fi
+          teavm_status="${PIPESTATUS[0]}"
+          set -e
+          echo "TeaVM Gradle exit code: $teavm_status"
+          echo "=== TeaVM failure diagnostics ==="
+          grep -E -i 'error:|exception|caused by:|unsupported|failed|outofmemory|out of memory|stacktrace' "$teavm_log" | tail -200 || true
+          if [ "$teavm_status" -ne 0 ]; then
+            echo "::error::TeaVM JavaScript generation failed. Full diagnostic log: $teavm_log"
+            exit "$teavm_status"
           fi
 
           echo "=== Locating generated JavaScript browser output ==="
