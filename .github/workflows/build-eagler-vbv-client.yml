@@ -612,7 +612,7 @@ jobs:
           ./gradlew :target_teavm:tasks --all --console=plain --no-daemon 2>&1 |             grep -E 'buildEaglerJS|generateJavaScript|stageClient|packageClient' || true
 
           echo "=== Building the Eagler JavaScript client ==="
-          # TeaVM 0.9.x is the JavaScript compiler used by the 26.2 u1
+          # TeaVM 0.13.0 is the JavaScript compiler used by the 26.2 u1
           # browser target. Run the compiler itself on JDK 17; the main
           # Eagler build may use JDK 25, but the older TeaVM compiler is
           # not reliable when launched from JDK 25.
@@ -636,7 +636,55 @@ jobs:
             -Dorg.gradle.parallel=false \
             -Dorg.gradle.jvmargs=-Xmx4g --stacktrace --info
 
-          plugin_class="$(find teavm-compat/build/classes/java/main -type f \\
+          echo "=== Fixing Gradle 9.1+ multi-string dependency deprecations ==="
+          # Gradle 9.1 deprecated map-style dependency declarations. The
+          # generated Eagler project still uses them for the 15 source
+          # artifacts reported by the build. Convert only declarations whose
+          # classifier is exactly \\"sources\\"; normal dependency maps are left untouched.
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          root = Path.cwd()
+          pattern = re.compile(
+              r'''(?P<indent>^[ \\t]*)(?P<conf>\\w+)\\s+'''
+              r'''(?P<body>(?:group\\s*[:=]\\s*[\\\"\\'][^\\\"\\']+[\\\"\\']|'''
+              r'''name\\s*[:=]\\s*[\\\"\\'][^\\\"\\']+[\\\"\\']|'''
+              r'''version\\s*[:=]\\s*[\\\"\\'][^\\\"\\']+[\\\"\\']|'''
+              r'''classifier\\s*[:=]\\s*[\\\"\\']sources[\\\"\\']|'''
+              r'''[ ,])+)''', re.MULTILINE)
+
+          def convert(m):
+              body = m.group('body')
+              def val(key):
+                  x = re.search(rf'\\b{key}\\s*[:=]\\s*[\\\"\\']([^\\\"\\']+)[\\\"\\']', body)
+                  return x.group(1) if x else None
+              group, name, version = val('group'), val('name'), val('version')
+              classifier = val('classifier')
+              if not (group and name and version and classifier == 'sources'):
+                  return m.group(0)
+              return f'{m.group("indent")}{m.group("conf")} "{group}:{name}:{version}:sources"'
+
+          changed = 0
+          for path in root.rglob('*.gradle'):
+              old = path.read_text()
+              new = pattern.sub(convert, old)
+              if new != old:
+                  path.write_text(new)
+                  changed += 1
+          for path in root.rglob('*.gradle.kts'):
+              old = path.read_text()
+              new = pattern.sub(convert, old)
+              if new != old:
+                  path.write_text(new)
+                  changed += 1
+          print(f'Patched {changed} Gradle build files.')
+          PY
+
+          echo "=== Remaining multi-string source dependency declarations ==="
+          grep -RInE "classifier[[:space:]]*[:=][[:space:]]*['\"]sources['\"]" --include='*.gradle' --include='*.gradle.kts' . || true
+
+          plugin_class="$(find teavm-compat/build/classes/java/main -type f \
             -name 'EaglerTeaVMCompatPlugin.class' -print -quit)"
           if [ -z "$plugin_class" ]; then
             echo "::error::EaglerTeaVMCompatPlugin.class was not rebuilt."
