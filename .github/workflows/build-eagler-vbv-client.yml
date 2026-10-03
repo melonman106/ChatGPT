@@ -447,56 +447,58 @@ jobs:
           mkdir -p "$dev_dir"
           cd "$build_root"
 
-          echo "=== Looking for already-built Eagler u1 browser output ==="
-          web_dir="$build_root/target_teavm_wasm_gc/build/web"
-          if [ -f "$web_dir/index.html" ] && [ -s "$web_dir/classes.wasm" ]; then
-            echo "Existing complete Wasm-GC browser output found."
+          echo "=== Preparing supported Eagler u1 JavaScript browser client ==="
+          echo "WASM-GC is intentionally not used here: the u1 incremental TeaVM task"
+          echo "currently follows Minecraft's desktop/server Netty connection path and"
+          echo "fails dependency analysis on KQueue/Epoll. The JavaScript TeaVM target"
+          echo "is the supported browser target and is also what the single-file packager consumes."
+
+          echo "=== Available browser build tasks ==="
+          ./gradlew :target_teavm:tasks --all --console=plain --no-daemon 2>&1 |             grep -E 'buildEaglerJS|generateJavaScript|stageClient|packageClient' || true
+
+          echo "=== Building the Eagler JavaScript client ==="
+          if ./gradlew :target_teavm:tasks --all --console=plain --no-daemon 2>/dev/null | grep -qE '^buildEaglerJS([[:space:]]|$)'; then
+            ./gradlew :target_teavm:buildEaglerJS               --no-daemon               --max-workers=1               -Dorg.gradle.parallel=false               -Dorg.gradle.jvmargs=-Xmx10g
           else
-            echo "No complete browser output; using the Eagler-specific incremental Wasm-GC build path."
-            echo "=== Eagler Wasm-GC build tasks ==="
-            ./gradlew :target_teavm_wasm_gc:tasks --all --console=plain --no-daemon | grep -E 'generateWasmGCIncremental|generateWasmGC|copyWasmGCRuntime' || true
+            echo "Friendly buildEaglerJS task is unavailable; using generateJavaScript."
+            ./gradlew :target_teavm:generateJavaScript               --no-daemon               --max-workers=1               -Dorg.gradle.parallel=false               -Dorg.gradle.jvmargs=-Xmx10g
+          fi
 
-            echo "=== Generating Eagler Wasm-GC client classes.wasm ==="
-            # This is the Eagler u1 task. Do NOT call raw generateWasmGC:
-            # that TeaVM entry point walks the desktop/server connection path
-            # and fails on Netty KQueue/Epoll classes.
-            ./gradlew :target_teavm_wasm_gc:generateWasmGCIncremental               --no-daemon               --max-workers=1               -Dorg.gradle.parallel=false               -Dorg.gradle.jvmargs=-Xmx10g
+          echo "=== Locating generated JavaScript browser output ==="
+          web_dir="$build_root/target_teavm/build/web"
+          js_dir="$build_root/target_teavm/javascript"
 
-            echo "=== Preparing authenticated TeaVM runtime ==="
-            ./gradlew :target_teavm_wasm_gc:copyWasmGCRuntime               --no-daemon               --max-workers=1               -Dorg.gradle.parallel=false               -Dorg.gradle.jvmargs=-Xmx10g
-
-            gen="$build_root/target_teavm_wasm_gc/build/generated/teavm/wasm-gc"
-            for required in "$gen/classes.wasm" "$gen/classes.wasm-runtime.js"; do
-              if [ ! -s "$required" ]; then
-                echo "::error::Eagler Wasm-GC did not produce required artifact: $required"
-                echo "=== Generated Wasm-GC files ==="
-                find "$build_root/target_teavm_wasm_gc/build/generated/teavm/wasm-gc" -maxdepth 2 -type f -printf '%s %p\n' 2>/dev/null | sort -nr | head -200 || true
-                exit 1
-              fi
+          if [ -f "$web_dir/index.html" ] && [ -s "$web_dir/classes.js" ]; then
+            echo "Complete target_teavm/build/web output found."
+          elif [ -f "$js_dir/classes.js" ]; then
+            echo "TeaVM generated classes.js; staging the standard Eagler web resources."
+            mkdir -p "$web_dir"
+            cp -f "$js_dir/classes.js" "$web_dir/classes.js"
+            if [ -f "$js_dir/classes.js.map" ]; then
+              cp -f "$js_dir/classes.js.map" "$web_dir/classes.js.map"
+            fi
+            index="$(find "$build_root/src" -type f -path '*/teavm*/resources/index.html' -print -quit 2>/dev/null || true)"
+            if [ -n "$index" ]; then
+              cp -f "$index" "$web_dir/index.html"
+            fi
+            for item in "$build_root/target_teavm/build/web" "$build_root/target_teavm_javascript/build/web"; do
+              [ -d "$item" ] || continue
+              find "$item" -maxdepth 1 -type f ! -name 'classes.js' ! -name 'classes.js.map' -exec cp -n {} "$web_dir/" \; 2>/dev/null || true
             done
+          else
+            echo "::error::The supported Eagler JavaScript target produced neither target_teavm/build/web/classes.js nor target_teavm/javascript/classes.js."
+            find "$build_root/target_teavm" -maxdepth 4 -type f \( -name '*.js' -o -name '*.html' \) -printf '%s %p\n' 2>/dev/null | sort -nr | head -200 || true
+            exit 1
+          fi
 
-            echo "=== Locating Eagler u1 web deployment script ==="
-            deploy_script="$(find "$build_root" -type f -name 'deploy_wasm_web.sh' -print -quit 2>/dev/null || true)"
-            if [ -z "$deploy_script" ]; then
-              echo "::error::Could not locate deploy_wasm_web.sh in ModdedClientSource."
-              exit 1
-            fi
-            chmod +x "$deploy_script"
-
-            echo "=== Deploying generated Eagler u1 browser files ==="
-            cd "$(dirname "$deploy_script")"
-            bash "./$(basename "$deploy_script")"
-
-            web_dir="$build_root/target_teavm_wasm_gc/build/web"
-            if [ ! -f "$web_dir/index.html" ] || [ ! -s "$web_dir/classes.wasm" ]; then
-              echo "::error::Eagler u1 deployment did not produce a complete browser client."
-              find "$web_dir" -maxdepth 2 -type f -printf '%s %p\n' 2>/dev/null | sort -nr | head -200 || true
-              exit 1
-            fi
+          if [ ! -f "$web_dir/index.html" ] || [ ! -s "$web_dir/classes.js" ]; then
+            echo "::error::JavaScript browser output is incomplete."
+            find "$web_dir" -maxdepth 2 -type f -printf '%s %p\n' 2>/dev/null | sort -nr | head -200 || true
+            exit 1
           fi
 
           cp -a "$web_dir"/. "$dev_dir"/
-          printf '%s\n'             'Pre-single-file Eaglercraft 26.2 VBV browser client'             ''             'This is the Eagler u1 Wasm-GC browser build before build-single-html.js.'             ''             'Use HTTP/HTTPS rather than file:// if the browser blocks local module/Wasm loading.'             > "$dev_dir/README-DEV-CLIENT.txt"
+          printf '%s\n'             'Pre-single-file Eaglercraft 26.2 VBV browser client'             ''             'This is the supported Eagler u1 JavaScript browser build before build-single-html.js.'             ''             'Use HTTP/HTTPS rather than file:// if the browser blocks local module loading.'             > "$dev_dir/README-DEV-CLIENT.txt"
 
           echo "=== Pre-single-file browser client ==="
           find "$dev_dir" -maxdepth 3 -type f -printf '%s %p\n' | sort -nr | head -100
