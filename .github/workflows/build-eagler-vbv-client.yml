@@ -854,6 +854,42 @@ jobs:
           bash wasm-toolchain/deploy_wasm_web.sh
 
           web_dir="$GITHUB_WORKSPACE/ModdedClientSource/target_teavm_wasm_gc/build/web"
+
+          # U1 deployment can assemble the HTML/runtime shell without copying
+          # the linked WASM payloads into build/web. The linker outputs the
+          # final client/mesh/server WASM under their generated/wasm-gc-* dirs.
+          # Copy those final linked payloads into the hosted directory before
+          # validation so the browser receives the actual runtime files.
+          mkdir -p "$web_dir"
+          copy_final_wasm() {
+            local name="$1"
+            local module_root="$2"
+            local destination="$web_dir/$name"
+            local source=""
+
+            if [ -s "$destination" ]; then
+              echo "WASM already deployed: $destination"
+              return 0
+            fi
+
+            source="$(find "$module_root" -type f -path "*/wasm-gc-standalone/$name" -print -quit 2>/dev/null || true)"
+            if [ -z "$source" ]; then
+              source="$(find "$module_root" -type f -path "*/wasm-gc/$name" -print -quit 2>/dev/null || true)"
+            fi
+            if [ -z "$source" ]; then
+              echo "::error::Could not find linked $name under $module_root"
+              find "$module_root" -type f -name "$name" -printf '%s %p\\n' 2>/dev/null | sort -nr || true
+              return 1
+            fi
+
+            cp -f "$source" "$destination"
+            echo "Copied linked WASM: $source -> $destination"
+          }
+
+          copy_final_wasm "classes.wasm" "$GITHUB_WORKSPACE/ModdedClientSource/target_teavm_wasm_gc/build/generated/teavm"
+          copy_final_wasm "mesh-worker.wasm" "$GITHUB_WORKSPACE/ModdedClientSource/target_teavm_wasm_gc_mesh/build/generated/teavm"
+          copy_final_wasm "server-worker.wasm" "$GITHUB_WORKSPACE/ModdedClientSource/target_teavm_wasm_gc_server/build/generated/teavm"
+
           if [ ! -f "$web_dir/index.html" ]; then
             echo "::error::WASM-GC deployment completed without generating target_teavm_wasm_gc/build/web/index.html."
             echo "=== Available WASM/HTML output ==="
