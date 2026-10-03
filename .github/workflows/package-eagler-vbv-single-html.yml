@@ -84,19 +84,46 @@ jobs:
 
           unzip -q "$archive" -d "$work"
 
+          # Accept either a full ModdedClientSource checkpoint or the
+          # Cloudflare/R2 web bundle produced by the WASM deployment job.
           source="$(find "$work" -type f -path '*/ModdedClientSource/game/build/libs/game.jar' -print -quit || true)"
-          if [ -z "$source" ]; then
-            echo "::error::Checkpoint artifact does not contain ModdedClientSource/game/build/libs/game.jar."
-            find "$work" -maxdepth 6 -type f | sort | head -300
-            exit 1
+
+          if [ -n "$source" ]; then
+            echo "Detected full ModdedClientSource checkpoint."
+            checkpoint_root="$(dirname "$(dirname "$(dirname "$(dirname "$(dirname "$source")")")")")"
+            test -f "$checkpoint_root/wasm-toolchain/build-single-html.js"
+            test -f "$checkpoint_root/target_teavm_wasm_gc/build/web/index.html"
+            cp -a "$checkpoint_root" "$GITHUB_WORKSPACE/ModdedClientSource"
+          else
+            echo "No full checkpoint found; treating artifact as Cloudflare/R2 web bundle."
+            web_source="$(find "$work" -type f -name 'index.html' -print -quit)"
+            if [ -z "$web_source" ]; then
+              echo "::error::Artifact is neither a full checkpoint nor a Cloudflare/R2 web bundle."
+              find "$work" -maxdepth 6 -type f | sort | head -300
+              exit 1
+            fi
+
+            web_root="$(dirname "$web_source")"
+            for required in index.html classes.wasm mesh-worker.wasm server-worker.wasm assets.epk; do
+              if [ ! -s "$web_root/$required" ]; then
+                echo "::error::Cloudflare/R2 web bundle is missing $required."
+                find "$web_root" -maxdepth 1 -type f | sort
+                exit 1
+              fi
+            done
+
+            mkdir -p "$GITHUB_WORKSPACE/ModdedClientSource/target_teavm_wasm_gc/build/web"
+            cp -a "$web_root"/. "$GITHUB_WORKSPACE/ModdedClientSource/target_teavm_wasm_gc/build/web/"
+
+            test -f "$GITHUB_WORKSPACE/u1-1-source/wasm-toolchain/build-single-html.js"
+            cp -a "$GITHUB_WORKSPACE/u1-1-source/wasm-toolchain" "$GITHUB_WORKSPACE/ModdedClientSource/wasm-toolchain"
+
+            # Cloudflare/R2 deployment omits sounds.epk; reuse the repository copy.
+            if [ ! -s "$GITHUB_WORKSPACE/ModdedClientSource/target_teavm_wasm_gc/build/web/sounds.epk" ]; then
+              test -s "$GITHUB_WORKSPACE/sounds.epk"
+              cp "$GITHUB_WORKSPACE/sounds.epk" "$GITHUB_WORKSPACE/ModdedClientSource/target_teavm_wasm_gc/build/web/sounds.epk"
+            fi
           fi
-
-          checkpoint_root="$(dirname "$(dirname "$(dirname "$(dirname "$(dirname "$source")")")")")"
-          test -f "$checkpoint_root/wasm-toolchain/build-single-html.js"
-          test -f "$checkpoint_root/target_teavm_wasm_gc/build/web/index.html"
-
-          cp -a "$checkpoint_root" "$GITHUB_WORKSPACE/ModdedClientSource"
-
           echo "=== Imported checkpoint ==="
           du -sh "$GITHUB_WORKSPACE/ModdedClientSource"
           find "$GITHUB_WORKSPACE/ModdedClientSource/target_teavm_wasm_gc/build/web" -maxdepth 1 -type f \
@@ -119,7 +146,9 @@ jobs:
           test -s target_teavm_wasm_gc/build/web/server-worker.wasm
           test -s target_teavm_wasm_gc/build/web/assets.epk
           test -s target_teavm_wasm_gc/build/web/sounds.epk
-          test -s target_teavm/build/web/music.epk
+          if [ "${{ inputs.with_music }}" = "true" ]; then
+            test -s target_teavm/build/web/music.epk
+          fi
           echo "All single-file packaging inputs are present."
 
       - name: Package standalone single HTML
@@ -149,11 +178,15 @@ jobs:
         working-directory: ModdedClientSource
         run: |
           set -euo pipefail
-          node wasm-toolchain/export-music-resource-pack.js \
-            target_teavm/build/web/music.epk \
-            "$GITHUB_WORKSPACE/eaglercraft-26.2-VBV-optional-music.zip"
-          test -s "$GITHUB_WORKSPACE/eaglercraft-26.2-VBV-optional-music.zip"
-          ls -lh "$GITHUB_WORKSPACE/eaglercraft-26.2-VBV-optional-music.zip"
+          if [ -s target_teavm/build/web/music.epk ]; then
+            node wasm-toolchain/export-music-resource-pack.js \
+              target_teavm/build/web/music.epk \
+              "$GITHUB_WORKSPACE/eaglercraft-26.2-VBV-optional-music.zip"
+            test -s "$GITHUB_WORKSPACE/eaglercraft-26.2-VBV-optional-music.zip"
+            ls -lh "$GITHUB_WORKSPACE/eaglercraft-26.2-VBV-optional-music.zip"
+          else
+            echo "No music.epk in web-only bundle; skipping optional music pack."
+          fi
 
       - name: Verify final HTML
         run: |
