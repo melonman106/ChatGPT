@@ -874,6 +874,90 @@ jobs:
           test -f ModdedClientSource/game/build/classes/java/main/pack.png
           echo "Packaging checkpoint restored successfully."
           du -sh ModdedClientSource
+      - name: Prepare Cloudflare R2 web bundle
+        run: |
+          set -euo pipefail
+          source_dir="$GITHUB_WORKSPACE/ModdedClientSource/target_teavm_wasm_gc/build/web"
+          output_dir="$GITHUB_WORKSPACE/cloudflare-r2-client"
+
+          if [ ! -f "$source_dir/index.html" ]; then
+            echo "::error::WASM web build is missing target_teavm_wasm_gc/build/web/index.html."
+            find "$GITHUB_WORKSPACE/ModdedClientSource/target_teavm_wasm_gc" -maxdepth 4 -type f \\
+              \( -name '*.html' -o -name '*.wasm' -o -name '*.js' \) -printf '%s %p\\n' 2>/dev/null | sort -nr | head -200 || true
+            exit 1
+          fi
+
+          rm -rf "$output_dir"
+          mkdir -p "$output_dir"
+          cp -a "$source_dir"/. "$output_dir"/
+
+          find "$output_dir" -type f \\
+            \( -name '*.br' -o -name '*.gz' -o -name '*.meta' -o -name '*.sha256' \) \\
+            -delete
+
+          cat > "$output_dir/wrangler.toml.example" <<'EOF'
+name = "my-eagler-client"
+main = "worker.js"
+compatibility_date = "2026-09-29"
+
+[[r2_buckets]]
+binding = "GAME"
+bucket_name = "my-eagler-client-files"
+EOF
+
+          cat > "$output_dir/worker.js" <<'EOF'
+export default {
+  async fetch(request, env) {
+    if (request.method !== "GET" && request.method !== "HEAD") {
+      return new Response("Method not allowed", { status: 405 });
+    }
+    const url = new URL(request.url);
+    const key = url.pathname === "/" ? "index.html" : url.pathname.slice(1);
+    const object = await env.GAME.get(key);
+    if (!object) return new Response("Not found", { status: 404 });
+    const types = {
+      html: "text/html; charset=utf-8",
+      js: "text/javascript; charset=utf-8",
+      wasm: "application/wasm",
+      json: "application/json",
+      png: "image/png",
+      ico: "image/x-icon"
+    };
+    const extension = key.split(".").pop().toLowerCase();
+    return new Response(request.method === "HEAD" ? null : object.body, {
+      headers: {
+        "Content-Type": types[extension] || "application/octet-stream",
+        "Cache-Control": "no-cache",
+        "X-Content-Type-Options": "nosniff"
+      }
+    });
+  }
+};
+EOF
+
+          printf '%s\\n' \\
+            'Cloudflare R2 deployment bundle' \\
+            '' \\
+            'Upload the CONTENTS of this folder to the ROOT of your R2 bucket.' \\
+            'The raw .wasm files are intentionally included.' \\
+            'Edit wrangler.toml.example before deploying the Worker.' \\
+            > "$output_dir/README-CLOUDFLARE.txt"
+
+          echo "=== Cloudflare R2 bundle ==="
+          find "$output_dir" -type f -printf '%s %p\\n' | sort -nr | head -100
+          echo "File count: $(find "$output_dir" -type f | wc -l)"
+          du -sh "$output_dir"
+
+      - name: Upload Cloudflare R2 web bundle
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Eaglercraft-26.2-VBV-Cloudflare-R2
+          path: cloudflare-r2-client
+          retention-days: 14
+          compression-level: 1
+          if-no-files-found: error
+
       - name: Setup Java 25
         uses: actions/setup-java@v5
         with:
