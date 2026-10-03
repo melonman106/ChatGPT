@@ -34,7 +34,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: checkpoint
-          key: eagler-vbv-root-checkpoint-v5-u1-1-${{ hashFiles('ViaBackport26.2-ClientSide/src/main/java/**/*.java', 'ViaBackport26.2-ClientSide/src/main/resources/**/*.json', 'ViaBackport26.2-ClientSide/patch/**', 'ModsPack/**/*.zip', 'eaglercraft-26.2-patcher-main (1).tar.gz') }}
+          key: eagler-vbv-root-checkpoint-v5-u1-1-${{ hashFiles('ViaBackport26.2-ClientSide/src/main/java/**/*.java', 'ViaBackport26.2-ClientSide/src/main/resources/**/*.json', 'ViaBackport26.2-ClientSide/patch/**', 'ModsPack/**/*.zip', 'eaglercraft-26.2-patcher-main (1).tar.gz', 'u1-1-source/**', 'U1-Patcher/portable-kit.zip') }}
 
       - name: Restore repository checkpoint if present
         id: repo_checkpoint
@@ -142,18 +142,18 @@ jobs:
 
             if [ -f "$u11_candidate" ]; then
               found="$u11_candidate"
-              echo "$label: U1.1 -> $found"
+              echo "$label: U1.1 -> $found" >&2
             else
               found="$(find "$source_root" -type f -name "$filename" -print -quit 2>/dev/null || true)"
               if [ -n "$found" ]; then
-                echo "$label: U1.1 source tree -> $found"
+                echo "$label: U1.1 source tree -> $found" >&2
               fi
             fi
 
             if [ -z "$found" ]; then
               found="$(find "$legacy_root" -type f -name "$filename" -print -quit 2>/dev/null || true)"
               if [ -n "$found" ]; then
-                echo "$label: legacy U1 fallback -> $found"
+                echo "$label: legacy U1 fallback -> $found" >&2
               fi
             fi
 
