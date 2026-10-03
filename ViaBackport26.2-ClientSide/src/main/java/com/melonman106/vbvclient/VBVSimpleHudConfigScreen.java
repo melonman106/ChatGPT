@@ -31,7 +31,7 @@ public final class VBVSimpleHudConfigScreen extends Screen {
 
         addRenderableWidget(Button.builder(Component.literal("Reset defaults"), button -> {
             VBVSimpleHudConfig.reset();
-            rebuildWidgets();
+            VBVNav.open(new VBVSimpleHudConfigScreen(parent));
         }).bounds(width / 2 - 100, height - 52, 95, 20).build());
         addRenderableWidget(Button.builder(Component.literal("Back"), button -> VBVNav.open(parent))
             .bounds(width / 2 + 5, height - 52, 95, 20).build());
