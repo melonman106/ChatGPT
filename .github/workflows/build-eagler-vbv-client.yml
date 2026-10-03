@@ -895,47 +895,45 @@ jobs:
             \( -name '*.br' -o -name '*.gz' -o -name '*.meta' -o -name '*.sha256' \) \\
             -delete
 
-          cat > "$output_dir/wrangler.toml.example" <<'EOF'
-name = "my-eagler-client"
-main = "worker.js"
-compatibility_date = "2026-09-29"
-
-[[r2_buckets]]
-binding = "GAME"
-bucket_name = "my-eagler-client-files"
-EOF
-          sed -i 's/^/          /' "$output_dir/wrangler.toml.example"
+          printf '%s\\n' \\
+            'name = "my-eagler-client"' \\
+            'main = "worker.js"' \\
+            'compatibility_date = "2026-09-29"' \\
+            '' \\
+            '[[r2_buckets]]' \\
+            'binding = "GAME"' \\
+            'bucket_name = "my-eagler-client-files"' \\
+            > "$output_dir/wrangler.toml.example"
 
           cat > "$output_dir/worker.js" <<'EOF'
-export default {
-  async fetch(request, env) {
-    if (request.method !== "GET" && request.method !== "HEAD") {
-      return new Response("Method not allowed", { status: 405 });
-    }
-    const url = new URL(request.url);
-    const key = url.pathname === "/" ? "index.html" : url.pathname.slice(1);
-    const object = await env.GAME.get(key);
-    if (!object) return new Response("Not found", { status: 404 });
-    const types = {
-      html: "text/html; charset=utf-8",
-      js: "text/javascript; charset=utf-8",
-      wasm: "application/wasm",
-      json: "application/json",
-      png: "image/png",
-      ico: "image/x-icon"
-    };
-    const extension = key.split(".").pop().toLowerCase();
-    return new Response(request.method === "HEAD" ? null : object.body, {
-      headers: {
-        "Content-Type": types[extension] || "application/octet-stream",
-        "Cache-Control": "no-cache",
-        "X-Content-Type-Options": "nosniff"
-      }
-    });
-  }
-};
-EOF
-          sed -i 's/^/          /' "$output_dir/worker.js"
+          export default {
+            async fetch(request, env) {
+              if (request.method !== "GET" && request.method !== "HEAD") {
+                return new Response("Method not allowed", { status: 405 });
+              }
+              const url = new URL(request.url);
+              const key = url.pathname === "/" ? "index.html" : url.pathname.slice(1);
+              const object = await env.GAME.get(key);
+              if (!object) return new Response("Not found", { status: 404 });
+              const types = {
+                html: "text/html; charset=utf-8",
+                js: "text/javascript; charset=utf-8",
+                wasm: "application/wasm",
+                json: "application/json",
+                png: "image/png",
+                ico: "image/x-icon"
+              };
+              const extension = key.split(".").pop().toLowerCase();
+              return new Response(request.method === "HEAD" ? null : object.body, {
+                headers: {
+                  "Content-Type": types[extension] || "application/octet-stream",
+                  "Cache-Control": "no-cache",
+                  "X-Content-Type-Options": "nosniff"
+                }
+              });
+            }
+          };
+          EOF
 
           printf '%s\\n' \\
             'Cloudflare R2 deployment bundle' \\
