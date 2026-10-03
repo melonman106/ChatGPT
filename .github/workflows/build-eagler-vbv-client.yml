@@ -45,7 +45,6 @@ jobs:
             echo "found=false" >> "$GITHUB_OUTPUT"
             echo "No complete repository checkpoint found; performing the normal build."
           fi
-
       - name: Use root checkpoint as ModdedClientSource
         if: steps.repo_checkpoint.outputs.found == 'true'
         run: |
@@ -57,7 +56,6 @@ jobs:
           test -f "$GITHUB_WORKSPACE/ModdedClientSource/game/src/main/resources/pack.png"
           echo "Root checkpoint restored directly."
           du -sh "$GITHUB_WORKSPACE/ModdedClientSource"
-
       - name: Setup Java 17
         uses: actions/setup-java@v5
         with:
@@ -99,14 +97,12 @@ jobs:
           echo "  root=$patcher_root"
           echo "  patcher=$patcher"
           echo "  java-cli=$cli_jar"
-
       - name: Download official Minecraft 26.2 client
         if: steps.repo_checkpoint.outputs.found != 'true'
         run: |
           set -euo pipefail
           curl -fL --retry 3 -o build-input/minecraft-26.2-client.jar "https://piston-data.mojang.com/v1/objects/2dc72797acbc1b63fc16a11c4ac393605f453754/client.jar"
           echo "2dc72797acbc1b63fc16a11c4ac393605f453754  build-input/minecraft-26.2-client.jar" | sha1sum -c -
-
       - name: Inspect extracted U1 patcher
         if: steps.repo_checkpoint.outputs.found != 'true'
         run: |
@@ -117,7 +113,6 @@ jobs:
           "$EAGLER_PATCHER" --help 2>&1 || true
           echo "=== create-dev help ==="
           "$EAGLER_PATCHER" create-dev --help 2>&1 || true
-
       - name: Create editable Eaglercraft source project
         if: steps.repo_checkpoint.outputs.found != 'true'
         run: |
@@ -131,45 +126,36 @@ jobs:
             find "$GITHUB_WORKSPACE/generated-client" -maxdepth 5 -type f | sort | head -1000
             exit 1
           fi
-
       - name: Verify Eagler u1 rendering patch inputs
         if: steps.repo_checkpoint.outputs.found != 'true'
         run: |
           set -euo pipefail
-
           patch_bundle="$EAGLER_PATCHER_ROOT/source-patch-bundle.zip"
           skeleton="$EAGLER_PATCHER_ROOT/project-skeleton-v5-teavm-runtime-verified.zip"
           test -f "$patch_bundle"
           test -f "$skeleton"
-
           work="$(mktemp -d)"
           trap 'rm -rf "$work"' EXIT
           unzip -q "$patch_bundle" -d "$work/patch"
           unzip -q "$skeleton" -d "$work/skeleton"
-
           echo "=== Eagler rendering patch files ==="
           find "$work/patch" -type f \( -iname '*RenderPipeline*' -o -iname '*RenderTarget*' -o -iname '*WebGL2*' \) -print | sort | head -200
-
           if ! find "$work/patch" -type f -name 'RenderPipelines.java.delta' -print -quit | grep -q .; then
             echo "::error::The verified u1 patch bundle does not contain RenderPipelines.java.delta."
             exit 1
           fi
-
           if ! find "$work/skeleton" -type f -name 'WebGL2RenderPipeline.java' -print -quit | grep -q .; then
             echo "::error::The verified u1 skeleton does not contain WebGL2RenderPipeline.java."
             exit 1
           fi
-
           echo "Verified u1 rendering implementation and RenderPipelines patch."
           echo "Vanilla 26.2 shader source files are intentionally retained below:"
           echo "Eagler u1 consumes the Minecraft shader resource tree through its patched rendering pipeline."
-
       - name: Apply native VBV patch
         if: steps.repo_checkpoint.outputs.found != 'true'
         run: |
           set -euo pipefail
           python3 ViaBackport26.2-ClientSide/patch/apply_vbv_patch.py generated-client
-
       - name: Restore Minecraft runtime resources
         if: steps.repo_checkpoint.outputs.found != 'true'
         run: |
@@ -259,7 +245,6 @@ jobs:
           ls -lh "$resources/pack.png"
           du -sh "$resources"
           find "$resources" -type f | wc -l
-
       - name: Setup Java 25 for Eaglercraft build
         if: steps.repo_checkpoint.outputs.found != 'true'
         uses: actions/setup-java@v5
@@ -277,7 +262,6 @@ jobs:
           key: eagler-vbv-gradle-${{ runner.os }}-${{ hashFiles('generated-client/**/gradle-wrapper.properties', 'generated-client/**/build.gradle*', 'generated-client/**/gradle.properties') }}
           restore-keys: |
             eagler-vbv-gradle-${{ runner.os }}-
-
       - name: Build generated Eaglercraft client
         if: steps.repo_checkpoint.outputs.found != 'true'
         run: |
@@ -291,7 +275,6 @@ jobs:
           cd "$build_root"
           chmod +x ./gradlew
           ./gradlew assemble --no-daemon
-
       - name: Inject Minecraft runtime resources into game JAR
         if: steps.repo_checkpoint.outputs.found != 'true'
         run: |
@@ -316,7 +299,6 @@ jobs:
           temp_resources="$(mktemp -d)"
           trap 'rm -rf "$temp_resources"' EXIT
           unzip -q build-input/minecraft-26.2-client.jar -d "$temp_resources"
-
           for path in version.json assets; do
             if [ ! -e "$temp_resources/$path" ]; then
               echo "::error::Official client JAR is missing required runtime resource: $path"
@@ -329,22 +311,21 @@ jobs:
             echo "Official client JAR has no pack.mcmeta; recreating the same minimal 26.2 header used for game resources."
             printf '%s\n' '{' '  "pack": {' '    "description": "Minecraft 26.2",' '    "min_format": 88,' '    "max_format": 88' '  }' '}' > "$temp_resources/pack.mcmeta"
           fi
-
           echo "Injecting runtime resources into: $game_jar"
           jar --update --file "$game_jar" \
             -C "$temp_resources" version.json \
             -C "$temp_resources" pack.mcmeta
-          # Do NOT overwrite the generated Eagler shader resources here.
-          # create-dev/build already supplies the Eagler-compatible .vsh/.fsh/.glsl
-          # files in the game module. Injecting raw vanilla 26.2 shaders replaces
-          # those sources and can leave the WebGL client on a black screen.
+          # Keep the official Minecraft 26.2 shader source tree. Eagler u1's
+          # patched RenderPipelines/WebGL backend loads these resources and
+          # translates them for WebGL; removing them causes "no source for
+          # VERTEX/FRAGMENT shader" failures at runtime.
+          jar --update --file "$game_jar" -C "$temp_resources/assets" .
           if [ -e "$temp_resources/data" ]; then
             echo "Injecting official 26.2 data/ directory too."
             jar --update --file "$game_jar" -C "$temp_resources" data
           else
             echo "No data/ directory in client JAR; skipping it."
           fi
-
           echo "=== Required resources in game.jar ==="
           jar_contents="$temp_resources/game-jar-contents.txt"
           jar --list --file "$game_jar" > "$jar_contents"
@@ -354,7 +335,6 @@ jobs:
           grep -qx 'assets/minecraft/lang/en_us.json' "$jar_contents"
           echo "=== game.jar size ==="
           ls -lh "$game_jar"
-
       - name: Setup Node.js for single-HTML packaging
         if: steps.repo_checkpoint.outputs.found != 'true'
         uses: actions/setup-node@v4
@@ -365,9 +345,7 @@ jobs:
         if: steps.repo_checkpoint.outputs.found != 'true'
         run: |
           set -euo pipefail
-
           rm -rf "$GITHUB_WORKSPACE/ModdedClientSource"
-
           build_root="$(find "$GITHUB_WORKSPACE/generated-client" -type f -name 'gradlew' -print -quit | xargs -r dirname)"
           if [ -z "$build_root" ]; then
             echo "::error::Could not locate the generated Eaglercraft Gradle root."
@@ -375,10 +353,8 @@ jobs:
             exit 1
           fi
           build_root="$(realpath "$build_root")"
-
           mkdir -p "$GITHUB_WORKSPACE/ModdedClientSource"
           cp -a "$build_root"/. "$GITHUB_WORKSPACE/ModdedClientSource/"
-
           modded_root="$GITHUB_WORKSPACE/ModdedClientSource"
           game_dir="$(find "$modded_root" -type f \( -path "*/game/build.gradle" -o -path "*/game/build.gradle.kts" \) -print -quit | xargs -r dirname)"
           if [ -z "$game_dir" ]; then
@@ -388,30 +364,24 @@ jobs:
           fi
           game_dir="$(realpath "$game_dir")"
           resources="$game_dir/src/main/resources"
-
           echo "=== Generated client paths ==="
           echo "Gradle root: $build_root"
           echo "Copied root: $modded_root"
           echo "Game module: $game_dir"
           echo "Resources:   $resources"
-
           # Preserve Eagler-specific skeleton resources, especially pack.png.
           # Only overlay the official Minecraft runtime resources.
           mkdir -p "$resources"
-
           temp_resources="$(mktemp -d)"
           trap 'rm -rf "$temp_resources"' EXIT
           unzip -q "$GITHUB_WORKSPACE/build-input/minecraft-26.2-client.jar" -d "$temp_resources"
-
           test -f "$temp_resources/version.json"
           test -f "$temp_resources/assets/minecraft/lang/en_us.json"
-
           if [ -e "$temp_resources/pack.mcmeta" ]; then
             cp -a "$temp_resources/pack.mcmeta" "$resources/"
           else
             printf '%s\n' '{' '  "pack": {' '    "description": "Minecraft 26.2",' '    "min_format": 88,' '    "max_format": 88' '  }' '}' > "$resources/pack.mcmeta"
           fi
-
           cp -a "$temp_resources/version.json" "$resources/"
           # Add official assets without overwriting Eagler/u1 resources.
           # The source project is the authoritative owner of Eagler-specific
@@ -428,33 +398,26 @@ jobs:
           if [ -e "$temp_resources/data" ]; then
             cp -a "$temp_resources/data" "$resources/"
           fi
-
           test -f "$resources/version.json"
           test -f "$resources/pack.mcmeta"
           test -f "$resources/assets/minecraft/lang/en_us.json"
           test -f "$resources/pack.png"
-
           game_classes="$game_dir/build/classes/java/main"
           mkdir -p "$game_classes"
           cp -a "$resources"/. "$game_classes"/
-
           test -f "$game_classes/version.json"
           test -f "$game_classes/pack.mcmeta"
           test -f "$game_classes/assets/minecraft/lang/en_us.json"
           test -f "$game_classes/pack.png"
-
           echo "=== TeaVM resource classpath verified ==="
           ls -lh "$game_classes/version.json" "$game_classes/pack.png"
-
           single_html_script="$modded_root/wasm-toolchain/build-single-html.js"
           if [ ! -f "$single_html_script" ]; then
             echo "::error::The generated client does not contain wasm-toolchain/build-single-html.js."
             find "$modded_root" -path '*/wasm-toolchain/*' -type f -print | sort || true
             exit 1
           fi
-
           echo "Found single-HTML builder: $single_html_script"
-
           # Copy built-in client-mod metadata and pack.png icons into the
           # generated resource classpath. Resource-pack-backed features are
           # presented as mods in the native Mods screen.
@@ -471,135 +434,7 @@ jobs:
             mkdir -p "$game_classes/vbvclient/mods"
             cp -a "$resources"/vbvclient/mods/. "$game_classes/vbvclient/mods/"
           fi
-
           node --version
-
-      - name: Prepare pre-single-file browser test client
-        if: success()
-        run: |
-          set -euo pipefail
-
-          build_root="$GITHUB_WORKSPACE/ModdedClientSource"
-          dev_dir="$GITHUB_WORKSPACE/dev-web-client"
-          rm -rf "$dev_dir"
-          mkdir -p "$dev_dir"
-
-          cd "$build_root"
-
-          echo "=== Looking for already-built TeaVM browser output ==="
-          candidates=(
-            "$build_root/target_teavm_wasm_gc/build/web"
-            "$build_root/target_teavm_wasm_gc/javascript_dist"
-            "$build_root/target_teavm_javascript/build/web"
-            "$build_root/target_teavm_javascript/javascript"
-          )
-
-          found=0
-          for candidate in "${candidates[@]}"; do
-            if [ -d "$candidate" ] && [ "$(find "$candidate" -type f | wc -l)" -gt 0 ]; then
-              echo "Found browser output: $candidate"
-              cp -a "$candidate"/. "$dev_dir"/
-              found=1
-              break
-            fi
-          done
-
-          if [ "$found" -eq 0 ]; then
-            echo "No browser bundle was produced by Gradle assemble."
-            echo "=== Preparing the authenticated TeaVM Wasm-GC runtime ==="
-
-            # deploy_wasm_web.sh does not build TeaVM. It only deploys files
-            # that the Eagler build has already generated. In particular,
-            # classes.wasm-runtime.js comes from copyWasmGCRuntime.
-            ./gradlew :target_teavm_wasm_gc:copyWasmGCRuntime               --no-daemon               --max-workers=1               -Dorg.gradle.parallel=false               -Dorg.gradle.jvmargs=-Xmx10g
-
-            runtime="$build_root/target_teavm_wasm_gc/build/generated/teavm/wasm-gc/classes.wasm-runtime.js"
-            if [ ! -s "$runtime" ]; then
-              echo "::error::copyWasmGCRuntime completed but did not produce classes.wasm-runtime.js."
-              find "$build_root/target_teavm_wasm_gc/build/generated/teavm" -maxdepth 5 -type f -print | sort | head -300 || true
-              exit 1
-            fi
-
-            echo "TeaVM runtime ready: $runtime"
-            ls -lh "$runtime"
-
-            echo "=== Locating Eagler u1 web deployment script ==="
-            deploy_script=""
-            for root in "$build_root" "$GITHUB_WORKSPACE/generated-client" "$EAGLER_PATCHER_ROOT"; do
-              [ -d "$root" ] || continue
-              deploy_script="$(find "$root" -type f -name 'deploy_wasm_web.sh' -print -quit 2>/dev/null || true)"
-              [ -n "$deploy_script" ] && break
-              deploy_script="$(find "$root" -type f -name 'deploy-wasm-web.sh' -print -quit 2>/dev/null || true)"
-              [ -n "$deploy_script" ] && break
-            done
-
-            if [ -z "$deploy_script" ]; then
-              echo "::error::Could not locate deploy_wasm_web.sh in the generated u1 project or portable kit."
-              for root in "$build_root" "$GITHUB_WORKSPACE/generated-client" "$EAGLER_PATCHER_ROOT"; do
-                [ -d "$root" ] || continue
-                find "$root" -type f -name '*deploy*web*.sh' -print 2>/dev/null || true
-                find "$root" -type f -name '*wasm*web*.sh' -print 2>/dev/null || true
-              done | sort -u | head -200 || true
-              exit 1
-            fi
-
-            echo "Found Eagler u1 deployment script: $deploy_script"
-            echo "=== deploy_wasm_web.sh source ==="
-            sed -n '1,260p' "$deploy_script"
-            chmod +x "$deploy_script"
-
-            echo "=== Checking required generated Wasm artifacts ==="
-            gen="$build_root/target_teavm_wasm_gc/build/generated/teavm/wasm-gc"
-            for required in "$gen/classes.wasm" "$gen/classes.wasm-runtime.js"; do
-              if [ ! -s "$required" ]; then
-                echo "::error::Missing required Eagler Wasm-GC artifact: $required"
-                exit 1
-              fi
-            done
-
-            echo "=== Running Eagler u1 web deployment ==="
-            deploy_dir="$(dirname "$deploy_script")"
-            cd "$deploy_dir"
-            bash "./$(basename "$deploy_script")"
-
-            web_dir="$build_root/target_teavm_wasm_gc/build/web"
-            if [ ! -d "$web_dir" ]; then
-              echo "::error::deploy_wasm_web.sh did not create $web_dir"
-              exit 1
-            fi
-
-            echo "=== Browser files produced by Eagler u1 deployment ==="
-            find "$web_dir" -maxdepth 2 -type f -printf '%s %p\n' | sort -nr | head -300 || true
-
-            if find "$web_dir" -maxdepth 1 -type f -name 'index.html' -print -quit | grep -q .; then
-              cp -a "$web_dir"/. "$dev_dir"/
-              found=1
-            fi
-          fi
-
-          if [ "$found" -eq 0 ]; then
-            echo "::error::Could not locate a pre-single-file Eagler browser output."
-            find "$build_root/target_teavm_wasm_gc" -maxdepth 6 -type f -print | sort | head -500 || true
-            exit 1
-          fi
-
-          echo "=== Pre-single-file browser client ==="
-          find "$dev_dir" -maxdepth 3 -type f -printf '%s %p\n' | sort -nr | head -100
-          echo "File count: $(find "$dev_dir" -type f | wc -l)"
-          du -sh "$dev_dir"
-
-          printf '%s\n'             'Pre-single-file Eaglercraft 26.2 VBV browser client'             ''             'This is the browser build produced before build-single-html.js creates the'             'final standalone HTML file.'             ''             'The browser client may require HTTP/HTTPS rather than file:// depending on'             'which TeaVM runtime files are present.'             > "$dev_dir/README-DEV-CLIENT.txt"
-
-      - name: Upload pre-single-file browser client
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: Eaglercraft-26.2-VBV-Dev-Web
-          path: dev-web-client
-          retention-days: 7
-          compression-level: 1
-          if-no-files-found: error
-
       - name: Save root checkpoint
         if: steps.repo_checkpoint.outputs.found != 'true'
         run: |
@@ -611,7 +446,6 @@ jobs:
           test -f "$GITHUB_WORKSPACE/checkpoint/game/src/main/resources/pack.png"
           echo "Root checkpoint created:"
           du -sh "$GITHUB_WORKSPACE/checkpoint"
-
       # This is the expensive-build checkpoint. If the packaging job fails,
       # GitHub can rerun only that failed job instead of rebuilding TeaVM.
       - name: Upload packaging checkpoint
@@ -642,12 +476,10 @@ jobs:
           test -s "$GITHUB_WORKSPACE/sounds.epk"
           echo "Repository sounds.epk is present:"
           ls -lh "$GITHUB_WORKSPACE/sounds.epk"
-
       - name: Initialize packaging warnings
         run: |
           set -euo pipefail
           : > "$GITHUB_WORKSPACE/packaging-warnings.txt"
-
       - name: Download packaging checkpoint
         uses: actions/download-artifact@v5
         with:
@@ -658,19 +490,16 @@ jobs:
         run: |
           set -euo pipefail
           rm -rf ModdedClientSource
-
           echo "=== Artifact layout ==="
           layout_file="$(mktemp)"
           find checkpoint -maxdepth 5 -type f -print | sort > "$layout_file"
           head -300 "$layout_file"
           rm -f "$layout_file"
-
           builder="$(find checkpoint -type f -path '*/wasm-toolchain/build-single-html.js' -print -quit || true)"
           if [ -z "$builder" ]; then
             echo "::error::Packaging artifact does not contain wasm-toolchain/build-single-html.js."
             exit 1
           fi
-
           # build-single-html.js is directly inside wasm-toolchain, so its
           # parent is the actual project root in this checkpoint.
           artifact_root="$(dirname "$(dirname "$builder")")"
@@ -679,7 +508,6 @@ jobs:
           # artifact layout that project root is checkpoint itself.
           mkdir -p ModdedClientSource
           cp -a "$artifact_root"/. ModdedClientSource/
-
           echo "=== Normalized checkpoint ==="
           echo "Artifact root: $artifact_root"
           test -f ModdedClientSource/wasm-toolchain/build-single-html.js
@@ -687,7 +515,6 @@ jobs:
           test -f ModdedClientSource/game/build/classes/java/main/pack.png
           echo "Packaging checkpoint restored successfully."
           du -sh ModdedClientSource
-
       - name: Setup Java 25
         uses: actions/setup-java@v5
         with:
@@ -707,7 +534,6 @@ jobs:
           echo "Gradle wrapper is executable."
           java -version
           ./gradlew --version --no-daemon
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -720,7 +546,6 @@ jobs:
           key: npm-eagler-vbv-node24-${{ runner.os }}-${{ hashFiles('ModdedClientSource/package.json') }}
           restore-keys: |
             npm-eagler-vbv-node24-${{ runner.os }}-
-
       - name: Install single-HTML packaging dependencies
         working-directory: ModdedClientSource
         run: |
@@ -730,26 +555,21 @@ jobs:
           else
             npm install --no-audit --no-fund
           fi
-
       - name: Prepare sounds.epk for single-HTML packaging
         working-directory: ModdedClientSource
         run: |
           set -euo pipefail
-
           echo "=== Looking for sounds EPK Gradle task ==="
           tasks="$(./gradlew :target_lwjgl_desktop:tasks --all --console=plain --no-daemon 2>/dev/null || true)"
           printf '%s\n' "$tasks" | grep -i 'sound.*epk\|epk.*sound' || true
-
           if printf '%s\n' "$tasks" | grep -Eq '^.*buildSoundsEPK[[:space:]]'; then
             echo "Running :target_lwjgl_desktop:buildSoundsEPK"
             ./gradlew :target_lwjgl_desktop:buildSoundsEPK --console=plain --no-daemon --max-workers=1 -Dorg.gradle.parallel=false -Dorg.gradle.jvmargs=-Xmx4096m
           else
             echo "No buildSoundsEPK task exposed; checking the repository root for sounds.epk."
           fi
-
           web_dir="$PWD/target_teavm_wasm_gc/build/web"
           mkdir -p "$web_dir"
-
           # music.epk belongs to the regular TeaVM web-assets build. It is
           # not required as a user-supplied input for this custom client.
           # If the regular asset is unavailable, create an empty placeholder
@@ -763,7 +583,6 @@ jobs:
             mkdir -p "$(dirname "$music")"
             : > "$music"
           fi
-
           sounds="$(find . -type f -name 'sounds.epk' -print -quit || true)"
           if [ -n "$sounds" ]; then
             echo "Using generated sounds.epk from: $sounds"
@@ -776,11 +595,9 @@ jobs:
             echo "Expected: $GITHUB_WORKSPACE/sounds.epk"
             exit 1
           fi
-
           test -s "$web_dir/sounds.epk"
           echo "Installed sounds.epk:"
           ls -lh "$web_dir/sounds.epk"
-
       - name: Show packaging warnings
         if: always()
         run: |
@@ -791,7 +608,6 @@ jobs:
           else
             echo "None."
           fi
-
       - name: Build single-file HTML client
         working-directory: ModdedClientSource
         run: |
@@ -801,16 +617,13 @@ jobs:
           node wasm-toolchain/build-single-html.js
           builder_status=$?
           set -e
-
           echo "=== Generated HTML files ==="
           find . -type f -name '*.html' -printf '%s %p\\n' | sort -nr | head -50
           html_count="$(find . -type f -name '*.html' | wc -l)"
-
           if [ "$html_count" -eq 0 ]; then
             echo "::error::build-single-html.js failed and produced no HTML file (exit code $builder_status)."
             exit "$builder_status"
           fi
-
           # The Eagler single-HTML builder writes the client HTML before its
           # optional music-pack export. A missing/invalid music EPK therefore
           # must not discard an otherwise successfully generated client.
@@ -818,7 +631,6 @@ jobs:
             echo "WARNING: single-HTML builder exited with code $builder_status, but it produced the client HTML."
             echo "WARNING: optional post-build asset export failed; continuing with the generated HTML." >> "$GITHUB_WORKSPACE/packaging-warnings.txt"
           fi
-
       - name: Select final single HTML
         run: |
           set -euo pipefail
@@ -831,7 +643,6 @@ jobs:
           cp "$candidate" final-client/Eaglercraft-26.2-VBV-Modded.html
           echo "Final single HTML:"
           ls -lh final-client/Eaglercraft-26.2-VBV-Modded.html
-
       - name: Report build size changes
         if: always()
         run: |
@@ -875,7 +686,6 @@ jobs:
           echo
           echo "=== Build size report ==="
           cat "$report"
-
       - name: Upload build size report
         if: always()
         uses: actions/upload-artifact@v4
@@ -897,7 +707,6 @@ jobs:
           else
             echo "No packaging warnings."
           fi
-
       - name: Upload final client
         uses: actions/upload-artifact@v4
         with:
