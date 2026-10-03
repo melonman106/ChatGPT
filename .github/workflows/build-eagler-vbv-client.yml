@@ -59,6 +59,7 @@ jobs:
           test -f "$GITHUB_WORKSPACE/ModdedClientSource/game/src/main/resources/pack.png"
           echo "Root checkpoint restored directly."
           du -sh "$GITHUB_WORKSPACE/ModdedClientSource"
+          echo "MODDED_CLIENT_SOURCE_READY=true" >> "$GITHUB_ENV"
       - name: Setup Python 3.14
         uses: actions/setup-python@v6
         with:
@@ -609,6 +610,7 @@ jobs:
             cp -a "$resources"/vbvclient/mods/. "$game_classes/vbvclient/mods/"
           fi
           node --version
+          echo "MODDED_CLIENT_SOURCE_READY=true" >> "$GITHUB_ENV"
       - name: Restore Gradle and TeaVM incremental cache
         id: teavm_cache_restore
         if: success()
@@ -821,7 +823,7 @@ jobs:
             echo "=== WASM-GC build directories ==="
             find "$GITHUB_WORKSPACE/ModdedClientSource/target_teavm_wasm_gc/build" -maxdepth 4 -type d -print 2>/dev/null | sort || true
             echo "=== Available WASM/HTML output ==="
-            find "$GITHUB_WORKSPACE/ModdedClientSource" -type f \\( -name '*.wasm' -o -name '*.html' \\) -printf '%s %p\\n' 2>/dev/null | sort -nr | head -200 || true
+            find "$GITHUB_WORKSPACE/ModdedClientSource" -type f \( -name '*.wasm' -o -name '*.html' \) -printf '%s %p\n' 2>/dev/null | sort -nr | head -200 || true
             exit 1
           fi
 
@@ -927,7 +929,7 @@ jobs:
       # run-specific key means a failed run can publish its newly updated
       # incremental cache instead of being blocked by an older immutable cache.
       - name: Save Gradle and TeaVM incremental cache
-        if: always() && hashFiles('ModdedClientSource/**') != ''
+        if: always() && env.MODDED_CLIENT_SOURCE_READY == 'true'
         uses: actions/cache/save@v4
         with:
           path: |
@@ -937,7 +939,7 @@ jobs:
             ModdedClientSource/target_teavm_wasm_gc/build
           key: vbv-teavm-wasm-v2-${{ hashFiles('ViaBackport26.2-ClientSide/src/main/java/**/*.java', 'ViaBackport26.2-ClientSide/src/main/resources/**/*.json', 'ViaBackport26.2-ClientSide/patch/**', 'ModsPack/**/*.zip', 'u1-1-source/**', 'U1-Patcher/portable-kit.zip', '.github/workflows/build-eagler-vbv-client.yml') }}-${{ github.run_id }}
       - name: Save root checkpoint
-        if: always() && steps.repo_checkpoint.outputs.found != 'true' && hashFiles('ModdedClientSource/**') != ''
+        if: always() && steps.repo_checkpoint.outputs.found != 'true' && env.MODDED_CLIENT_SOURCE_READY == 'true'
         run: |
           set -euo pipefail
           rm -rf "$GITHUB_WORKSPACE/checkpoint"
@@ -950,7 +952,7 @@ jobs:
       # This is the expensive-build checkpoint for the raw WASM web build.
       # GitHub can rerun only that failed job instead of rebuilding TeaVM.
       - name: Upload WASM-GC failure checkpoint
-        if: always() && hashFiles('ModdedClientSource/**') != ''
+        if: always() && env.MODDED_CLIENT_SOURCE_READY == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: vbv-wasm-build-checkpoint
