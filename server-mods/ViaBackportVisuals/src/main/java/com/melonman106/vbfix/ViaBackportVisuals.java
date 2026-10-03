@@ -79,9 +79,9 @@ public final class ViaBackportVisuals implements ModInitializer {
             "pale_oak_slab",
             "end_stone_brick_slab",
             "resin_brick_slab",
-            "resin_brick_slab",
             "cinnabar_brick_slab",
-            "sulfur_brick_slab"
+            "sulfur_brick_slab",
+            "polished_tuff_slab"
     };
 
     private static final String[] CONCRETE_STAIR_PLACEHOLDERS = {
