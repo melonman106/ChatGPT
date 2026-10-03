@@ -9,6 +9,7 @@ on:
       - "eaglercraft-26.2-patcher-main.tar.gz"
       - "eaglercraft-26.2-patcher-main (1).tar.gz"
       - "u1-1-source/**"
+      - "U1-Patcher/**"
       - ".github/workflows/build-eagler-vbv-client.yml"
   workflow_dispatch:
 
@@ -112,6 +113,83 @@ jobs:
           find "$source_root/patcher" -maxdepth 6 -type f \
             \( -name '*.zip' -o -name '*.jar' \) -printf '%s %p\n' | sort -nr | head -500
 
+      - name: Resolve U1.1 inputs with legacy U1 fallback
+        if: steps.repo_checkpoint.outputs.found != 'true'
+        run: |
+          set -euo pipefail
+
+          source_root="$GITHUB_WORKSPACE/u1-1-source"
+          legacy_zip="$GITHUB_WORKSPACE/U1-Patcher/portable-kit.zip"
+          legacy_root="$GITHUB_WORKSPACE/legacy-u1-kit"
+          mkdir -p "$legacy_root"
+
+          # U1.1's checked-in source contains the Java CLI and source-side
+          # tooling, but its source archive intentionally does NOT contain
+          # the authenticated binary sidecars. The original U1 portable kit
+          # does contain those sidecars, so use it only for inputs U1.1 cannot
+          # resolve. The U1.1 Java CLI remains the active patcher.
+          if [ ! -f "$legacy_zip" ]; then
+            echo "::error::Legacy U1 portable-kit.zip is missing: $legacy_zip"
+            exit 1
+          fi
+          unzip -q -o "$legacy_zip" -d "$legacy_root"
+
+          resolve_input() {
+            local label="$1"
+            local filename="$2"
+            local u11_candidate="$source_root/patcher/java-cli/$filename"
+            local found=""
+
+            if [ -f "$u11_candidate" ]; then
+              found="$u11_candidate"
+              echo "$label: U1.1 -> $found"
+            else
+              found="$(find "$source_root" -type f -name "$filename" -print -quit 2>/dev/null || true)"
+              if [ -n "$found" ]; then
+                echo "$label: U1.1 source tree -> $found"
+              fi
+            fi
+
+            if [ -z "$found" ]; then
+              found="$(find "$legacy_root" -type f -name "$filename" -print -quit 2>/dev/null || true)"
+              if [ -n "$found" ]; then
+                echo "$label: legacy U1 fallback -> $found"
+              fi
+            fi
+
+            if [ -z "$found" ]; then
+              echo "::error::Could not resolve $label ($filename) from U1.1 or legacy U1 portable kit."
+              exit 1
+            fi
+            printf '%s' "$(realpath "$found")"
+          }
+
+          patch_bundle="$(resolve_input 'Source patch bundle' 'source-patch-bundle.zip')"
+          skeleton="$(resolve_input 'Project skeleton' 'project-skeleton-u1-nettyfix.zip')"
+
+          bundle_sha256="$(sha256sum "$patch_bundle" | cut -d' ' -f1)"
+          skeleton_sha256="$(sha256sum "$skeleton" | cut -d' ' -f1)"
+
+          # These are the exact U1.1 acceptance identities documented by the
+          # source. Do not silently substitute a different bundle/skeleton.
+          test "$bundle_sha256" = "fd944e9cabbebbf4bddce8a39e1b233b3c7d0cd4f860f9cae37550a3fcfa8b02"
+          test "$skeleton_sha256" = "a9172bdd903ea65afd4c87cdb29b500c237c823fdd94789c2e90561b1b049469"
+
+          echo "EAGLER_PATCH_BUNDLE=$patch_bundle" >> "$GITHUB_ENV"
+          echo "EAGLER_PROJECT_SKELETON=$skeleton" >> "$GITHUB_ENV"
+          echo "EAGLER_PATCH_BUNDLE_SHA256=$bundle_sha256" >> "$GITHUB_ENV"
+          echo "EAGLER_PROJECT_SKELETON_SHA256=$skeleton_sha256" >> "$GITHUB_ENV"
+
+          echo "=== Final resolved U1 input map ==="
+          printf 'patcher=%s\\npatch_bundle=%s\\nproject_skeleton=%s\\n' \\
+            "$EAGLER_PATCHER" "$patch_bundle" "$skeleton"
+          echo "patch_bundle_sha256=$bundle_sha256"
+          echo "project_skeleton_sha256=$skeleton_sha256"
+          echo "=== Legacy kit matching files (diagnostic) ==="
+          find "$legacy_root" -type f \\
+            \( -name 'source-patch-bundle.zip' -o -name 'project-skeleton-u1-nettyfix.zip' -o -name 'project-skeleton-v5-teavm-runtime-verified.zip' \) \\
+            -printf '%p\\n' | sort || true
+
       - name: Download official Minecraft 26.2 client
         if: steps.repo_checkpoint.outputs.found != 'true'
         run: |
@@ -156,8 +234,8 @@ jobs:
         if: steps.repo_checkpoint.outputs.found != 'true'
         run: |
           set -euo pipefail
-          patch_bundle="$EAGLER_PATCHER_ROOT/source-patch-bundle.zip"
-          skeleton="$EAGLER_PATCHER_ROOT/project-skeleton-v5-teavm-runtime-verified.zip"
+          patch_bundle="$EAGLER_PATCH_BUNDLE"
+          skeleton="$EAGLER_PROJECT_SKELETON"
           test -f "$patch_bundle"
           test -f "$skeleton"
           work="$(mktemp -d)"
