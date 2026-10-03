@@ -21,6 +21,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: eagler-vbv-client-${{ github.ref }}
@@ -53,7 +54,34 @@ jobs:
           rm -rf "$work" "$GITHUB_WORKSPACE/checkpoint"
           mkdir -p "$work"
           echo "=== Downloading precompiled checkpoint ==="
-          curl -fL --retry 3 --retry-delay 2 --location "$url" -o "$archive"
+          # GitHub Actions artifact browser/download URLs are not public
+          # file URLs. They return 404/redirects to callers that are not
+          # authenticated. Convert the normal browser artifact URL to the
+          # authenticated REST download endpoint and use this workflow's
+          # read-only GITHUB_TOKEN.
+          download_url="$url"
+          curl_auth_args=()
+          if [[ "$url" =~ ^https://github\\.com/([^/]+/[^/]+)/actions/artifacts/([0-9]+)/zip/?$ ]]; then
+            repo_from_url="${BASH_REMATCH[1]}"
+            artifact_id_from_url="${BASH_REMATCH[2]}"
+            download_url="https://api.github.com/repos/${repo_from_url}/actions/artifacts/${artifact_id_from_url}/zip"
+            curl_auth_args=(
+              -H "Authorization: Bearer $GITHUB_TOKEN"
+              -H "Accept: application/vnd.github+json"
+              -H "X-GitHub-Api-Version: 2022-11-28"
+            )
+            echo "Detected GitHub artifact URL; using authenticated artifact API."
+            echo "Artifact: $artifact_id_from_url"
+          elif [[ "$url" =~ ^https://api\\.github\\.com/repos/[^/]+/[^/]+/actions/artifacts/[0-9]+/zip/?$ ]]; then
+            curl_auth_args=(
+              -H "Authorization: Bearer $GITHUB_TOKEN"
+              -H "Accept: application/vnd.github+json"
+              -H "X-GitHub-Api-Version: 2022-11-28"
+            )
+            echo "Detected GitHub artifact API URL; using GITHUB_TOKEN."
+          fi
+
+          curl -fL --retry 3 --retry-delay 2 --location "${curl_auth_args[@]}" "$download_url" -o "$archive"
           test -s "$archive"
           echo "Downloaded ZIP: $(du -h "$archive" | cut -f1)"
           echo "=== Extracting precompiled checkpoint ==="
