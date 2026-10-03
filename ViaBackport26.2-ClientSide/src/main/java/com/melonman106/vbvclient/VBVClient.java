@@ -38,6 +38,16 @@ public final class VBVClient {
         ));
 
         registerMod(new VBVModInfo(
+            "simple-hud-enhanced",
+            "Simple HUD Enhanced",
+            "Native Eagler port 1.0.0",
+            "SoRadGaming / Eagler client port",
+            "Pick-and-choose HUD with FPS, coordinates, speed, light, time, player, health, hunger, movement, effects, and equipment information.",
+            "vbvclient/mods/simple-hud-enhanced/pack.png",
+            false
+        ));
+
+        registerMod(new VBVModInfo(
             "mouse-tweaks",
             "Mouse Tweaks",
             "Native Eagler port 1.0.0",
