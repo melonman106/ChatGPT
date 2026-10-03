@@ -31,6 +31,11 @@ public final class VBVModsScreen extends Screen {
         heading.active = false;
         addRenderableWidget(heading);
 
+        addRenderableWidget(Button.builder(
+            Component.literal("World Map"),
+            button -> VBVNav.open(new VBVWorldMapScreen(this))
+        ).bounds(width / 2 + 105, 12, 100, 20).build());
+
         int y = 44;
         for (VBVModInfo info : entries) {
             final VBVModInfo selected = info;
