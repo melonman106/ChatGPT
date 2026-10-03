@@ -38,6 +38,16 @@ public final class VBVClient {
         ));
 
         registerMod(new VBVModInfo(
+            "mouse-tweaks",
+            "Mouse Tweaks",
+            "Native Eagler port 1.0.0",
+            "YaLTeR / Eagler client port",
+            "Inventory mouse improvements: wheel-based item selection and native hooks for quick-move and drag-evenly behavior.",
+            "vbvclient/mods/mouse-tweaks/pack.png",
+            false
+        ));
+
+        registerMod(new VBVModInfo(
             "appleskin",
             "AppleSkin",
             "Eagler port 1.0.0",
