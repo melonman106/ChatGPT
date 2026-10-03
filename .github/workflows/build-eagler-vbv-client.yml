@@ -148,7 +148,9 @@ jobs:
           }
 
           echo "=== U1.1/legacy input inventory ==="
-          find "$source_root" "$legacy_root" -type f             ( -name '*.zip' -o -name 'eagler-patcher' )             -printf '%p\n' | sort || true
+          find "$source_root" "$legacy_root" -type f \
+            \( -name '*.zip' -o -name 'eagler-patcher' \) \
+            -printf '%p\n' | sort || true
 
           u11_bundle="$(find_sha "$source_root" "$u11_bundle_sha" || true)"
           u11_skeleton="$(find_sha "$source_root" "$u11_skeleton_sha" || true)"
@@ -220,8 +222,10 @@ jobs:
           test "$(sha256sum "$EAGLER_PROJECT_SKELETON" | cut -d' ' -f1)" = "$EAGLER_EXPECTED_SKELETON_SHA256"
 
           echo "=== Final resolved input map ==="
-          printf 'mode=%s\npatcher=%s\npatch_bundle=%s\nproject_skeleton=%s\n'             "$EAGLER_PATCHER_MODE" "$EAGLER_PATCHER" "$EAGLER_PATCH_BUNDLE" "$EAGLER_PROJECT_SKELETON"
-          printf 'patch_bundle_sha256=%s\nskeleton_sha256=%s\n'             "$EAGLER_PATCH_BUNDLE_SHA256" "$EAGLER_PROJECT_SKELETON_SHA256"
+          printf 'mode=%s\npatcher=%s\npatch_bundle=%s\nproject_skeleton=%s\n' \
+            "$EAGLER_PATCHER_MODE" "$EAGLER_PATCHER" "$EAGLER_PATCH_BUNDLE" "$EAGLER_PROJECT_SKELETON"
+          printf 'patch_bundle_sha256=%s\nskeleton_sha256=%s\n' \
+            "$EAGLER_PATCH_BUNDLE_SHA256" "$EAGLER_PROJECT_SKELETON_SHA256"
           ls -lh "$EAGLER_PATCH_BUNDLE" "$EAGLER_PROJECT_SKELETON" "$EAGLER_PATCHER"
           file "$EAGLER_PATCH_BUNDLE" "$EAGLER_PROJECT_SKELETON" "$EAGLER_PATCHER"
 
