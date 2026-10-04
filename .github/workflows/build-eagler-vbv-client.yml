@@ -736,9 +736,8 @@ jobs:
             ~/.gradle/wrapper
             ModdedClientSource/.gradle
             ModdedClientSource/target_teavm_wasm_gc/build
-          key: vbv-teavm-wasm-v5-${{ hashFiles('ViaBackport26.2-ClientSide/src/main/java/**/*.java', 'ViaBackport26.2-ClientSide/src/main/resources/**/*.json', 'ViaBackport26.2-ClientSide/patch/**', 'ModsPack/**/*.zip', 'u1-1-source/**', 'U1-Patcher/portable-kit.zip') }}
-          restore-keys: |
-            vbv-teavm-wasm-v3-
+          key: vbv-teavm-wasm-v6-${{ hashFiles('ViaBackport26.2-ClientSide/src/main/java/**/*.java', 'ViaBackport26.2-ClientSide/src/main/resources/**/*.json', 'ViaBackport26.2-ClientSide/patch/**', 'ModsPack/**/*.zip', 'u1-1-source/**', 'U1-Patcher/portable-kit.zip') }}
+          # Exact-key restore only. Never fall back to the old v3 cache.
       - name: Snapshot generated client before expensive WASM build
         if: success() && steps.repo_checkpoint.outputs.found != 'true' && inputs.compiled_zip_url == ''
         run: |
@@ -1082,7 +1081,7 @@ jobs:
             ~/.gradle/wrapper
             ModdedClientSource/.gradle
             ModdedClientSource/target_teavm_wasm_gc/build
-          key: vbv-teavm-wasm-v5-${{ hashFiles('ViaBackport26.2-ClientSide/src/main/java/**/*.java', 'ViaBackport26.2-ClientSide/src/main/resources/**/*.json', 'ViaBackport26.2-ClientSide/patch/**', 'ModsPack/**/*.zip', 'u1-1-source/**', 'U1-Patcher/portable-kit.zip') }}
+          key: vbv-teavm-wasm-v6-${{ hashFiles('ViaBackport26.2-ClientSide/src/main/java/**/*.java', 'ViaBackport26.2-ClientSide/src/main/resources/**/*.json', 'ModsPack/**/*.zip', 'u1-1-source/**', 'U1-Patcher/portable-kit.zip') }}
 
       - name: Save Gradle and WASM-GC cache (partial progress after failure)
         if: failure() && inputs.compiled_zip_url == '' && steps.wasm_web_cache_restore.outputs.cache-hit != 'true'
@@ -1095,7 +1094,7 @@ jobs:
             ModdedClientSource/target_teavm_wasm_gc/build
           # Unique key: a partial build must never occupy the exact key, or the
           # next run would see a cache hit and skip the WASM build entirely.
-          key: vbv-teavm-wasm-v5-partial-${{ github.run_id }}
+          key: vbv-teavm-wasm-v6-partial-${{ github.run_id }}
 
       - name: Normalize imported precompiled web output
         if: success() && inputs.compiled_zip_url != ''
