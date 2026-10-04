@@ -448,13 +448,14 @@ jobs:
           echo "=== Restoring runtime resources ==="
           cp -a "$temp_resources/version.json" "$resources/"
           cp -a "$temp_resources/pack.mcmeta" "$resources/"
-          # Add official Minecraft assets without overwriting any resources
-          # supplied by the Eagler u1 skeleton. This is intentionally not
-          # limited to a hard-coded shaders/ directory: u1 keeps some
-          # Eagler/WebGL resources outside the vanilla Minecraft shader path.
-          mkdir -p "$resources/assets"
-          cp -an "$temp_resources/assets"/. "$resources/assets"/
-          echo "=== Preserved existing Eagler resources while adding vanilla assets ==="
+          # Do NOT overlay the vanilla assets tree. Eagler u1 owns the
+          # WebGL shader/pipeline resources in this tree; copying vanilla
+          # shader/pipeline definitions into it makes the WebGL backend request
+          # sources it cannot compile. Only restore the language file required
+          # by the normal Minecraft resource checks.
+          mkdir -p "$resources/assets/minecraft/lang"
+          cp -f "$temp_resources/assets/minecraft/lang/en_us.json" "$resources/assets/minecraft/lang/en_us.json"
+          echo "=== Preserved Eagler u1 assets; restored vanilla language only ==="
           if find "$resources" -type f \( -name '*.vsh' -o -name '*.fsh' -o -name '*.glsl' \) -print -quit | grep -q .; then
             echo "Eagler shader source files detected:"
             find "$resources" -type f \( -name '*.vsh' -o -name '*.fsh' -o -name '*.glsl' \) -print | sort | head -100
@@ -628,12 +629,13 @@ jobs:
             printf '%s\n' '{' '  "pack": {' '    "description": "Minecraft 26.2",' '    "min_format": 88,' '    "max_format": 88' '  }' '}' > "$resources/pack.mcmeta"
           fi
           cp -a "$temp_resources/version.json" "$resources/"
-          # Add official assets without overwriting Eagler/u1 resources.
-          # The source project is the authoritative owner of Eagler-specific
-          # WebGL resources, while vanilla files are added only when absent.
-          mkdir -p "$resources/assets"
-          cp -an "$temp_resources/assets"/. "$resources/assets"/
-          echo "=== Preserved Eagler resources in packaging source ==="
+          # Do NOT overlay the vanilla assets tree here. Eagler u1's
+          # resource tree contains the WebGL-compatible shader/pipeline
+          # resources. A vanilla shader tree can introduce incompatible GLSL
+          # programs such as core/entity and pipeline/*.
+          mkdir -p "$resources/assets/minecraft/lang"
+          cp -f "$temp_resources/assets/minecraft/lang/en_us.json" "$resources/assets/minecraft/lang/en_us.json"
+          echo "=== Preserved Eagler u1 resources; restored vanilla language only ==="
           if find "$resources" -type f \( -name '*.vsh' -o -name '*.fsh' -o -name '*.glsl' \) -print -quit | grep -q .; then
             echo "Eagler shader source files detected:"
             find "$resources" -type f \( -name '*.vsh' -o -name '*.fsh' -o -name '*.glsl' \) -print | sort | head -100
@@ -1098,70 +1100,3 @@ jobs:
                 }
               });
             }
-          };
-          EOF
-
-          printf '%s\n' \
-            'Cloudflare R2 deployment bundle' \
-            '' \
-            'Upload the CONTENTS of this folder to the ROOT of your R2 bucket.' \
-            'The raw .wasm files are intentionally included.' \
-            'Edit wrangler.toml.example before deploying the Worker.' \
-            > "$output_dir/README-CLOUDFLARE.txt"
-
-          echo "=== Cloudflare R2 bundle ==="
-          find "$output_dir" -type f -printf '%s %p\n' | sort -nr | head -100
-          echo "File count: $(find "$output_dir" -type f | wc -l)"
-          du -sh "$output_dir"
-
-      - name: Upload Cloudflare R2 web bundle
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: Eaglercraft-26.2-VBV-Cloudflare-R2
-          path: cloudflare-r2-client
-          retention-days: 14
-          compression-level: 1
-          if-no-files-found: error
-
-      # Save the expensive TeaVM/Gradle state even when WASM-GC fails. The
-      # run-specific key means a failed run can publish its newly updated
-      # incremental cache instead of being blocked by an older immutable cache.
-      - name: Save Gradle and TeaVM incremental cache
-        if: always() && env.MODDED_CLIENT_SOURCE_READY == 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-            ModdedClientSource/.gradle
-            ModdedClientSource/target_teavm_wasm_gc/build
-          key: vbv-teavm-wasm-v2-${{ hashFiles('ViaBackport26.2-ClientSide/src/main/java/**/*.java', 'ViaBackport26.2-ClientSide/src/main/resources/**/*.json', 'ViaBackport26.2-ClientSide/patch/**', 'ModsPack/**/*.zip', 'u1-1-source/**', 'U1-Patcher/portable-kit.zip', '.github/workflows/build-eagler-vbv-client.yml') }}-${{ github.run_id }}
-      - name: Save root checkpoint
-        if: always() && steps.repo_checkpoint.outputs.found != 'true' && env.MODDED_CLIENT_SOURCE_READY == 'true'
-        run: |
-          set -euo pipefail
-          rm -rf "$GITHUB_WORKSPACE/checkpoint"
-          cp -a "$GITHUB_WORKSPACE/ModdedClientSource" "$GITHUB_WORKSPACE/checkpoint"
-          test -f "$GITHUB_WORKSPACE/checkpoint/wasm-toolchain/build-single-html.js"
-          test -f "$GITHUB_WORKSPACE/checkpoint/game/build/libs/game.jar"
-          test -f "$GITHUB_WORKSPACE/checkpoint/game/src/main/resources/pack.png"
-          echo "Root checkpoint created:"
-          du -sh "$GITHUB_WORKSPACE/checkpoint"
-      # This is the expensive-build checkpoint for the raw WASM web build.
-      # GitHub can rerun only that failed job instead of rebuilding TeaVM.
-      # Do not upload TeaVM's incremental directory: its generated class/method
-      # names contain characters such as <, >, and : that upload-artifact rejects
-      # on Windows-compatible filesystems. The Gradle/TeaVM cache above still
-      # preserves that directory for incremental compilation.
-      - name: Upload WASM-GC failure checkpoint
-        if: always() && env.MODDED_CLIENT_SOURCE_READY == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: vbv-wasm-build-checkpoint
-          path: |
-            ModdedClientSource
-            !ModdedClientSource/target_teavm_wasm_gc/build/teavm-incremental/**
-          retention-days: 7
-          compression-level: 1
-          if-no-files-found: error
