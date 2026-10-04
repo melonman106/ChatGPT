@@ -687,13 +687,6 @@ jobs:
             exit 1
           fi
           echo "Found single-HTML builder: $single_html_script"
-      - name: Save reusable generated client checkpoint
-        if: success() && steps.repo_checkpoint.outputs.found != 'true' && inputs.compiled_zip_url == ''
-        uses: actions/cache/save@v4
-        with:
-          path: checkpoint
-          key: eagler-vbv-root-checkpoint-v6-u1-1-${{ hashFiles('ViaBackport26.2-ClientSide/src/main/java/**/*.java', 'ViaBackport26.2-ClientSide/src/main/resources/**/*.json', 'ViaBackport26.2-ClientSide/patch/**', 'ModsPack/**/*.zip', 'eaglercraft-26.2-patcher-main (1).tar.gz', 'u1-1-source/**', 'U1-Patcher/portable-kit.zip') }}
-
       - name: Restore completed WASM-GC output cache
         id: wasm_web_cache_restore
         if: success() && inputs.compiled_zip_url == ''
@@ -736,6 +729,13 @@ jobs:
           test -f "$GITHUB_WORKSPACE/checkpoint/game/build/libs/game.jar"
           test -f "$GITHUB_WORKSPACE/checkpoint/wasm-toolchain/build-single-html.js"
           echo "Reusable generated-client checkpoint created before TeaVM."
+
+      - name: Save reusable generated client checkpoint
+        if: success() && steps.repo_checkpoint.outputs.found != 'true' && inputs.compiled_zip_url == ''
+        uses: actions/cache/save@v4
+        with:
+          path: checkpoint
+          key: eagler-vbv-root-checkpoint-v6-u1-1-${{ hashFiles('ViaBackport26.2-ClientSide/src/main/java/**/*.java', 'ViaBackport26.2-ClientSide/src/main/resources/**/*.json', 'ViaBackport26.2-ClientSide/patch/**', 'ModsPack/**/*.zip', 'eaglercraft-26.2-patcher-main (1).tar.gz', 'u1-1-source/**', 'U1-Patcher/portable-kit.zip') }}
 
       - name: Restore Gradle and TeaVM incremental cache
         id: teavm_cache_restore
