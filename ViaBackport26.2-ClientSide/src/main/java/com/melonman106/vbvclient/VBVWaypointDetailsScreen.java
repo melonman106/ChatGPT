@@ -23,7 +23,9 @@ public final class VBVWaypointDetailsScreen extends Screen {
     @Override
     protected void init() {
         super.init();
-        addRenderableWidget(Button.builder(Component.literal("Center on Map"), button -> VBVNav.open(new VBVWorldMapScreen(parent)))
+        // Previously this opened the map on the player's position, not the waypoint.
+        addRenderableWidget(Button.builder(Component.literal("Center on Map"),
+                button -> VBVNav.open(new VBVWorldMapScreen(parent, waypoint.x(), waypoint.z())))
             .bounds(width / 2 - 70, height / 2 - 30, 140, 20).build());
         addRenderableWidget(Button.builder(Component.literal("Delete"), button -> {
             VBVWorldMap.removeWaypoint(VBVWorldMap.worldKey(Minecraft.getInstance()), waypoint.id());
