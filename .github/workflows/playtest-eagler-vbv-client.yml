@@ -27,8 +27,8 @@ jobs:
         run: |
           set -euo pipefail
           run_json="$(gh run list --repo "${{ github.repository }}" --workflow "Build Eaglercraft 26.2 u1 VBV Client" --status success --limit 10 --json databaseId,headSha,createdAt)"
-          run_id="$(printf '%s' "$run_json" | jq -r '.[0].databaseId' | head -1)"
-          if [ -z "$run_id" ] || [ "$run_id" = "null" ]; then
+          run_id="$(printf '%s' "$run_json" | jq -r '.[0].databaseId // empty')"
+          if [ -z "$run_id" ]; then
             echo "::error::No successful Eagler client build is available to play-test yet."
             exit 1
           fi
@@ -43,16 +43,18 @@ jobs:
           set -euo pipefail
           rm -rf playtest-client
           mkdir -p playtest-client
-          gh run download "${{ steps.build.outputs.run_id }}" --repo "${{ github.repository }}" --name "ViaBackport26.2-ClientSide" --dir playtest-client
-          client="$(find playtest-client -type f -name '*.html' -print -quit)"
-          if [ -z "$client" ]; then
-            echo "::error::The successful build did not contain a final HTML client artifact."
+          # The build workflow uploads "Eaglercraft-26.2-VBV-WASM-GC-<run id>"
+          # (artifacts expire after 7 days; re-run the build if this 404s).
+          gh run download "${{ steps.build.outputs.run_id }}" --repo "${{ github.repository }}" \
+            --name "Eaglercraft-26.2-VBV-WASM-GC-${{ steps.build.outputs.run_id }}" --dir playtest-client
+          if [ ! -s playtest-client/index.html ]; then
+            echo "::error::The build artifact has no index.html at its root."
             find playtest-client -maxdepth 3 -type f -print || true
             exit 1
           fi
-          cp "$client" playtest-client/index.html
-          echo "Play-test client:"
-          ls -lh playtest-client/index.html
+          # The WASM-GC client is a multi-file bundle (classes.wasm, assets.epk, ...),
+          # so serve the whole directory instead of copying index.html alone.
+          ls -lh playtest-client | head -50
 
       - name: Install Chromium and Playwright
         shell: bash
@@ -66,7 +68,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          nohup python3 -m http.server 8080 --directory playtest-client > web-server.log 2>&1 &
+          nohup python3 -m http.server 8080 --bind 127.0.0.1 --directory playtest-client > web-server.log 2>&1 &
           echo $! > web-server.pid
           sleep 2
           curl -fsS http://127.0.0.1:8080/index.html >/dev/null
@@ -130,19 +132,38 @@ jobs:
             process.exit(3);
           }
 
-          console.log('PLAY TEST PASSED: client loaded, created a canvas, and accepted keyboard/mouse input.');
+          // Backend checks: shader/pipeline/WebGL failures and missing runtime files must fail the test,
+          // not just uncaught JS exceptions (Eagler logs GLSL/pipeline problems as console errors).
+          const gfxPattern = /shader|glsl|webgl|pipeline|program|link(ing)? fail|compile/i;
+          const gfxErrors = [...consoleErrors, ...errors].filter(m => gfxPattern.test(m));
+          if (gfxErrors.length > 0) {
+            console.error('PLAY TEST FAILED: shader/pipeline/WebGL errors:');
+            for (const m of gfxErrors) console.error('  ' + m);
+            await browser.close();
+            process.exit(4);
+          }
+          const missing = failedRequests.filter(r => /\.(wasm|epk|js|html)(\?|$)/i.test(r.url));
+          if (missing.length > 0) {
+            console.error('PLAY TEST FAILED: runtime files failed to load:');
+            for (const r of missing) console.error('  ' + r.url);
+            await browser.close();
+            process.exit(5);
+          }
+
+          console.log('PLAY TEST PASSED: client loaded, created a canvas, accepted input, no shader/pipeline errors.');
           await browser.close();
           EOF
           node playtest.mjs
 
-      - name: Upload final HTML for manual testing
+      - name: Upload client bundle for manual testing
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Eaglercraft-26.2-VBV-Manual-Test-HTML
-          path: playtest-client/index.html
+          name: Eaglercraft-26.2-VBV-Manual-Test-Bundle
+          path: playtest-client
           retention-days: 14
           if-no-files-found: error
+          compression-level: 0
 
       - name: Upload play-test evidence
         if: always()
