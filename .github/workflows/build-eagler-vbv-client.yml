@@ -1120,3 +1120,25 @@ jobs:
                 }
               });
             }
+          };
+          EOF
+
+      - name: Upload WASM-GC web artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Eaglercraft-26.2-VBV-WASM-GC-${{ github.run_id }}
+          path: cloudflare-r2-client
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+      - name: WASM-GC artifact summary
+        if: success()
+        run: |
+          set -euo pipefail
+          echo "## WASM-GC artifact" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Artifact: Eaglercraft-26.2-VBV-WASM-GC-${GITHUB_RUN_ID}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Contains index.html, raw WASM files, assets.epk, and the Cloudflare R2 worker example." >> "$GITHUB_STEP_SUMMARY"
