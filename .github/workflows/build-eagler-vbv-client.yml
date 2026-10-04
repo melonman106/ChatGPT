@@ -46,7 +46,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: checkpoint
-          key: eagler-vbv-root-checkpoint-v8-u1-1-${{ hashFiles('ViaBackport26.2-ClientSide/src/main/java/**/*.java', 'ViaBackport26.2-ClientSide/src/main/resources/**/*.json', 'ViaBackport26.2-ClientSide/patch/**', 'ModsPack/**/*.zip', 'eaglercraft-26.2-patcher-main (1).tar.gz', 'u1-1-source/**', 'U1-Patcher/portable-kit.zip') }}
+          key: eagler-vbv-root-checkpoint-v9-u1-1-${{ hashFiles('ViaBackport26.2-ClientSide/src/main/java/**/*.java', 'ViaBackport26.2-ClientSide/src/main/resources/**/*.json', 'ViaBackport26.2-ClientSide/patch/**', 'ModsPack/**/*.zip', 'eaglercraft-26.2-patcher-main (1).tar.gz', 'u1-1-source/**', 'U1-Patcher/portable-kit.zip') }}
 
       - name: Import already-compiled checkpoint ZIP
         id: compiled_import
@@ -466,6 +466,7 @@ jobs:
           # copying vanilla shaders/pipeline definitions over Eagler resources.
           required_runtime_assets=(
             "assets/minecraft/textures/colormap/grass.png"
+            "assets/minecraft/textures/colormap/foliage.png"
             "assets/minecraft/textures/environment/clouds.png"
             "assets/minecraft/textures/block/water_still.png"
             "assets/minecraft/textures/block/water_flow.png"
@@ -736,7 +737,7 @@ jobs:
             ~/.gradle/wrapper
             ModdedClientSource/.gradle
             ModdedClientSource/target_teavm_wasm_gc/build
-          key: vbv-teavm-wasm-v6-${{ hashFiles('ViaBackport26.2-ClientSide/src/main/java/**/*.java', 'ViaBackport26.2-ClientSide/src/main/resources/**/*.json', 'ViaBackport26.2-ClientSide/patch/**', 'ModsPack/**/*.zip', 'u1-1-source/**', 'U1-Patcher/portable-kit.zip') }}
+          key: vbv-teavm-wasm-v7-${{ hashFiles('ViaBackport26.2-ClientSide/src/main/java/**/*.java', 'ViaBackport26.2-ClientSide/src/main/resources/**/*.json', 'ViaBackport26.2-ClientSide/patch/**', 'ModsPack/**/*.zip', 'u1-1-source/**', 'U1-Patcher/portable-kit.zip') }}
           # Exact-key restore only. Never fall back to the old v3 cache.
       - name: Snapshot generated client before expensive WASM build
         if: success() && steps.repo_checkpoint.outputs.found != 'true' && inputs.compiled_zip_url == ''
@@ -1081,7 +1082,7 @@ jobs:
             ~/.gradle/wrapper
             ModdedClientSource/.gradle
             ModdedClientSource/target_teavm_wasm_gc/build
-          key: vbv-teavm-wasm-v6-${{ hashFiles('ViaBackport26.2-ClientSide/src/main/java/**/*.java', 'ViaBackport26.2-ClientSide/src/main/resources/**/*.json', 'ModsPack/**/*.zip', 'u1-1-source/**', 'U1-Patcher/portable-kit.zip') }}
+          key: vbv-teavm-wasm-v7-${{ hashFiles('ViaBackport26.2-ClientSide/src/main/java/**/*.java', 'ViaBackport26.2-ClientSide/src/main/resources/**/*.json', 'ModsPack/**/*.zip', 'u1-1-source/**', 'U1-Patcher/portable-kit.zip') }}
 
       - name: Save Gradle and WASM-GC cache (partial progress after failure)
         if: failure() && inputs.compiled_zip_url == '' && steps.wasm_web_cache_restore.outputs.cache-hit != 'true'
@@ -1094,7 +1095,7 @@ jobs:
             ModdedClientSource/target_teavm_wasm_gc/build
           # Unique key: a partial build must never occupy the exact key, or the
           # next run would see a cache hit and skip the WASM build entirely.
-          key: vbv-teavm-wasm-v6-partial-${{ github.run_id }}
+          key: vbv-teavm-wasm-v7-partial-${{ github.run_id }}
 
       - name: Normalize imported precompiled web output
         if: success() && inputs.compiled_zip_url != ''
