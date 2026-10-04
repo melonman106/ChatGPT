@@ -455,7 +455,27 @@ jobs:
           # by the normal Minecraft resource checks.
           mkdir -p "$resources/assets/minecraft/lang"
           cp -f "$temp_resources/assets/minecraft/lang/en_us.json" "$resources/assets/minecraft/lang/en_us.json"
-          echo "=== Preserved Eagler u1 assets; restored vanilla language only ==="
+          # Eagler hosted asset packaging requires these six Realm UI assets.
+          # Restore only these exact files; never overlay the full vanilla
+          # assets tree because that can contaminate Eagler WebGL shaders.
+          required_web_unreachable=(
+            "assets/minecraft/textures/gui/sprites/realm_status/expired.png"
+            "assets/minecraft/textures/gui/sprites/realm_status/open.png"
+            "assets/minecraft/textures/gui/sprites/realm_status/expires_soon.png.mcmeta"
+            "assets/minecraft/textures/gui/sprites/realm_status/closed.png"
+            "assets/minecraft/textures/gui/sprites/icon/new_realm.png"
+            "assets/minecraft/textures/gui/sprites/realm_status/expires_soon.png"
+          )
+          for path in "${required_web_unreachable[@]}"; do
+            if [ ! -f "$temp_resources/$path" ]; then
+              echo "::error::Official Minecraft 26.2 client JAR is missing required asset: $path"
+              exit 1
+            fi
+            mkdir -p "$resources/$(dirname "$path")"
+            cp -f "$temp_resources/$path" "$resources/$path"
+          done
+          echo "Restored six required Realm assets without overlaying vanilla shader resources."
+          echo "=== Preserved Eagler u1 assets; restored vanilla language + required Realm assets ==="
           if find "$resources" -type f \( -name '*.vsh' -o -name '*.fsh' -o -name '*.glsl' \) -print -quit | grep -q .; then
             echo "Eagler shader source files detected:"
             find "$resources" -type f \( -name '*.vsh' -o -name '*.fsh' -o -name '*.glsl' \) -print | sort | head -100
