@@ -681,7 +681,8 @@ ${decoderJs}
   }
   self.fetch = function (input, init) {
     var url = typeof input === "string" ? input : (input && input.url) || String(input);
-    if (url.indexOf("eagler-inline-payload://assets.epk") !== 0) {
+    var clean = url.split("?")[0].split("#")[0].split("/").pop();
+    if (url.indexOf("eagler-inline-payload://assets.epk") !== 0 && clean !== "assets.epk") {
       return originalFetch(input, init);
     }
     return Promise.resolve(new Response(decodeAsset(), {
