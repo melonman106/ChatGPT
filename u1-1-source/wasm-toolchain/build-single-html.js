@@ -594,6 +594,13 @@ ${decoderJs}
       });
     }
     var clean = url.split("?")[0].split("#")[0].split("/").pop();
+    // Intercept direct asset filenames too, so file:// cannot fall through to
+    // the browser network loader if bootstrap initialization races this hook.
+    if (payloadIds[clean]) {
+      return decodePayloadAsync(payloadIds[clean]).then(function (raw) {
+        return new Response(raw, { status: 200, headers: { "Content-Type": "application/octet-stream" } });
+      });
+    }
     if (clean === "mesh-worker.wasm") {
       if (!cachedMeshWasm) {
         cachedMeshWasm = Promise.resolve().then(function () {
