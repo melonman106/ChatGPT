@@ -211,7 +211,7 @@ jobs:
       - name: Upload single HTML artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Eaglercraft-26.2-VBV-Single-HTML
+          name: Eaglercraft-26.2-VBV-Single-HTML-${{ github.run_id }}
           path: |
             eaglercraft-26.2-VBV-single.html
             eaglercraft-26.2-VBV-optional-music.zip
@@ -229,7 +229,7 @@ jobs:
             echo
             echo "[Open the GitHub Actions artifact for this run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts)"
             echo
-            echo "Artifact name: `Eaglercraft-26.2-VBV-Single-HTML`"
+            echo "Artifact name: `Eaglercraft-26.2-VBV-Single-HTML-${{ github.run_id }}`"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Package standalone single HTML
