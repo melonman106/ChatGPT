@@ -467,6 +467,7 @@ jobs:
           required_runtime_assets=(
             "assets/minecraft/textures/colormap/grass.png"
             "assets/minecraft/textures/colormap/foliage.png"
+            "assets/minecraft/textures/colormap/dry_foliage.png"
             "assets/minecraft/textures/environment/clouds.png"
             "assets/minecraft/textures/block/water_still.png"
             "assets/minecraft/textures/block/water_flow.png"
