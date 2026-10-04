@@ -16,6 +16,9 @@ public final class VBVClient {
     public static void init() {
         if (!MODS.isEmpty()) return;
 
+        // v1 boot-test marker: this source change intentionally invalidates the
+        // compiled checkpoint/WASM caches so resource-pipeline workflow fixes
+        // are rebuilt instead of reusing the previous checkpoint.
         registerMod(new VBVModInfo(
             MOD_ID,
             "ViaBackportVisuals Client",
