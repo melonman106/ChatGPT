@@ -687,19 +687,6 @@ jobs:
             exit 1
           fi
           echo "Found single-HTML builder: $single_html_script"
-      - name: Restore completed WASM-GC output cache
-        id: wasm_web_cache_restore
-        if: success() && inputs.compiled_zip_url == ''
-        uses: actions/cache/restore@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-            ModdedClientSource/.gradle
-            ModdedClientSource/target_teavm_wasm_gc/build
-          key: vbv-teavm-wasm-v3-${{ hashFiles('ViaBackport26.2-ClientSide/src/main/java/**/*.java', 'ViaBackport26.2-ClientSide/src/main/resources/**/*.json', 'ViaBackport26.2-ClientSide/patch/**', 'ModsPack/**/*.zip', 'u1-1-source/**', 'U1-Patcher/portable-kit.zip') }}
-          restore-keys: |
-            vbv-teavm-wasm-v3-
           # Copy built-in client-mod metadata and pack.png icons into the
           # generated resource classpath. Resource-pack-backed features are
           # presented as mods in the native Mods screen.
@@ -719,6 +706,19 @@ jobs:
           node --version
           echo "MODDED_CLIENT_SOURCE_READY=true" >> "$GITHUB_ENV"
 
+      - name: Restore completed WASM-GC output cache
+        id: wasm_web_cache_restore
+        if: success() && inputs.compiled_zip_url == ''
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            ModdedClientSource/.gradle
+            ModdedClientSource/target_teavm_wasm_gc/build
+          key: vbv-teavm-wasm-v3-${{ hashFiles('ViaBackport26.2-ClientSide/src/main/java/**/*.java', 'ViaBackport26.2-ClientSide/src/main/resources/**/*.json', 'ViaBackport26.2-ClientSide/patch/**', 'ModsPack/**/*.zip', 'u1-1-source/**', 'U1-Patcher/portable-kit.zip') }}
+          restore-keys: |
+            vbv-teavm-wasm-v3-
       - name: Snapshot generated client before expensive WASM build
         if: success() && steps.repo_checkpoint.outputs.found != 'true' && inputs.compiled_zip_url == ''
         run: |
