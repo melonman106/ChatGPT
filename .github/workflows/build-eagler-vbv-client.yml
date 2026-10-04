@@ -46,7 +46,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: checkpoint
-          key: eagler-vbv-root-checkpoint-v6-u1-1-${{ hashFiles('ViaBackport26.2-ClientSide/src/main/java/**/*.java', 'ViaBackport26.2-ClientSide/src/main/resources/**/*.json', 'ViaBackport26.2-ClientSide/patch/**', 'ModsPack/**/*.zip', 'eaglercraft-26.2-patcher-main (1).tar.gz', 'u1-1-source/**', 'U1-Patcher/portable-kit.zip') }}
+          key: eagler-vbv-root-checkpoint-v7-u1-1-${{ hashFiles('ViaBackport26.2-ClientSide/src/main/java/**/*.java', 'ViaBackport26.2-ClientSide/src/main/resources/**/*.json', 'ViaBackport26.2-ClientSide/patch/**', 'ModsPack/**/*.zip', 'eaglercraft-26.2-patcher-main (1).tar.gz', 'u1-1-source/**', 'U1-Patcher/portable-kit.zip') }}
 
       - name: Import already-compiled checkpoint ZIP
         id: compiled_import
