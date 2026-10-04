@@ -671,15 +671,17 @@ jobs:
           test -f "$resources/pack.mcmeta"
           test -f "$resources/assets/minecraft/lang/en_us.json"
           test -f "$resources/pack.png"
-          game_classes="$game_dir/build/classes/java/main"
-          mkdir -p "$game_classes"
-          cp -a "$resources"/. "$game_classes"/
-          test -f "$game_classes/version.json"
-          test -f "$game_classes/pack.mcmeta"
-          test -f "$game_classes/assets/minecraft/lang/en_us.json"
-          test -f "$game_classes/pack.png"
+          # Do not copy resources into build/classes/java/main. Gradle's
+          # main output already contains build/resources/main, and copying the
+          # same files into the Java classes directory creates duplicate JAR
+          # entries (notably pack.mcmeta) when :game:jar runs again for TeaVM.
+          game_resources="$game_dir/build/resources/main"
+          test -f "$game_resources/version.json"
+          test -f "$game_resources/pack.mcmeta"
+          test -f "$game_resources/assets/minecraft/lang/en_us.json"
+          test -f "$game_resources/pack.png"
           echo "=== TeaVM resource classpath verified ==="
-          ls -lh "$game_classes/version.json" "$game_classes/pack.png"
+          ls -lh "$game_resources/version.json" "$game_resources/pack.png"
           single_html_script="$modded_root/wasm-toolchain/build-single-html.js"
           if [ ! -f "$single_html_script" ]; then
             echo "::error::The generated client does not contain wasm-toolchain/build-single-html.js."
