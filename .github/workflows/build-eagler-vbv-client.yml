@@ -27,7 +27,9 @@ env:
   GITHUB_TOKEN: ${{ github.token }}
 
 concurrency:
-  group: eagler-vbv-client-${{ github.ref }}
+  # A new commit must not cancel an older long-running build. The older run
+  # may already be minutes away from producing the WASM artifact.
+  group: eagler-vbv-client-${{ github.ref }}-${{ github.sha }}
   cancel-in-progress: true
 
 jobs:
@@ -44,7 +46,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: checkpoint
-          key: eagler-vbv-root-checkpoint-v5-u1-1-${{ hashFiles('ViaBackport26.2-ClientSide/src/main/java/**/*.java', 'ViaBackport26.2-ClientSide/src/main/resources/**/*.json', 'ViaBackport26.2-ClientSide/patch/**', 'ModsPack/**/*.zip', 'eaglercraft-26.2-patcher-main (1).tar.gz', 'u1-1-source/**', 'U1-Patcher/portable-kit.zip') }}
+          key: eagler-vbv-root-checkpoint-v6-u1-1-${{ hashFiles('ViaBackport26.2-ClientSide/src/main/java/**/*.java', 'ViaBackport26.2-ClientSide/src/main/resources/**/*.json', 'ViaBackport26.2-ClientSide/patch/**', 'ModsPack/**/*.zip', 'eaglercraft-26.2-patcher-main (1).tar.gz', 'u1-1-source/**', 'U1-Patcher/portable-kit.zip') }}
 
       - name: Import already-compiled checkpoint ZIP
         id: compiled_import
@@ -685,6 +687,26 @@ jobs:
             exit 1
           fi
           echo "Found single-HTML builder: $single_html_script"
+      - name: Save reusable generated client checkpoint
+        if: success() && steps.repo_checkpoint.outputs.found != 'true' && inputs.compiled_zip_url == ''
+        uses: actions/cache/save@v4
+        with:
+          path: checkpoint
+          key: eagler-vbv-root-checkpoint-v6-u1-1-${{ hashFiles('ViaBackport26.2-ClientSide/src/main/java/**/*.java', 'ViaBackport26.2-ClientSide/src/main/resources/**/*.json', 'ViaBackport26.2-ClientSide/patch/**', 'ModsPack/**/*.zip', 'eaglercraft-26.2-patcher-main (1).tar.gz', 'u1-1-source/**', 'U1-Patcher/portable-kit.zip') }}
+
+      - name: Restore completed WASM-GC output cache
+        id: wasm_web_cache_restore
+        if: success() && inputs.compiled_zip_url == ''
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            ModdedClientSource/.gradle
+            ModdedClientSource/target_teavm_wasm_gc/build
+          key: vbv-teavm-wasm-v3-${{ hashFiles('ViaBackport26.2-ClientSide/src/main/java/**/*.java', 'ViaBackport26.2-ClientSide/src/main/resources/**/*.json', 'ViaBackport26.2-ClientSide/patch/**', 'ModsPack/**/*.zip', 'u1-1-source/**', 'U1-Patcher/portable-kit.zip') }}
+          restore-keys: |
+            vbv-teavm-wasm-v3-
           # Copy built-in client-mod metadata and pack.png icons into the
           # generated resource classpath. Resource-pack-backed features are
           # presented as mods in the native Mods screen.
@@ -703,6 +725,18 @@ jobs:
           fi
           node --version
           echo "MODDED_CLIENT_SOURCE_READY=true" >> "$GITHUB_ENV"
+
+      - name: Snapshot generated client before expensive WASM build
+        if: success() && steps.repo_checkpoint.outputs.found != 'true' && inputs.compiled_zip_url == ''
+        run: |
+          set -euo pipefail
+          rm -rf "$GITHUB_WORKSPACE/checkpoint"
+          mkdir -p "$GITHUB_WORKSPACE/checkpoint"
+          cp -a "$GITHUB_WORKSPACE/ModdedClientSource"/. "$GITHUB_WORKSPACE/checkpoint"/
+          test -f "$GITHUB_WORKSPACE/checkpoint/game/build/libs/game.jar"
+          test -f "$GITHUB_WORKSPACE/checkpoint/wasm-toolchain/build-single-html.js"
+          echo "Reusable generated-client checkpoint created before TeaVM."
+
       - name: Restore Gradle and TeaVM incremental cache
         id: teavm_cache_restore
         if: success() && inputs.compiled_zip_url == ''
@@ -713,9 +747,11 @@ jobs:
             ~/.gradle/wrapper
             ModdedClientSource/.gradle
             ModdedClientSource/target_teavm_wasm_gc/build
-          key: vbv-teavm-wasm-v2-${{ hashFiles('ViaBackport26.2-ClientSide/src/main/java/**/*.java', 'ViaBackport26.2-ClientSide/src/main/resources/**/*.json', 'ViaBackport26.2-ClientSide/patch/**', 'ModsPack/**/*.zip', 'u1-1-source/**', 'U1-Patcher/portable-kit.zip', '.github/workflows/build-eagler-vbv-client.yml') }}-${{ github.run_id }}
+          # IMPORTANT: do not include github.run_id here. A run-specific key
+          # guarantees a cache miss on every new run.
+          key: vbv-teavm-wasm-v3-${{ hashFiles('ViaBackport26.2-ClientSide/src/main/java/**/*.java', 'ViaBackport26.2-ClientSide/src/main/resources/**/*.json', 'ViaBackport26.2-ClientSide/patch/**', 'ModsPack/**/*.zip', 'u1-1-source/**', 'U1-Patcher/portable-kit.zip') }}
           restore-keys: |
-            vbv-teavm-wasm-v2-${{ hashFiles('ViaBackport26.2-ClientSide/src/main/java/**/*.java', 'ViaBackport26.2-ClientSide/src/main/resources/**/*.json', 'ViaBackport26.2-ClientSide/patch/**', 'ModsPack/**/*.zip', 'u1-1-source/**', 'U1-Patcher/portable-kit.zip', '.github/workflows/build-eagler-vbv-client.yml') }}-
+            vbv-teavm-wasm-v3-${{ hashFiles('ViaBackport26.2-ClientSide/src/main/java/**/*.java', 'ViaBackport26.2-ClientSide/src/main/resources/**/*.json', 'ModsPack/**/*.zip', 'u1-1-source/**', 'U1-Patcher/portable-kit.zip') }}-
       - name: Apply WASM-GC Netty transport source fix
         if: success() && inputs.compiled_zip_url == ''
         run: |
@@ -830,7 +866,7 @@ jobs:
           sed -n '1,220p' "$target"
 
       - name: Build WASM-GC web client
-        if: success() && inputs.compiled_zip_url == ''
+        if: success() && inputs.compiled_zip_url == '' && steps.wasm_web_cache_restore.outputs.cache-hit != 'true'
         run: |
           set -euo pipefail
           cd "$GITHUB_WORKSPACE/ModdedClientSource"
@@ -1034,6 +1070,17 @@ jobs:
           find "$web_dir" -maxdepth 1 -type f -name '*.wasm' -printf '%s %p\\n' | sort -nr
           echo "Total web output:"
           du -sh "$web_dir"
+
+      - name: Save Gradle and WASM-GC cache, including partial progress
+        if: always() && !cancelled() && inputs.compiled_zip_url == '' && steps.wasm_web_cache_restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            ModdedClientSource/.gradle
+            ModdedClientSource/target_teavm_wasm_gc/build
+          key: vbv-teavm-wasm-v3-${{ hashFiles('ViaBackport26.2-ClientSide/src/main/java/**/*.java', 'ViaBackport26.2-ClientSide/src/main/resources/**/*.json', 'ViaBackport26.2-ClientSide/patch/**', 'ModsPack/**/*.zip', 'u1-1-source/**', 'U1-Patcher/portable-kit.zip') }}
 
       - name: Normalize imported precompiled web output
         if: success() && inputs.compiled_zip_url != ''
