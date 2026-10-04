@@ -46,7 +46,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: checkpoint
-          key: eagler-vbv-root-checkpoint-v10-u1-1-${{ hashFiles('ViaBackport26.2-ClientSide/src/main/java/**/*.java', 'ViaBackport26.2-ClientSide/src/main/resources/**/*.json', 'ViaBackport26.2-ClientSide/patch/**', 'ModsPack/**/*.zip', 'eaglercraft-26.2-patcher-main (1).tar.gz', 'u1-1-source/**', 'U1-Patcher/portable-kit.zip') }}
+          key: eagler-vbv-root-checkpoint-v11-u1-1-${{ hashFiles('ViaBackport26.2-ClientSide/src/main/java/**/*.java', 'ViaBackport26.2-ClientSide/src/main/resources/**/*.json', 'ViaBackport26.2-ClientSide/patch/**', 'ModsPack/**/*.zip', 'eaglercraft-26.2-patcher-main (1).tar.gz', 'u1-1-source/**', 'U1-Patcher/portable-kit.zip') }}
 
       - name: Import already-compiled checkpoint ZIP
         id: compiled_import
@@ -504,11 +504,11 @@ jobs:
           else
             echo "WARNING: no Eagler shader source files were visible in the Gradle resources at this stage."
           fi
-          if [ -e "$temp_resources/data" ]; then
-            cp -a "$temp_resources/data" "$resources/"
-          else
-            echo "Official client JAR has no data/ directory; skipping it."
-          fi
+          # Do NOT restore the vanilla data/ tree. Eagler u1 already
+          # supplies the browser-safe registry/resource bootstrap, and the
+          # desktop 26.2 data-pack tree can invoke unsupported reload paths
+          # during the initial asynchronous resource reload.
+          echo "Skipping vanilla data/ tree for Eagler u1 browser runtime."
           echo "=== Restored runtime resources ==="
           printf 'game module: %s\nresources: %s\n' "$game_dir" "$resources"
           test -f "$resources/version.json"
@@ -1083,7 +1083,7 @@ jobs:
             ~/.gradle/wrapper
             ModdedClientSource/.gradle
             ModdedClientSource/target_teavm_wasm_gc/build
-          key: vbv-teavm-wasm-v7-${{ hashFiles('ViaBackport26.2-ClientSide/src/main/java/**/*.java', 'ViaBackport26.2-ClientSide/src/main/resources/**/*.json', 'ModsPack/**/*.zip', 'u1-1-source/**', 'U1-Patcher/portable-kit.zip') }}
+          key: vbv-teavm-wasm-v9-${{ hashFiles('ViaBackport26.2-ClientSide/src/main/java/**/*.java', 'ViaBackport26.2-ClientSide/src/main/resources/**/*.json', 'ModsPack/**/*.zip', 'u1-1-source/**', 'U1-Patcher/portable-kit.zip') }}
 
       - name: Save Gradle and WASM-GC cache (partial progress after failure)
         if: failure() && inputs.compiled_zip_url == '' && steps.wasm_web_cache_restore.outputs.cache-hit != 'true'
@@ -1096,7 +1096,7 @@ jobs:
             ModdedClientSource/target_teavm_wasm_gc/build
           # Unique key: a partial build must never occupy the exact key, or the
           # next run would see a cache hit and skip the WASM build entirely.
-          key: vbv-teavm-wasm-v8-partial-${{ github.run_id }}
+          key: vbv-teavm-wasm-v10-partial-${{ github.run_id }}
 
       - name: Normalize imported precompiled web output
         if: success() && inputs.compiled_zip_url != ''
