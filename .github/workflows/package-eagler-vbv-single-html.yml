@@ -158,89 +158,6 @@ jobs:
           set -euo pipefail
 
           args=(--skip-build --output "$GITHUB_WORKSPACE/eaglercraft-26.2-VBV-single.html")
-          # Cloudflare/R2 web bundles do not contain music.epk.
-          echo "Packaging without embedded music."
-          if [ "${{ inputs.fast_package }}" = "true" ]; then
-            args+=(--fast-package)
-          fi
-
-          node wasm-toolchain/build-single-html.js "${args[@]}"
-
-          test -s "$GITHUB_WORKSPACE/eaglercraft-26.2-VBV-single.html"
-          echo "=== Single HTML ==="
-          ls -lh "$GITHUB_WORKSPACE/eaglercraft-26.2-VBV-single.html"
-
-      - name: Export optional music pack
-        if: inputs.with_music == false
-        working-directory: ModdedClientSource
-        run: |
-          set -euo pipefail
-          if [ -s target_teavm/build/web/music.epk ]; then
-            node wasm-toolchain/export-music-resource-pack.js \
-              target_teavm/build/web/music.epk \
-              "$GITHUB_WORKSPACE/eaglercraft-26.2-VBV-optional-music.zip"
-            test -s "$GITHUB_WORKSPACE/eaglercraft-26.2-VBV-optional-music.zip"
-            ls -lh "$GITHUB_WORKSPACE/eaglercraft-26.2-VBV-optional-music.zip"
-          else
-            echo "No music.epk in web-only bundle; skipping optional music pack."
-          fi
-
-      - name: Verify final HTML
-        run: |
-          set -euo pipefail
-          file "$GITHUB_WORKSPACE/eaglercraft-26.2-VBV-single.html"
-          python3 - <<'PY'
-          from pathlib import Path
-          p = Path("eaglercraft-26.2-VBV-single.html")
-          b = p.stat().st_size
-          print(f"Single HTML size: {b:,} bytes ({b / 1_000_000:.2f} MB)")
-          text = p.read_text("utf-8", errors="ignore")
-          required = [
-              'id="eag-inline-wasm-br"',
-              'id="eag-inline-mesh-wasm-br"',
-              'id="eag-inline-server-wasm-br"',
-              'id="eag-inline-assets"',
-              'id="eag-inline-sounds"',
-          ]
-          missing = [x for x in required if x not in text]
-          if missing:
-              raise SystemExit("Missing inline payloads: " + ", ".join(missing))
-          print("All required inline payloads are embedded.")
-          PY
-
-      - name: Upload single HTML artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: Eaglercraft-26.2-VBV-Single-HTML-${{ github.run_id }}
-          path: |
-            eaglercraft-26.2-VBV-single.html
-            eaglercraft-26.2-VBV-optional-music.zip
-          if-no-files-found: error
-          retention-days: 14
-          compression-level: 0
-
-      - name: Publish artifact link
-        if: always()
-        run: |
-          {
-            echo "## Eaglercraft 26.2 VBV — Single HTML"
-            echo
-            echo "The single-file HTML artifact is uploaded above."
-            echo
-            echo "[Open the GitHub Actions artifact for this run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts)"
-            echo
-            echo "Artifact name: `Eaglercraft-26.2-VBV-Single-HTML-${{ github.run_id }}`"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Package standalone single HTML
-        working-directory: ModdedClientSource
-        env:
-          EAGLER_BUILD_CAP_MIB: "12288"
-          EAGLER_BUILD_XMX_MIB: "10240"
-        run: |
-          set -euo pipefail
-
-          args=(--skip-build --output "$GITHUB_WORKSPACE/eaglercraft-26.2-VBV-single.html")
           if [ "${{ inputs.with_music }}" = "true" ]; then
             args+=(--with-music)
           fi
@@ -313,5 +230,5 @@ jobs:
             echo
             echo "[Open the GitHub Actions artifact for this run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts)"
             echo
-            echo "Artifact name: `Eaglercraft-26.2-VBV-Single-HTML`"
+            echo "Artifact name: \`Eaglercraft-26.2-VBV-Single-HTML\`"
           } >> "$GITHUB_STEP_SUMMARY"
