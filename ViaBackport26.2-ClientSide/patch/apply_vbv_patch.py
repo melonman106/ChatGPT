@@ -274,7 +274,7 @@ def find_method_end(text, method_start):
 
 minecraft = None
 for p, s in java_files():
-    if re.search(r"class\s+Minecraft\b", s) and "static Minecraft" in s:
+    if p.name == "Minecraft.java" and re.search(r"class\s+Minecraft\b", s):
         minecraft = (p, s)
         break
 if not minecraft:
@@ -296,7 +296,7 @@ if open_name is None:
     raise SystemExit("Could not find a method on Minecraft that takes a single Screen")
 print("Screen-opening method on Minecraft:", open_name, "(candidates:", screen_methods, ")")
 
-HUD_CALL = "com.melonman106.vbvclient.VBVSimpleHud.render(graphics);"
+HUD_CALL_PREFIX = "com.melonman106.vbvclient.VBVSimpleHud.render("
 
 hud_path = None
 hud_src = None
@@ -308,8 +308,8 @@ for p, s in java_files():
 if hud_path is None:
     raise SystemExit("Hud.java with GuiGraphicsExtractor/extractItemHotbar was not identified")
 
-if HUD_CALL in hud_src:
-    print("VBV Armor HUD hook already present.")
+if HUD_CALL_PREFIX in hud_src:
+    print("VBV HUD hook already present.")
 else:
     hud_match = re.search(
         r"(?:public|private|protected)\s+void\s+extractItemHotbar\s*\([^)]*\)\s*\{",
@@ -318,13 +318,18 @@ else:
     if not hud_match:
         raise SystemExit("Hud.extractItemHotbar method was not identified")
 
+    param = re.search(r"GuiGraphicsExtractor\s+(\w+)", hud_match.group(0))
+    if not param:
+        raise SystemExit("Hud.extractItemHotbar has no GuiGraphicsExtractor parameter")
+    HUD_CALL = f"{HUD_CALL_PREFIX}{param.group(1)});"
+
     end = find_method_end(hud_src, hud_match.start())
     if end is None:
         raise SystemExit("Could not find end of Hud.extractItemHotbar")
 
     hud_src = hud_src[:end] + "\n        " + HUD_CALL + "\n    " + hud_src[end:]
     hud_path.write_text(hud_src, encoding="utf-8")
-    print("Inserted Armor HUD hook at the end of", hud_path)
+    print("Inserted HUD hook at the end of", hud_path, "using parameter", param.group(1))
 
 nav = DEST / "VBVNav.java"
 nav_src = nav.read_text(encoding="utf-8")
@@ -407,7 +412,7 @@ if title:
             button -> com.melonman106.vbvclient.VBVNav.open(
                 new com.melonman106.vbvclient.VBVModsScreen(this)
             )
-        ).bounds(this.width / 2 - 100, this.height / 4 + 120, 200, 20).build());
+        ).bounds(6, 6, 80, 20).build());
 """
             s = s[:m.end()] + button + s[m.end():]
             p.write_text(s, encoding="utf-8")
