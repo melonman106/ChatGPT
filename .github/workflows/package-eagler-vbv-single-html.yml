@@ -146,9 +146,7 @@ jobs:
           test -s target_teavm_wasm_gc/build/web/server-worker.wasm
           test -s target_teavm_wasm_gc/build/web/assets.epk
           test -s target_teavm_wasm_gc/build/web/sounds.epk
-          if [ "${{ env.EAGLER_EFFECTIVE_WITH_MUSIC }}" = "true" ]; then
-            test -s target_teavm/build/web/music.epk
-          fi
+          echo "Music embedding is disabled for the Cloudflare/R2 web bundle."
           echo "All single-file packaging inputs are present."
 
       - name: Package standalone single HTML
@@ -160,9 +158,8 @@ jobs:
           set -euo pipefail
 
           args=(--skip-build --output "$GITHUB_WORKSPACE/eaglercraft-26.2-VBV-single.html")
-          if [ "${{ inputs.with_music }}" = "true" ]; then
-            args+=(--with-music)
-          fi
+          # Cloudflare/R2 web bundles do not contain music.epk.
+          echo "Packaging without embedded music."
           if [ "${{ inputs.fast_package }}" = "true" ]; then
             args+=(--fast-package)
           fi
@@ -233,13 +230,7 @@ jobs:
             echo "[Open the GitHub Actions artifact for this run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts)"
             echo
             echo "Artifact name: `Eaglercraft-26.2-VBV-Single-HTML`"
-          } >> "$GITHUB_STEP_SUMMARY"          if [ "true" = "true" ] && [ ! -s target_teavm/build/web/music.epk ]; then
-            echo "::warning::with_music was enabled, but this web-only bundle has no music.epk. Disabling music for this package."
-            echo "EAGLER_EFFECTIVE_WITH_MUSIC=false" >> "$GITHUB_ENV"
-          else
-            echo "EAGLER_EFFECTIVE_WITH_MUSIC=true" >> "$GITHUB_ENV"
-          fi
-          echo "All single-file packaging inputs are present."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Package standalone single HTML
         working-directory: ModdedClientSource
