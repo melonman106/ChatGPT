@@ -156,29 +156,3 @@ elif first < 0:
 t = t.replace('Artifact name: `Eaglercraft-26.2-VBV-Single-HTML`',
               'Artifact name: \\`Eaglercraft-26.2-VBV-Single-HTML\\`')
 save(p, t, "duplicate packaging steps removed, backticks escaped")
-
-# ---------------------------------------------------------------- server mod
-p, t = load("server-mods/ViaBackportVisuals/src/main/java/com/melonman106/vbfix/ViaBackportVisuals.java")
-t = replace_once(
-    t,
-    "    private static final Map<Integer, Integer> ORIGINAL_MAPPINGS = new HashMap<>();",
-    "    private static final Map<Block, BlockState> MINING_REFERENCE_CACHE = new HashMap<>();\n"
-    "    private static final Map<Integer, Integer> ORIGINAL_MAPPINGS = new HashMap<>();",
-    "MINING_REFERENCE_CACHE", done_marker="MINING_REFERENCE_CACHE = new HashMap")
-for old, new in [
-    ('"mud_red_nether_brick_stairs"', '"mud_brick_stairs"'),
-    ('"tuff_red_nether_brick_stairs"', '"tuff_brick_stairs"'),
-    ('"end_dark_prismarine_stairs"', '"end_stone_brick_stairs"'),
-    ('"resin_red_nether_brick_stairs"', '"resin_brick_stairs"'),
-    ('"cinnabar_red_nether_brick_stairs"', '"cinnabar_brick_stairs"'),
-    ('"sulfur_red_nether_brick_stairs"', '"sulfur_brick_stairs"'),
-    ('"red_smooth_sandstone_stairs"', '"mossy_stone_brick_stairs"'),
-    ('"polished_blackdark_prismarine_stairs"', '"polished_blackstone_brick_stairs"'),
-    ('"pale_oak_slab", "deepslate_brick_slab"', '"smooth_quartz_slab", "deepslate_brick_slab"'),
-]:
-    t = t.replace(old, new)
-save(p, t, "missing cache field, mangled placeholder names, pale_oak_slab overlap")
-
-print("Applied:")
-for c in changed:
-    print("  -", c)
