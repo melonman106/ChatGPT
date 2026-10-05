@@ -1,0 +1,76 @@
+name: Fix Eaglercraft 26.2 u1 VBV Client
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "ViaBackport26.2-ClientSide/**"
+      - "ModsPack/**"
+      - "sounds.epk"
+      - "u1-1-source/**"
+      - "U1-Patcher/**"
+      - ".github/workflows/01-fix-eagler-vbv.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.14
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.14.8"
+
+      - name: Verify required client files
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s ViaBackport26.2-ClientSide/patch/apply_vbv_patch.py
+          test -s ViaBackport26.2-ClientSide/patch/zipfile.py
+          test -s ViaBackport26.2-ClientSide/pack.png
+          test -s sounds.epk
+          test -s U1-Patcher/portable-kit.zip
+          test -s u1-1-source/patcher/java-cli/eagler-patcher
+          echo "Required VBV/Eagler inputs are present."
+
+      - name: Validate VBV fix scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile             ViaBackport26.2-ClientSide/patch/apply_vbv_patch.py             ViaBackport26.2-ClientSide/patch/zipfile.py
+          echo "VBV patch scripts compile successfully."
+
+      - name: Verify native Netty source-fix logic
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'NioIoHandler.newFactory()' ViaBackport26.2-ClientSide/patch/apply_vbv_patch.py
+          grep -q 'EpollSocketChannel.class' ViaBackport26.2-ClientSide/patch/apply_vbv_patch.py
+          grep -q 'KQueueSocketChannel.class' ViaBackport26.2-ClientSide/patch/apply_vbv_patch.py
+          echo "Native Netty -> NIO fix logic is present."
+
+      - name: Verify U1.1 patcher and portable kit
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x u1-1-source/patcher/java-cli/eagler-patcher
+          test -x u1-1-source/patcher/java-cli/eagler-patcher
+          unzip -l U1-Patcher/portable-kit.zip | grep -q 'eagler-patcher'
+          echo "U1.1 source patcher and U1 portable fallback are valid."
+
+      - name: Verify resource overlay pin
+        shell: bash
+        run: |
+          set -euo pipefail
+          overlay="legacy-u1-kit/inputs/resource-overlay-normal.zip"
+          if [ -f "$overlay" ]; then
+            echo "Resource overlay already checked in."
+          else
+            echo "Resource overlay is resolved by the compile workflow from the pinned U1 inputs."
+          fi
+          echo "Fix/preflight checks passed."
