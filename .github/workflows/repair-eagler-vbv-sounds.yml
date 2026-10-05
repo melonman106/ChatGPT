@@ -1,6 +1,10 @@
 name: Build Eaglercraft 26.2 u1 VBV Client
 
 on:
+  push:
+    paths:
+      - ".github/workflows/repair-eagler-vbv-sounds.yml"
+      - "sounds.epk"
   workflow_dispatch:
 
 permissions:
