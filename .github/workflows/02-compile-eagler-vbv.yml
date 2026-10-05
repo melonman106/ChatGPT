@@ -516,6 +516,8 @@ jobs:
         run: |
           set -euo pipefail
           python3 ViaBackport26.2-ClientSide/patch/apply_vbv_patch.py generated-client
+
+      - name: Restore Minecraft runtime resources
         if: steps.repo_checkpoint.outputs.found != 'true' && inputs.compiled_zip_url == ''
         run: |
           set -euo pipefail
