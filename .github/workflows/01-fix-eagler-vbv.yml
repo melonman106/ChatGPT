@@ -28,6 +28,47 @@ jobs:
         with:
           python-version: "3.14.8"
 
+      - name: Repair missing checked-in client files
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          restore_from_history() {
+            local path="$1"
+            local commit=""
+            if [ -e "$path" ] && [ -s "$path" ]; then
+              echo "Already present: $path"
+              return 0
+            fi
+
+            commit="$(git rev-list --all -- "$path" | head -1 || true)"
+            if [ -z "$commit" ]; then
+              echo "::error file=$path::File is missing and no previous Git revision contains it."
+              return 1
+            fi
+
+            mkdir -p "$(dirname "$path")"
+            git show "$commit:$path" > "$path"
+            if [ ! -s "$path" ]; then
+              echo "::error file=$path::Historical restore produced an empty file."
+              return 1
+            fi
+            echo "Restored $path from Git revision $commit."
+          }
+
+          # These are files that have existed in the project and can safely be
+          # restored from Git history if a previous cleanup accidentally removed
+          # them. This step changes only the Actions workspace; it never pushes
+          # changes back to the repository.
+          restore_from_history ViaBackport26.2-ClientSide/patch/zipfile.py
+          restore_from_history ViaBackport26.2-ClientSide/pack.png
+          restore_from_history sounds.epk
+          restore_from_history U1-Patcher/portable-kit.zip
+          restore_from_history u1-1-source/patcher/java-cli/eagler-patcher
+
+          chmod +x u1-1-source/patcher/java-cli/eagler-patcher
+          echo "Missing checked-in inputs have been repaired in the build workspace."
+
       - name: Verify required client files
         shell: bash
         run: |
