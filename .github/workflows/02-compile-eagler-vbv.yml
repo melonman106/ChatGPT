@@ -142,6 +142,40 @@ jobs:
           distribution: temurin
           java-version: "17.0.20"
 
+      - name: Repair required binary inputs
+        if: steps.repo_checkpoint.outputs.found != 'true' && inputs.compiled_zip_url == ''
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # The portable kit is a 77 MB release asset, so it must not be
+          # fetched through the GitHub text-file API. Use the pinned release
+          # asset when the checked-in copy is absent or is only a Git LFS
+          # pointer.
+          portable="U1-Patcher/portable-kit.zip"
+          if [ ! -s "$portable" ] || [ "$(wc -c < "$portable")" -lt 1000000 ]; then
+            mkdir -p U1-Patcher
+            curl -fL --retry 3 --retry-delay 2               "https://github.com/melonman106/ChatGPT/releases/download/Cleit/portable-kit.zip"               -o "$portable"
+          fi
+          test -s "$portable"
+          echo "Portable kit: $(stat -c '%s bytes' "$portable")"
+
+          # sounds.epk is also a binary input. First allow Git LFS checkout,
+          # then recover it from Git history if it was removed from the
+          # current tree. Fail with a clear message only if no repository
+          # revision contains it.
+          if [ ! -s sounds.epk ]; then
+            old="$(git rev-list --all -- sounds.epk | head -1 || true)"
+            if [ -n "$old" ]; then
+              git show "$old:sounds.epk" > sounds.epk
+            fi
+          fi
+          if [ ! -s sounds.epk ]; then
+            echo "::error::sounds.epk is not available in the checkout or Git history."
+            exit 1
+          fi
+          echo "sounds.epk: $(stat -c '%s bytes' sounds.epk)"
+
       - name: Prepare checked-in U1.1 patcher source
         if: steps.repo_checkpoint.outputs.found != 'true' && inputs.compiled_zip_url == ''
         run: |
