@@ -426,30 +426,945 @@ jobs:
         run: |
           set -euo pipefail
           game_dir="$(find generated-client -type f \( -path "*/game/build.gradle" -o -path "*/game/build.gradle.kts" \) -print -quit | xargs -r dirname)"
+          if [ -z "$game_dir" ]; then
+            echo "::error::Could not locate the generated game module before shader staging."
+            find generated-client -maxdepth 5 -type f \( -name 'build.gradle' -o -name 'build.gradle.kts' -o -name 'gradlew' \) -print | sort | head -100
+            exit 1
+          fi
           resources="$game_dir/src/main/resources"
           shaders="$resources/assets/minecraft/shaders"
           portable="U1-Patcher/portable-kit.zip"
-          expected="2ba7e3376891c64f8bf57f3687e05b8dbe1971a75475b6825449e5e5f96d71f3"
+          expected_portable="974c88e396dabebced363aa30bc518e159b0a06d4f430dde8a06525154328d19"
+          expected_overlay="2ba7e3376891c64f8bf57f3687e05b8dbe1971a75475b6825449e5e5f96d71f3"
 
           test -s "$portable"
+          portable_sha="$(sha256sum "$portable" | cut -d' ' -f1)"
           echo "Portable U1 kit: $(stat -c '%s bytes' "$portable")"
+          echo "Portable U1 kit SHA-256: $portable_sha"
+          if [ "$portable_sha" != "$expected_portable" ]; then
+            echo "::error::Portable U1 kit SHA-256 mismatch."
+            echo "::error::Expected: $expected_portable"
+            echo "::error::Actual:   $portable_sha"
+            exit 1
+          fi
+
           overlay_tmp="$(mktemp --suffix=.zip)"
           overlay_root="$(mktemp -d)"
           trap 'rm -rf "$overlay_root" "$overlay_tmp"' EXIT
 
-          # The reviewed Eagler shader/resource overlay is inside the U1
-          # portable kit. Never use the vanilla Minecraft JAR for Eagler shaders.
-          unzip -p "$portable" inputs/resource-overlay-normal.zip > "$overlay_tmp"
-          test -s "$overlay_tmp"
-          overlay_sha="$(sha256sum "$overlay_tmp" | cut -d' ' -f1)"
-          test "$overlay_sha" = "$expected" || {
-            echo "::error::Eagler shader overlay SHA-256 mismatch: expected $expected, got $overlay_sha"
+          # The reviewed Eagler shader/resource overlay is packaged inside the
+          # portable kit. Do not assume a directory prefix: locate the exact
+          # member by name so a repackaged ZIP cannot silently break extraction.
+          overlay_member="$(unzip -Z1 "$portable" | grep -E '(^|/)inputs/resource-overlay-normal\.zip      - name: Apply native VBV patch
+        if: steps.repo_checkpoint.outputs.found != 'true' && inputs.compiled_zip_url == ''
+        run: |
+          set -euo pipefail
+          python3 ViaBackport26.2-ClientSide/patch/apply_vbv_patch.py generated-client
+      - name: Restore Minecraft runtime resources
+        if: steps.repo_checkpoint.outputs.found != 'true' && inputs.compiled_zip_url == ''
+        run: |
+          set -euo pipefail
+          game_dir="$(find generated-client -type f \( -path "*/game/build.gradle" -o -path "*/game/build.gradle.kts" \) -print -quit | xargs -r dirname)"
+          if [ -z "$game_dir" ]; then
+            echo "::error::Could not locate the generated game module."
+            exit 1
+          fi
+          resources="$game_dir/src/main/resources"
+          # Preserve Eagler-specific skeleton resources (especially pack.png).
+          # create-dev can place the Eagler pack image outside the Gradle
+          # resource directory, so locate it before overlaying Minecraft assets.
+          mkdir -p "$resources"
+          pack_png=""
+          # The repository provides the Eaglercraft pack image explicitly.
+          # Prefer it so the final deploy step always receives the required pack.png.
+          if [ -f "$GITHUB_WORKSPACE/ViaBackport26.2-ClientSide/pack.png" ]; then
+            pack_png="$GITHUB_WORKSPACE/ViaBackport26.2-ClientSide/pack.png"
+          fi
+          if [ -z "$pack_png" ]; then
+            pack_png="$(find "$game_dir" -type f -name 'pack.png' -print -quit || true)"
+          fi
+          if [ -z "$pack_png" ]; then
+            pack_png="$(find "$GITHUB_WORKSPACE/generated-client" -type f -path '*/src/main/resources/pack.png' -print -quit || true)"
+          fi
+          if [ -z "$pack_png" ] && [ -f "$GITHUB_WORKSPACE/generated-client/source/pack.png" ]; then
+            pack_png="$GITHUB_WORKSPACE/generated-client/source/pack.png"
+          fi
+          if [ -z "$pack_png" ]; then
+            pack_png="$(find "$EAGLER_PATCHER_ROOT" -type f -name 'pack.png' -print -quit || true)"
+          fi
+          if [ -z "$pack_png" ]; then
+            echo "::error::Could not locate the Eaglercraft pack.png required by deploy_wasm_web.sh."
+            echo "=== pack.png candidates under generated-client ==="
+            find "$GITHUB_WORKSPACE/generated-client" -type f -name 'pack.png' -print | sort || true
+            echo "=== pack.png candidates under U1 patcher ==="
+            find "$EAGLER_PATCHER_ROOT" -type f -name 'pack.png' -print | sort || true
+            exit 1
+          fi
+          pack_png="$(realpath "$pack_png")"
+          cp -f "$pack_png" "$resources/pack.png"
+          echo "Preserved Eagler skeleton pack.png from: $pack_png"
+          temp_resources="$(mktemp -d)"
+          trap 'rm -rf "$temp_resources"' EXIT
+          unzip -q build-input/minecraft-26.2-client.jar -d "$temp_resources"
+          for path in version.json assets; do
+            if [ ! -e "$temp_resources/$path" ]; then
+              echo "::error::Official client JAR is missing required runtime resource: $path"
+              exit 1
+            fi
+          done
+          if [ -e "$temp_resources/pack.mcmeta" ]; then
+            echo "Official client JAR contains pack.mcmeta."
+          else
+            echo "Official client JAR has no pack.mcmeta; creating a minimal 26.2 header."
+            printf '%s\n' '{' '  "pack": {' '    "description": "Minecraft 26.2",' '    "min_format": 88,' '    "max_format": 88' '  }' '}' > "$temp_resources/pack.mcmeta"
+          fi
+          echo "=== Restoring runtime resources ==="
+          cp -a "$temp_resources/version.json" "$resources/"
+          cp -a "$temp_resources/pack.mcmeta" "$resources/"
+          # Do NOT overlay the vanilla assets tree. Eagler u1 owns the
+          # WebGL shader/pipeline resources in this tree; copying vanilla
+          # shader/pipeline definitions into it makes the WebGL backend request
+          # sources it cannot compile. Only restore the language file required
+          # by the normal Minecraft resource checks.
+          mkdir -p "$resources/assets/minecraft/lang"
+          cp -f "$temp_resources/assets/minecraft/lang/en_us.json" "$resources/assets/minecraft/lang/en_us.json"
+          # Eagler hosted asset packaging requires these six Realm UI assets.
+          # Restore only these exact files; never overlay the full vanilla
+          # assets tree because that can contaminate Eagler WebGL shaders.
+          # These ordinary 26.2 client textures are required by the runtime
+          # but are not part of Eagler u1's own rendering pipeline. Restore
+          # them individually so missing-resource crashes are fixed without
+          # copying vanilla shaders/pipeline definitions over Eagler resources.
+          required_runtime_assets=(
+            "assets/minecraft/textures/colormap/grass.png"
+            "assets/minecraft/textures/colormap/foliage.png"
+            "assets/minecraft/textures/colormap/dry_foliage.png"
+            "assets/minecraft/textures/environment/clouds.png"
+            "assets/minecraft/textures/block/water_still.png"
+            "assets/minecraft/textures/block/water_flow.png"
+            "assets/minecraft/textures/block/lava_still.png"
+            "assets/minecraft/textures/block/lava_flow.png"
+            "assets/minecraft/textures/gui/title/mojangstudios.png"
+            "assets/minecraft/textures/gui/title/background/panorama_0.png"
+            "assets/minecraft/textures/gui/title/background/panorama_1.png"
+            "assets/minecraft/textures/gui/title/background/panorama_2.png"
+            "assets/minecraft/textures/gui/title/background/panorama_3.png"
+            "assets/minecraft/textures/gui/title/background/panorama_4.png"
+            "assets/minecraft/textures/gui/title/background/panorama_5.png"
+            "assets/minecraft/textures/gui/title/background/panorama_overlay.png"
+            "assets/minecraft/textures/gui/sprites/realm_status/expired.png"
+            "assets/minecraft/textures/gui/sprites/realm_status/open.png"
+            "assets/minecraft/textures/gui/sprites/realm_status/expires_soon.png.mcmeta"
+            "assets/minecraft/textures/gui/sprites/realm_status/closed.png"
+            "assets/minecraft/textures/gui/sprites/icon/new_realm.png"
+            "assets/minecraft/textures/gui/sprites/realm_status/expires_soon.png"
+          )
+          for path in "${required_runtime_assets[@]}"; do
+            if [ ! -f "$temp_resources/$path" ]; then
+              echo "::error::Official Minecraft 26.2 client JAR is missing required asset: $path"
+              exit 1
+            fi
+            mkdir -p "$resources/$(dirname "$path")"
+            cp -f "$temp_resources/$path" "$resources/$path"
+          done
+          echo "Restored required runtime textures/UI assets without overlaying vanilla shader resources."
+          echo "=== Preserved Eagler u1 assets; restored vanilla language + curated runtime assets ==="
+          if find "$resources" -type f \( -name '*.vsh' -o -name '*.fsh' -o -name '*.glsl' \) -print -quit | grep -q .; then
+            echo "Eagler shader source files detected:"
+            find "$resources" -type f \( -name '*.vsh' -o -name '*.fsh' -o -name '*.glsl' \) -print | sort | head -100
+          else
+            echo "WARNING: no Eagler shader source files were visible in the Gradle resources at this stage."
+          fi
+          # Do NOT restore the vanilla data/ tree. Eagler u1 already
+          # supplies the browser-safe registry/resource bootstrap, and the
+          # desktop 26.2 data-pack tree can invoke unsupported reload paths
+          # during the initial asynchronous resource reload.
+          echo "Skipping vanilla data/ tree for Eagler u1 browser runtime."
+          echo "=== Restored runtime resources ==="
+          printf 'game module: %s\nresources: %s\n' "$game_dir" "$resources"
+          test -f "$resources/version.json"
+          test -f "$resources/pack.mcmeta"
+          test -f "$resources/assets/minecraft/lang/en_us.json"
+          test -f "$resources/pack.png"
+          echo "Preserved Eagler skeleton pack.png:"
+          ls -lh "$resources/pack.png"
+          du -sh "$resources"
+          find "$resources" -type f | wc -l
+      - name: Verify Eagler shader pipeline and restore vanilla non-shader assets
+        if: steps.repo_checkpoint.outputs.found != 'true' && inputs.compiled_zip_url == ''
+        run: |
+          set -euo pipefail
+          game_dir="$(find generated-client -type f \( -path "*/game/build.gradle" -o -path "*/game/build.gradle.kts" \) -print -quit | xargs -r dirname)"
+          resources="$game_dir/src/main/resources"
+          shaders="$resources/assets/minecraft/shaders"
+
+          # The shader tree above is the authenticated Eagler U1 tree.
+          # Do not replace it with vanilla 26.2 shader/pipeline sources.
+          for shader in \
+            core/gui.vsh \
+            core/gui.fsh \
+            core/position_tex_color.vsh \
+            core/position_tex_color.fsh \
+            core/text.vsh \
+            core/text.fsh; do
+            test -s "$shaders/$shader" || {
+              echo "::error::Eagler shader missing: assets/minecraft/shaders/$shader"
+              exit 1
+            }
+          done
+
+          temp_resources="$(mktemp -d)"
+          trap 'rm -rf "$temp_resources"' EXIT
+          unzip -q build-input/minecraft-26.2-client.jar -d "$temp_resources"
+
+          # Restore ordinary Minecraft resources only. The shader tree is
+          # explicitly excluded so vanilla GLSL cannot overwrite Eagler GLSL.
+          rsync -a --ignore-existing --exclude 'minecraft/shaders/' \
+            "$temp_resources/assets/" "$resources/assets/"
+
+          for f in gpu_warnlist.json regional_compliancies.json; do
+            if [ -f "$temp_resources/$f" ]; then
+              cp -n "$temp_resources/$f" "$resources/$f" || true
+            fi
+          done
+
+          echo "=== Final Eagler shader locations ==="
+          printf '%s\n' \
+            "$shaders/core/gui.vsh" \
+            "$shaders/core/gui.fsh" \
+            "$shaders/core/position_tex_color.vsh" \
+            "$shaders/core/position_tex_color.fsh" \
+            "$shaders/core/text.vsh" \
+            "$shaders/core/text.fsh"
+          echo "Eagler U1 shader pipeline verified; vanilla shader files were not substituted."
+      - name: Setup Java 25 for Eaglercraft build
+        if: steps.repo_checkpoint.outputs.found != 'true' && inputs.compiled_zip_url == ''
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "25.0.4"
+
+      - name: Cache Gradle dependencies and build cache
+        if: steps.repo_checkpoint.outputs.found != 'true' && inputs.compiled_zip_url == ''
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: eagler-vbv-gradle-${{ runner.os }}-${{ hashFiles('generated-client/**/gradle-wrapper.properties', 'generated-client/**/build.gradle*', 'generated-client/**/gradle.properties') }}
+          restore-keys: |
+            eagler-vbv-gradle-${{ runner.os }}-
+      - name: Build generated Eaglercraft client
+        if: steps.repo_checkpoint.outputs.found != 'true' && inputs.compiled_zip_url == ''
+        run: |
+          set -euo pipefail
+          build_root="$(find generated-client -type f -name 'gradlew' -print -quit | xargs -r dirname)"
+          if [ -z "$build_root" ]; then
+            echo "::error::No generated Gradle client root (gradlew) exists after create-dev."
+            find generated-client -maxdepth 4 -type f \( -name 'gradlew' -o -name 'build.gradle' -o -name 'build.gradle.kts' \) -print | sort
+            exit 1
+          fi
+          cd "$build_root"
+          chmod +x ./gradlew
+          ./gradlew assemble --no-daemon
+      - name: Inject Minecraft runtime resources into game JAR
+        if: steps.repo_checkpoint.outputs.found != 'true' && inputs.compiled_zip_url == ''
+        run: |
+          set -euo pipefail
+          build_root="$(find generated-client -type f -name 'gradlew' -print -quit | xargs -r dirname)"
+          if [ -z "$build_root" ]; then
+            echo "::error::Could not locate the generated Eaglercraft build root (gradlew)."
+            exit 1
+          fi
+          game_libs="$build_root/game/build/libs"
+          if [ ! -d "$game_libs" ]; then
+            echo "::error::Game build output directory does not exist: $game_libs"
+            find "$build_root" -maxdepth 5 -type d -path '*/game/build/*' -print | sort || true
+            exit 1
+          fi
+          game_jar="$(find "$game_libs" -maxdepth 1 -type f -name '*.jar' ! -name '*-sources.jar' ! -name '*-dev.jar' -print -quit)"
+          if [ -z "$game_jar" ]; then
+            echo "::error::Could not locate the assembled game JAR in: $game_libs"
+            find "$game_libs" -maxdepth 1 -type f -print | sort || true
+            exit 1
+          fi
+          temp_resources="$(mktemp -d)"
+          trap 'rm -rf "$temp_resources"' EXIT
+          unzip -q build-input/minecraft-26.2-client.jar -d "$temp_resources"
+          for path in version.json assets; do
+            if [ ! -e "$temp_resources/$path" ]; then
+              echo "::error::Official client JAR is missing required runtime resource: $path"
+              exit 1
+            fi
+          done
+          if [ -e "$temp_resources/pack.mcmeta" ]; then
+            echo "Official client JAR contains pack.mcmeta."
+          else
+            echo "Official client JAR has no pack.mcmeta; recreating the same minimal 26.2 header used for game resources."
+            printf '%s\n' '{' '  "pack": {' '    "description": "Minecraft 26.2",' '    "min_format": 88,' '    "max_format": 88' '  }' '}' > "$temp_resources/pack.mcmeta"
+          fi
+          echo "Injecting runtime resources into: $game_jar"
+          jar --update --file "$game_jar" \
+            -C "$temp_resources" version.json \
+            -C "$temp_resources" pack.mcmeta
+          # IMPORTANT: do not inject the raw vanilla assets/ tree into game.jar.
+          # create-dev + Eagler u1 already provide the Eagler-compatible shader
+          # resources. Replacing them with the Mojang client assets causes the
+          # WebGL renderer to request vanilla pipeline resources that have no
+          # Eagler-compatible shader source, producing black-screen/no-source
+          # shader failures.
+          if [ -e "$temp_resources/data" ]; then
+            echo "Injecting official 26.2 data/ directory too."
+            jar --update --file "$game_jar" -C "$temp_resources" data
+          else
+            echo "No data/ directory in client JAR; skipping it."
+          fi
+          echo "=== Required resources in game.jar ==="
+          jar_contents="$temp_resources/game-jar-contents.txt"
+          jar --list --file "$game_jar" > "$jar_contents"
+          grep -E '^(version.json|pack.mcmeta|assets/minecraft/lang/en_us.json|assets/)' "$jar_contents" | head -30 || true
+          grep -qx 'version.json' "$jar_contents"
+          grep -qx 'pack.mcmeta' "$jar_contents"
+          grep -qx 'assets/minecraft/lang/en_us.json' "$jar_contents"
+          echo "=== game.jar size ==="
+          ls -lh "$game_jar"
+      - name: Setup Node.js for WASM web tooling
+        if: steps.repo_checkpoint.outputs.found != 'true' && inputs.compiled_zip_url == ''
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Verify CI toolchain versions
+        if: steps.repo_checkpoint.outputs.found != 'true' && inputs.compiled_zip_url == ''
+        run: |
+          set -euo pipefail
+          echo "=== CI toolchain versions ==="
+          python --version
+          python3 --version
+          java -version
+          node --version
+          npm --version
+          echo "Gradle wrapper version:"
+          grep -E '^distributionUrl=' ModdedClientSource/gradle/wrapper/gradle-wrapper.properties 2>/dev/null || true
+
+      - name: Prepare ModdedClientSource
+        if: steps.repo_checkpoint.outputs.found != 'true' && inputs.compiled_zip_url == ''
+        run: |
+          set -euo pipefail
+          rm -rf "$GITHUB_WORKSPACE/ModdedClientSource"
+          build_root="$(find "$GITHUB_WORKSPACE/generated-client" -type f -name 'gradlew' -print -quit | xargs -r dirname)"
+          if [ -z "$build_root" ]; then
+            echo "::error::Could not locate the generated Eaglercraft Gradle root."
+            find "$GITHUB_WORKSPACE/generated-client" -maxdepth 6 -type f \( -name 'gradlew' -o -name 'build.gradle' -o -name 'build.gradle.kts' \) -print | sort || true
+            exit 1
+          fi
+          build_root="$(realpath "$build_root")"
+          mkdir -p "$GITHUB_WORKSPACE/ModdedClientSource"
+          cp -a "$build_root"/. "$GITHUB_WORKSPACE/ModdedClientSource/"
+          modded_root="$GITHUB_WORKSPACE/ModdedClientSource"
+          game_dir="$(find "$modded_root" -type f \( -path "*/game/build.gradle" -o -path "*/game/build.gradle.kts" \) -print -quit | xargs -r dirname)"
+          if [ -z "$game_dir" ]; then
+            echo "::error::Could not locate the copied Gradle game module."
+            find "$modded_root" -type f \( -name 'build.gradle' -o -name 'build.gradle.kts' \) -print | sort | head -300
+            exit 1
+          fi
+          game_dir="$(realpath "$game_dir")"
+          resources="$game_dir/src/main/resources"
+          echo "=== Generated client paths ==="
+          echo "Gradle root: $build_root"
+          echo "Copied root: $modded_root"
+          echo "Game module: $game_dir"
+          echo "Resources:   $resources"
+          # Preserve Eagler-specific skeleton resources, especially pack.png.
+          # Only overlay the official Minecraft runtime resources.
+          mkdir -p "$resources"
+          temp_resources="$(mktemp -d)"
+          trap 'rm -rf "$temp_resources"' EXIT
+          unzip -q "$GITHUB_WORKSPACE/build-input/minecraft-26.2-client.jar" -d "$temp_resources"
+          test -f "$temp_resources/version.json"
+          test -f "$temp_resources/assets/minecraft/lang/en_us.json"
+          if [ -e "$temp_resources/pack.mcmeta" ]; then
+            cp -a "$temp_resources/pack.mcmeta" "$resources/"
+          else
+            printf '%s\n' '{' '  "pack": {' '    "description": "Minecraft 26.2",' '    "min_format": 88,' '    "max_format": 88' '  }' '}' > "$resources/pack.mcmeta"
+          fi
+          cp -a "$temp_resources/version.json" "$resources/"
+          # Do NOT overlay the vanilla assets tree here. Eagler u1's
+          # resource tree contains the WebGL-compatible shader/pipeline
+          # resources. A vanilla shader tree can introduce incompatible GLSL
+          # programs such as core/entity and pipeline/*.
+          mkdir -p "$resources/assets/minecraft/lang"
+          cp -f "$temp_resources/assets/minecraft/lang/en_us.json" "$resources/assets/minecraft/lang/en_us.json"
+          echo "=== Preserved Eagler u1 resources; restored vanilla language only ==="
+          if find "$resources" -type f \( -name '*.vsh' -o -name '*.fsh' -o -name '*.glsl' \) -print -quit | grep -q .; then
+            echo "Eagler shader source files detected:"
+            find "$resources" -type f \( -name '*.vsh' -o -name '*.fsh' -o -name '*.glsl' \) -print | sort | head -100
+          else
+            echo "WARNING: no Eagler shader source files are visible in packaging resources."
+          fi
+          if [ -e "$temp_resources/data" ]; then
+            cp -a "$temp_resources/data" "$resources/"
+          fi
+          test -f "$resources/version.json"
+          test -f "$resources/pack.mcmeta"
+          test -f "$resources/assets/minecraft/lang/en_us.json"
+          test -f "$resources/pack.png"
+          # Do not copy resources into build/classes/java/main. Gradle's
+          # main output already contains build/resources/main, and copying the
+          # same files into the Java classes directory creates duplicate JAR
+          # entries (notably pack.mcmeta) when :game:jar runs again for TeaVM.
+          game_resources="$game_dir/build/resources/main"
+          test -f "$game_resources/version.json"
+          test -f "$game_resources/pack.mcmeta"
+          test -f "$game_resources/assets/minecraft/lang/en_us.json"
+          test -f "$game_resources/pack.png"
+          echo "=== TeaVM resource classpath verified ==="
+          ls -lh "$game_resources/version.json" "$game_resources/pack.png"
+          single_html_script="$modded_root/wasm-toolchain/build-single-html.js"
+          if [ ! -f "$single_html_script" ]; then
+            echo "::error::The generated client does not contain wasm-toolchain/build-single-html.js."
+            find "$modded_root" -path '*/wasm-toolchain/*' -type f -print | sort || true
+            exit 1
+          fi
+          echo "Found single-HTML builder: $single_html_script"
+          # Copy built-in client-mod metadata and pack.png icons into the
+          # generated resource classpath. Resource-pack-backed features are
+          # presented as mods in the native Mods screen.
+          builtin_mods="$GITHUB_WORKSPACE/ViaBackport26.2-ClientSide/src/main/resources/vbvclient/mods"
+          if [ -d "$builtin_mods" ]; then
+            mkdir -p "$resources/vbvclient/mods"
+            cp -a "$builtin_mods"/. "$resources/vbvclient/mods/"
+            for mod_dir in "$resources"/vbvclient/mods/*; do
+              [ -d "$mod_dir" ] || continue
+              if [ ! -f "$mod_dir/pack.png" ]; then
+                cp -f "$GITHUB_WORKSPACE/ViaBackport26.2-ClientSide/pack.png" "$mod_dir/pack.png"
+              fi
+            done
+            mkdir -p "$game_classes/vbvclient/mods"
+            cp -a "$resources"/vbvclient/mods/. "$game_classes/vbvclient/mods/"
+          fi
+          node --version
+          echo "MODDED_CLIENT_SOURCE_READY=true" >> "$GITHUB_ENV"
+
+      - name: Restore completed WASM-GC output cache
+        id: wasm_web_cache_restore
+        if: success() && inputs.compiled_zip_url == ''
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            ModdedClientSource/.gradle
+            ModdedClientSource/target_teavm_wasm_gc/build
+          key: vbv-teavm-wasm-v8-${{ hashFiles('ViaBackport26.2-ClientSide/src/main/java/**/*.java', 'ViaBackport26.2-ClientSide/src/main/resources/**/*.json', 'ViaBackport26.2-ClientSide/patch/**', 'ModsPack/**/*.zip', 'u1-1-source/**', 'U1-Patcher/portable-kit.zip') }}
+          # Exact-key restore only. Never fall back to the old v3 cache.
+      - name: Snapshot generated client before expensive WASM build
+        if: success() && steps.repo_checkpoint.outputs.found != 'true' && inputs.compiled_zip_url == ''
+        run: |
+          set -euo pipefail
+          rm -rf "$GITHUB_WORKSPACE/checkpoint"
+          mkdir -p "$GITHUB_WORKSPACE/checkpoint"
+          cp -a "$GITHUB_WORKSPACE/ModdedClientSource"/. "$GITHUB_WORKSPACE/checkpoint"/
+          test -f "$GITHUB_WORKSPACE/checkpoint/game/build/libs/game.jar"
+          test -f "$GITHUB_WORKSPACE/checkpoint/wasm-toolchain/build-single-html.js"
+          echo "Reusable generated-client checkpoint created before TeaVM."
+
+      - name: Save reusable generated client checkpoint
+        if: success() && steps.repo_checkpoint.outputs.found != 'true' && inputs.compiled_zip_url == ''
+        uses: actions/cache/save@v4
+        with:
+          path: checkpoint
+          key: eagler-vbv-root-checkpoint-v8-u1-1-${{ hashFiles('ViaBackport26.2-ClientSide/src/main/java/**/*.java', 'ViaBackport26.2-ClientSide/src/main/resources/**/*.json', 'ViaBackport26.2-ClientSide/patch/**', 'ModsPack/**/*.zip', 'eaglercraft-26.2-patcher-main (1).tar.gz', 'u1-1-source/**', 'U1-Patcher/portable-kit.zip') }}
+
+      - name: Apply WASM-GC Netty transport source fix
+        if: success() && inputs.compiled_zip_url == ''
+        run: |
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE/ModdedClientSource"
+
+          target="game/src/main/java/net/minecraft/server/network/EventLoopGroupHolder.java"
+          if [ ! -f "$target" ]; then
+            echo "::error::Expected compiled EventLoopGroupHolder.java was not found at $target"
+            echo "=== EventLoopGroupHolder candidates ==="
+            find . -type f -name EventLoopGroupHolder.java -print | sort
+            exit 1
+          fi
+
+          python3 - "$target" <<'PY'
+          from pathlib import Path
+          import re
+          import sys
+
+          path = Path(sys.argv[1])
+          text = path.read_text(encoding="utf-8")
+          original = text
+
+          # Minecraft 26.2's server-side EventLoopGroupHolder is not used by
+          # the browser client, but its class is still compiled. The Eagler
+          # classpath intentionally does not ship Netty's native epoll/kqueue
+          # transports. Use Netty 4.2's portable NIO IoHandler instead.
+          text = re.sub(
+              r"^import io\.netty\.channel\.(?:epoll|kqueue)\.[^;]+;\s*\n",
+              "",
+              text,
+              flags=re.MULTILINE,
+          )
+          text = re.sub(
+              r"^import io\.netty\.channel\.nio\.NioEventLoopGroupIoHandler;\s*\n",
+              "",
+              text,
+              flags=re.MULTILINE,
+          )
+
+          text = text.replace(
+              "EpollIoHandler.newFactory()",
+              "NioIoHandler.newFactory()",
+          )
+          text = text.replace(
+              "KQueueIoHandler.newFactory()",
+              "NioIoHandler.newFactory()",
+          )
+          # Replace native transport channel class literals with the portable NIO equivalents.
+          text = text.replace("EpollSocketChannel.class", "NioSocketChannel.class")
+          text = text.replace("EpollServerSocketChannel.class", "NioServerSocketChannel.class")
+          text = text.replace("KQueueSocketChannel.class", "NioSocketChannel.class")
+          text = text.replace("KQueueServerSocketChannel.class", "NioServerSocketChannel.class")
+          text = text.replace("Epoll.isAvailable()", "true")
+          text = text.replace("KQueue.isAvailable()", "true")
+
+          # The correct Netty 4.2 portable handler is NioIoHandler; the
+          # previous patch accidentally referred to the nonexistent
+          # NioEventLoopGroupIoHandler class.
+          text = text.replace("NioEventLoopGroupIoHandler", "NioIoHandler")
+
+          lines = text.splitlines()
+          imports = {
+              "import io.netty.channel.nio.NioIoHandler;",
+              "import io.netty.channel.nio.NioEventLoopGroup;",
+              "import io.netty.channel.socket.nio.NioServerSocketChannel;",
+              "import io.netty.channel.socket.nio.NioSocketChannel;",
+          }
+          # Only retain imports that are actually referenced after the
+          # transport rewrite, avoiding duplicate/unused native imports.
+          for imp in list(imports):
+              simple = imp.rsplit(".", 1)[-1][:-1]
+              if simple not in text.split(";", 1)[-1] and simple not in text:
+                  imports.discard(imp)
+
+          # NioIoHandler is required by the two factory methods.
+          imports.add("import io.netty.channel.nio.NioIoHandler;")
+
+          lines = [line for line in lines if not (
+              line.startswith("import io.netty.channel.nio.NioIoHandler;")
+          )]
+          import_indexes = [i for i, line in enumerate(lines) if line.startswith("import ")]
+          insert_at = (import_indexes[-1] + 1) if import_indexes else 0
+          lines.insert(insert_at, "import io.netty.channel.nio.NioIoHandler;")
+          text = "\n".join(lines) + ("\n" if original.endswith("\n") else "")
+
+          if text == original:
+              raise SystemExit(f"::error::Netty WASM-GC fix made no changes to {path}")
+
+          if "EpollIoHandler" in text or "KQueueIoHandler" in text:
+              raise SystemExit("::error::Native Netty IoHandler references remain after rewrite")
+          if "NioEventLoopGroupIoHandler" in text:
+              raise SystemExit("::error::Invalid NioEventLoopGroupIoHandler reference remains after rewrite")
+          if "Epoll.isAvailable()" in text or "KQueue.isAvailable()" in text:
+              raise SystemExit("::error::Native Netty availability checks remain after rewrite")
+
+          path.write_text(text, encoding="utf-8")
+          print(f"Patched compiled source: {path}")
+          PY
+
+          echo "=== EventLoopGroupHolder candidates (source copy is intentionally untouched) ==="
+          find . -type f -name EventLoopGroupHolder.java -print | sort
+
+          echo "=== Remaining native Netty references in compiled Java sources ==="
+          if grep -RInE 'io\.netty\.channel\.(epoll|kqueue)|\b(Epoll|KQueue)[A-Za-z]*' game/src/main/java 2>/dev/null | head -100; then
+            echo "::warning::Native Netty references remain in game/src/main/java; inspect them if TeaVM reports another missing class."
+          else
+            echo "No Epoll/KQueue references remain in game/src/main/java."
+          fi
+
+          echo "=== Patched compiled EventLoopGroupHolder ==="
+          sed -n '1,220p' "$target"
+
+      - name: Build WASM-GC web client
+        if: success() && inputs.compiled_zip_url == '' && steps.wasm_web_cache_restore.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE/ModdedClientSource"
+
+          # Gradle 9.6 on JDK 25 otherwise launches a smaller client JVM and
+          # then forks the real daemon. Give the launcher the same heap and
+          # explicitly authorize Gradle's native-platform library.
+          max_mem_mb="$(awk '/MemTotal:/ {print int($2/1024)}' /proc/meminfo)"
+          echo "Runner memory: ${max_mem_mb} MiB"
+          if [ "$max_mem_mb" -lt 12000 ]; then
+            echo "::error::Runner has less than 12 GiB RAM; refusing high-memory parallel WASM build."
+            exit 1
+          fi
+          workers="$(nproc)"
+          if [ "$workers" -gt 6 ]; then workers=6; fi
+          echo "Using up to ${workers} Gradle workers."
+          export GRADLE_OPTS="-Xmx10g -Xss4m"
+          export JAVA_TOOL_OPTIONS="--enable-native-access=ALL-UNNAMED"
+
+          echo "=== Building Eaglercraft WASM-GC web client ==="
+          if [ -f "./gradlew" ]; then
+            chmod +x ./gradlew
+          else
+            echo "::error::ModdedClientSource is missing gradlew."
+            exit 1
+          fi
+
+          echo "=== WASM-GC Gradle tasks ==="
+          ./gradlew :target_teavm_wasm_gc:tasks --all --console=plain --no-daemon > wasm-gc-tasks.txt 2>&1 || {
+            cat wasm-gc-tasks.txt
             exit 1
           }
+          grep -E '(^|:)generateWasmGC|(^|:)buildEagler' wasm-gc-tasks.txt | head -100 || true
+
+          # This task is the Eagler u1 WASM-GC web output task. It must
+          # generate target_teavm_wasm_gc/build/web/index.html and the raw
+          # .wasm payloads consumed by the Cloudflare R2 bundle.
+          if grep -qE '^generateWasmGCIncremental([[:space:]]|$)' wasm-gc-tasks.txt; then
+            WASM_TASK=":target_teavm_wasm_gc:generateWasmGCIncremental"
+          elif grep -qE '^buildWasmGC([[:space:]]|$)' wasm-gc-tasks.txt; then
+            WASM_TASK=":target_teavm_wasm_gc:buildWasmGC"
+          elif grep -qE '^build([[:space:]]|$)' wasm-gc-tasks.txt; then
+            WASM_TASK=":target_teavm_wasm_gc:build"
+          else
+            echo "::error::No supported WASM-GC build task was found."
+            cat wasm-gc-tasks.txt
+            exit 1
+          fi
+
+          echo "Selected WASM-GC task: $WASM_TASK"
+
+          # Keep the generated vanilla 26.2 source clean under JDK 25:
+          # javac otherwise emits removal/deprecation diagnostics for legacy
+          # APIs such as Object.finalize(). These are upstream source warnings,
+          # not VBV code errors. Configure the CI compiler once for all
+          # subprojects rather than editing the generated Minecraft sources.
+          cat > "$GITHUB_WORKSPACE/vbv-ci.init.gradle" <<'GRADLE'
+          allprojects {
+              tasks.withType(JavaCompile).configureEach {
+                  options.compilerArgs.add("-Xlint:none")
+                  options.compilerArgs.add("-nowarn")
+              }
+          }
+          GRADLE
+
+          ./gradlew "$WASM_TASK" \
+            --no-daemon \
+            --warning-mode=none \
+            --init-script "$GITHUB_WORKSPACE/vbv-ci.init.gradle" \
+            --max-workers=1 \
+            -Dorg.gradle.parallel=false \
+            -Dorg.gradle.jvmargs="-Xmx10g -Xss4m" \
+            --stacktrace \
+            --info
+
+          # TeaVM's Gradle task produces the source HTML under src/web and
+          # classes.wasm under build/generated. The U1 deployment pipeline then
+          # links the precise client/mesh/server images, installs the authenticated
+          # TeaVM runtime glue, builds assets.epk, and assembles the hosted web
+          # directory. Do that explicit deployment stage before checking build/web.
+          cd "$GITHUB_WORKSPACE/ModdedClientSource"
+          export EAGLER_USE_DEDICATED_SERVER_WASM="1"
+
+          echo "=== Linking precise WASM-GC client ==="
+          node wasm-toolchain/link-web-target-standalone.js client
+
+          echo "=== Linking precise WASM-GC mesh worker ==="
+          node wasm-toolchain/link-web-target-standalone.js mesh
+
+          echo "=== Linking precise WASM-GC server worker ==="
+          node wasm-toolchain/link-server-standalone.js
+
+          echo "=== Building hosted asset bundle ==="
+          ./gradlew :target_lwjgl_desktop:buildAssetsEPK \
+            --console=plain \
+            --no-daemon \
+            --max-workers=1 \
+            -Dorg.gradle.parallel=false \
+            -Dorg.gradle.jvmargs="-Xmx10g -Xss4m -XX:MaxMetaspaceSize=768m -XX:+UseG1GC"
+
+          assets_epk="$GITHUB_WORKSPACE/ModdedClientSource/target_lwjgl_desktop/build/epk/assets.epk"
+          if [ ! -s "$assets_epk" ]; then
+            echo "::error::buildAssetsEPK did not produce assets.epk."
+            exit 1
+          fi
+          mkdir -p "$GITHUB_WORKSPACE/ModdedClientSource/target_teavm/build/web"
+          cp -f "$assets_epk" "$GITHUB_WORKSPACE/ModdedClientSource/target_teavm/build/web/assets.epk"
+
+          echo "=== Deploying Eagler U1 WASM-GC web output ==="
+          bash wasm-toolchain/deploy_wasm_web.sh
+
+          web_dir="$GITHUB_WORKSPACE/ModdedClientSource/target_teavm_wasm_gc/build/web"
+
+          # U1 deployment can assemble the HTML/runtime shell without copying
+          # the linked WASM payloads into build/web. The linker outputs the
+          # final client/mesh/server WASM under their generated/wasm-gc-* dirs.
+          # Copy those final linked payloads into the hosted directory before
+          # validation so the browser receives the actual runtime files.
+          mkdir -p "$web_dir"
+          copy_final_wasm() {
+            local name="$1"
+            local module_root="$2"
+            local destination="$web_dir/$name"
+            local source=""
+
+            if [ -s "$destination" ]; then
+              echo "WASM already deployed: $destination"
+              return 0
+            fi
+
+            source="$(find "$module_root" -type f -path "*/wasm-gc-standalone/$name" -print -quit 2>/dev/null || true)"
+            if [ -z "$source" ]; then
+              source="$(find "$module_root" -type f -path "*/wasm-gc/$name" -print -quit 2>/dev/null || true)"
+            fi
+            if [ -z "$source" ]; then
+              echo "::error::Could not find linked $name under $module_root"
+              find "$module_root" -type f -name "$name" -printf '%s %p\n' 2>/dev/null | sort -nr || true
+              return 1
+            fi
+
+            cp -f "$source" "$destination"
+            echo "Copied linked WASM: $source -> $destination"
+          }
+
+          copy_final_wasm "classes.wasm" "$GITHUB_WORKSPACE/ModdedClientSource/target_teavm_wasm_gc/build/generated/teavm"
+          copy_final_wasm "mesh-worker.wasm" "$GITHUB_WORKSPACE/ModdedClientSource/target_teavm_wasm_gc_mesh/build/generated/teavm"
+          copy_final_wasm "server-worker.wasm" "$GITHUB_WORKSPACE/ModdedClientSource/target_teavm_wasm_gc_server/build/generated/teavm"
+
+          if [ ! -f "$web_dir/index.html" ]; then
+            echo "::error::WASM-GC deployment completed without generating target_teavm_wasm_gc/build/web/index.html."
+            echo "=== Available WASM/HTML output ==="
+            find "$GITHUB_WORKSPACE/ModdedClientSource" -type f \( -name '*.wasm' -o -name '*.html' \) -printf '%s %p\\n' 2>/dev/null | sort -nr | head -200 || true
+            exit 1
+          fi
+
+          # deploy_wasm_web.sh intentionally creates symlinks for generated
+          # payloads. That is fine inside the build workspace, but the
+          # validation and R2 artifact must contain real files, not symlinks
+          # pointing at paths outside build/web.
+          echo "=== Materializing deployed web symlinks ==="
+          while IFS= read -r -d '' link; do
+            target="$(readlink -f "$link")"
+            if [ -z "$target" ] || [ ! -f "$target" ]; then
+              echo "::error::Web output symlink has no valid file target: $link -> $(readlink "$link" || true)"
+              exit 1
+            fi
+            rm -f "$link"
+            cp -f "$target" "$link"
+            echo "Materialized: $link"
+          done < <(find "$web_dir" -maxdepth 1 -type l -print0)
+
+          echo "=== Verifying RAW WASM files before precompression ==="
+          wasm_count="$(find "$web_dir" -maxdepth 1 -type f -name '*.wasm' | wc -l)"
+          if [ "$wasm_count" -lt 1 ]; then
+            echo "::error::U1 deployment produced no raw .wasm files before precompression."
+            find "$web_dir" -maxdepth 2 -type f -printf '%s %p\\n' | sort -nr | head -200 || true
+            exit 1
+          fi
+
+          # precompress-web.sh intentionally removes the raw .wasm files after
+          # creating the .br/.gz variants. Keep a copy so the final R2 bundle
+          # contains the actual raw WASM payloads as well.
+          raw_wasm_dir="$GITHUB_WORKSPACE/ModdedClientSource/raw-wasm-web"
+          rm -rf "$raw_wasm_dir"
+          mkdir -p "$raw_wasm_dir"
+          cp -f "$web_dir"/*.wasm "$raw_wasm_dir"/
+
+          echo "=== Precompressing hosted web output ==="
+          bash wasm-toolchain/precompress-web.sh
+
+          cp -f "$raw_wasm_dir"/*.wasm "$web_dir"/
+          rm -rf "$raw_wasm_dir"
+
+          echo "=== WASM-GC web output generated ==="
+          echo "index.html:"
+          ls -lh "$web_dir/index.html"
+          echo "Raw WASM files: $(find "$web_dir" -maxdepth 1 -type f -name '*.wasm' | wc -l)"
+          find "$web_dir" -maxdepth 1 -type f -name '*.wasm' -printf '%s %p\\n' | sort -nr
+          echo "Total web output:"
+          du -sh "$web_dir"
+
+      - name: Save Gradle and WASM-GC cache (complete build)
+        if: success() && inputs.compiled_zip_url == '' && steps.wasm_web_cache_restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            ModdedClientSource/.gradle
+            ModdedClientSource/target_teavm_wasm_gc/build
+          key: vbv-teavm-wasm-v9-${{ hashFiles('ViaBackport26.2-ClientSide/src/main/java/**/*.java', 'ViaBackport26.2-ClientSide/src/main/resources/**/*.json', 'ModsPack/**/*.zip', 'u1-1-source/**', 'U1-Patcher/portable-kit.zip') }}
+
+      - name: Save Gradle and WASM-GC cache (partial progress after failure)
+        if: failure() && inputs.compiled_zip_url == '' && steps.wasm_web_cache_restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            ModdedClientSource/.gradle
+            ModdedClientSource/target_teavm_wasm_gc/build
+          # Unique key: a partial build must never occupy the exact key, or the
+          # next run would see a cache hit and skip the WASM build entirely.
+          key: vbv-teavm-wasm-v10-partial-${{ github.run_id }}
+
+      - name: Normalize imported precompiled web output
+        if: success() && inputs.compiled_zip_url != ''
+        run: |
+          set -euo pipefail
+          web_dir="$GITHUB_WORKSPACE/ModdedClientSource/target_teavm_wasm_gc/build/web"
+          if [ ! -d "$web_dir" ]; then
+            echo "::error::Imported checkpoint is missing target_teavm_wasm_gc/build/web."
+            exit 1
+          fi
+          while IFS= read -r -d '' link; do
+            target="$(readlink -f "$link")"
+            if [ -z "$target" ] || [ ! -f "$target" ]; then
+              echo "::error::Imported web symlink has no valid target: $link"
+              exit 1
+            fi
+            rm -f "$link"
+            cp -f "$target" "$link"
+          done < <(find "$web_dir" -maxdepth 1 -type l -print0)
+          wasm_count="$(find "$web_dir" -maxdepth 1 -type f -name '*.wasm' | wc -l)"
+          if [ "$wasm_count" -lt 1 ]; then
+            echo "::error::Imported checkpoint contains no raw WASM files."
+            find "$web_dir" -maxdepth 1 -printf '%y %s %p\n' | sort
+            exit 1
+          fi
+          echo "Imported compiled web output is ready:"
+          find "$web_dir" -maxdepth 1 -type f \( -name '*.wasm' -o -name '*.html' \) -printf '%s %p\n' | sort -nr
+          du -sh "$web_dir"
+
+      - name: Install repository sounds.epk
+        if: success()
+        run: |
+          set -euo pipefail
+          if [ ! -s "$GITHUB_WORKSPACE/sounds.epk" ]; then
+            printf 'EAGPKG$\006ver2.0\000\000\000\000\000\000\000\0000END$:::YEE:>' > "$GITHUB_WORKSPACE/sounds.epk"
+          fi
+          web_dir="$GITHUB_WORKSPACE/ModdedClientSource/target_teavm_wasm_gc/build/web"
+          test -d "$web_dir"
+          cp -f "$GITHUB_WORKSPACE/sounds.epk" "$web_dir/sounds.epk"
+          test -s "$web_dir/sounds.epk"
+          echo "sounds.epk installed into compiled web output."
+
+      - name: Prepare Cloudflare R2 web bundle
+        if: success()
+        run: |
+          set -euo pipefail
+          build_root="$GITHUB_WORKSPACE/ModdedClientSource"
+          source_dir="$build_root/target_teavm_wasm_gc/build/web"
+          output_dir="$GITHUB_WORKSPACE/cloudflare-r2-client"
+
+          if [ ! -f "$source_dir/index.html" ]; then
+            echo "::error::WASM-GC web build is missing target_teavm_wasm_gc/build/web/index.html."
+            echo "=== Available WASM/HTML output ==="
+            find "$build_root" -type f \( -name '*.wasm' -o -name '*.html' \) -printf '%s %p\n' 2>/dev/null | sort -nr | head -200 || true
+            exit 1
+          fi
+
+          rm -rf "$output_dir"
+          mkdir -p "$output_dir"
+          cp -a "$source_dir"/. "$output_dir"/
+          test -s "$output_dir/sounds.epk"
+          find "$output_dir" -type f \( -name '*.br' -o -name '*.gz' -o -name '*.meta' -o -name '*.sha256' \) -delete
+
+          printf '%s\n' \
+            'name = "my-eagler-client"' \
+            'main = "worker.js"' \
+            'compatibility_date = "2026-09-29"' \
+            '' \
+            '[[r2_buckets]]' \
+            'binding = "GAME"' \
+            'bucket_name = "my-eagler-client-files"' \
+            > "$output_dir/wrangler.toml.example"
+
+          cat > "$output_dir/worker.js" <<'EOF'
+          export default {
+            async fetch(request, env) {
+              if (request.method !== "GET" && request.method !== "HEAD") {
+                return new Response("Method not allowed", { status: 405 });
+              }
+              const url = new URL(request.url);
+              const key = url.pathname === "/" ? "index.html" : url.pathname.slice(1);
+              const object = await env.GAME.get(key);
+              if (!object) return new Response("Not found", { status: 404 });
+              const types = {
+                html: "text/html; charset=utf-8",
+                js: "text/javascript; charset=utf-8",
+                wasm: "application/wasm",
+                json: "application/json",
+                png: "image/png",
+                ico: "image/x-icon"
+              };
+              const extension = key.split(".").pop().toLowerCase();
+              return new Response(request.method === "HEAD" ? null : object.body, {
+                headers: {
+                  "Content-Type": types[extension] || "application/octet-stream",
+                  "Cache-Control": "no-cache",
+                  "X-Content-Type-Options": "nosniff"
+                }
+              });
+            }
+          };
+          EOF
+
+      - name: Upload WASM-GC web artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Eaglercraft-26.2-VBV-WASM-GC-${{ github.run_id }}
+          path: cloudflare-r2-client
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+      - name: WASM-GC artifact summary
+        if: success()
+        run: |
+          set -euo pipefail
+          echo "## WASM-GC artifact" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Artifact: Eaglercraft-26.2-VBV-WASM-GC-${GITHUB_RUN_ID}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Contains index.html, raw WASM files, assets.epk, and the Cloudflare R2 worker example." >> "$GITHUB_STEP_SUMMARY"
+ | head -1 || true)"
+          if [ -z "$overlay_member" ]; then
+            echo "::error::inputs/resource-overlay-normal.zip was not found inside the verified portable kit."
+            echo "=== ZIP members containing resource-overlay-normal ==="
+            unzip -Z1 "$portable" | grep -i 'resource-overlay-normal' | head -50 || true
+            exit 1
+          fi
+          echo "Portable-kit overlay member: $overlay_member"
+
+          unzip -p "$portable" "$overlay_member" > "$overlay_tmp"
+          test -s "$overlay_tmp"
+          overlay_sha="$(sha256sum "$overlay_tmp" | cut -d' ' -f1)"
+          echo "Eagler resource overlay SHA-256: $overlay_sha"
+          if [ "$overlay_sha" != "$expected_overlay" ]; then
+            echo "::error::Eagler resource overlay SHA-256 mismatch."
+            echo "::error::Expected: $expected_overlay"
+            echo "::error::Actual:   $overlay_sha"
+            exit 1
+          fi
 
           unzip -q "$overlay_tmp" -d "$overlay_root"
           shader_src="$overlay_root/assets/minecraft/shaders"
-          test -d "$shader_src"
+          if [ ! -d "$shader_src" ]; then
+            echo "::error::Verified Eagler overlay has no assets/minecraft/shaders directory."
+            echo "=== Overlay top-level inventory ==="
+            find "$overlay_root" -maxdepth 4 -type f | sort | head -200
+            exit 1
+          fi
 
           rm -rf "$shaders"
           mkdir -p "$shaders"
@@ -457,7 +1372,7 @@ jobs:
 
           echo "=== Eagler U1 shader source location ==="
           echo "Portable kit: $portable"
-          echo "Overlay member: inputs/resource-overlay-normal.zip"
+          echo "Overlay member: $overlay_member"
           echo "Shader root inside overlay: assets/minecraft/shaders"
           echo "Installed resource path: $shaders"
           find "$shaders" -type f \( -name '*.vsh' -o -name '*.fsh' -o -name '*.glsl' \) -print | sort
@@ -469,12 +1384,14 @@ jobs:
             core/text.fsh \
             core/position_tex_color.vsh \
             core/position_tex_color.fsh; do
-            test -s "$shaders/$shader" || {
+            if [ ! -s "$shaders/$shader" ]; then
               echo "::error::Required Eagler shader is missing: assets/minecraft/shaders/$shader"
               exit 1
-            }
+            fi
           done
+
           echo "Verified Eagler U1 shader pipeline without vanilla shader substitution."
+          echo "Vanilla Minecraft 26.2 shader sources are never copied into this shader directory."
 
       - name: Apply native VBV patch
         if: steps.repo_checkpoint.outputs.found != 'true' && inputs.compiled_zip_url == ''
