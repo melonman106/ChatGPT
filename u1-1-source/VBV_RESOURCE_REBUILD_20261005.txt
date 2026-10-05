@@ -1,0 +1,22 @@
+VBV v1 clean resource rebuild marker.
+
+This file intentionally changes the U1.1 source-tree cache fingerprint so the Eaglercraft 26.2 VBV client rebuilds its checkpoint and WASM output instead of restoring the older checkpoint that was missing required vanilla/Eagler resources.
+
+Required resources observed missing in the stale client included:
+- minecraft:shaders/core/gui.vsh
+- minecraft:shaders/core/gui.fsh
+- minecraft:shaders/core/position_tex_color.vsh
+- minecraft:shaders/core/position_tex_color.fsh
+- minecraft:shaders/core/text.vsh
+- minecraft:shaders/core/text.fsh
+- minecraft:textures/gui/title/edition.png
+- minecraft:textures/gui/title/minecraft.png
+- minecraft:block/lava_flow
+- minecraft:block/lava_still
+- minecraft:block/water_flow
+- minecraft:block/water_overlay
+- minecraft:block/water_still
+- minecraft:gpu_warnlist.json
+- minecraft:regional_compliancies.json
+
+Do not remove this marker until the clean resource build has been verified booting successfully.
