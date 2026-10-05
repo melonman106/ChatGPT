@@ -137,6 +137,7 @@ jobs:
           for tag, name, data in entries:
               if tag != b"FILE" or not name.endswith((".vsh", ".fsh", ".glsl")):
                   continue
+              data = replacements.get(name, data)
               text = data.decode("utf-8", "replace")
               text = text.replace("sample_lightmap(Sampler2, UV2)", "sample_lightmap(Sampler2, vec2(UV2))")
               text = text.replace("minecraft_sample_lightmap(Sampler2, UV2)", "minecraft_sample_lightmap(Sampler2, vec2(UV2))")
