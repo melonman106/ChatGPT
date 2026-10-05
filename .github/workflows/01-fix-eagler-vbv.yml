@@ -20,6 +20,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          lfs: true
 
       - name: Setup Python 3.14
         uses: actions/setup-python@v6
@@ -30,13 +32,38 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test -s ViaBackport26.2-ClientSide/patch/apply_vbv_patch.py
-          test -s ViaBackport26.2-ClientSide/patch/zipfile.py
-          test -s ViaBackport26.2-ClientSide/pack.png
-          test -s sounds.epk
-          test -s U1-Patcher/portable-kit.zip
-          test -s u1-1-source/patcher/java-cli/eagler-patcher
-          echo "Required VBV/Eagler inputs are present."
+
+          check_file() {
+            local path="$1"
+            if [ ! -e "$path" ]; then
+              echo "::error file=$path::Required file is missing."
+              return 1
+            fi
+            if [ ! -f "$path" ]; then
+              echo "::error file=$path::Required path is not a regular file."
+              return 1
+            fi
+            if [ ! -s "$path" ]; then
+              echo "::error file=$path::Required file is empty."
+              return 1
+            fi
+            echo "OK: $path ($(stat -c '%s bytes' "$path"))"
+          }
+
+          check_file ViaBackport26.2-ClientSide/patch/apply_vbv_patch.py
+          check_file ViaBackport26.2-ClientSide/patch/zipfile.py
+          check_file ViaBackport26.2-ClientSide/pack.png
+          check_file sounds.epk
+          check_file U1-Patcher/portable-kit.zip
+          check_file u1-1-source/patcher/java-cli/eagler-patcher
+
+          echo "=== Git LFS status ==="
+          git lfs ls-files 2>/dev/null || true
+
+          echo "=== Required binary hashes ==="
+          sha256sum ViaBackport26.2-ClientSide/pack.png sounds.epk U1-Patcher/portable-kit.zip
+
+          echo "Required VBV/Eagler inputs are present and non-empty."
 
       - name: Validate VBV fix scripts
         shell: bash
