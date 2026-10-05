@@ -79,6 +79,7 @@ jobs:
           set -uo pipefail
           cat > playtest.mjs <<'EOF'
           import { chromium } from 'playwright';
+          import fs from 'node:fs';
 
           const browser = await chromium.launch({
             headless: true,
@@ -88,10 +89,14 @@ jobs:
           const page = await context.newPage();
           const errors = [];
           const consoleErrors = [];
+          const allConsole = [];
           const failedRequests = [];
 
           page.on('pageerror', e => errors.push(String(e)));
-          page.on('console', msg => { if (msg.type() === 'error') consoleErrors.push(msg.text()); });
+          page.on('console', msg => {
+            allConsole.push(`[${msg.type()}] ${msg.text()}`);
+            if (msg.type() === 'error') consoleErrors.push(msg.text());
+          });
           page.on('requestfailed', req => failedRequests.push({ url: req.url(), failure: req.failure()?.errorText ?? 'unknown' }));
 
           await page.goto('http://127.0.0.1:8080/index.html', { waitUntil: 'domcontentloaded', timeout: 30000 });
@@ -112,10 +117,13 @@ jobs:
           await page.mouse.up({ button: 'left' });
           await page.screenshot({ path: 'playtest-03-input.png', fullPage: true });
 
+          fs.writeFileSync('playtest-console.log', allConsole.join('\n'));
+
           console.log('Page title:', await page.title());
           console.log('Canvases:', await page.locator('canvas').count());
           console.log('Page errors:', errors.length);
           console.log('Console errors:', consoleErrors.length);
+          console.log('All console messages:', allConsole.length);
           console.log('Failed requests:', failedRequests.length);
           for (const e of errors) console.log('PAGE ERROR:', e);
           for (const e of consoleErrors) console.log('CONSOLE ERROR:', e);
@@ -174,6 +182,7 @@ jobs:
             playtest-01-loaded.png
             playtest-02-after-startup.png
             playtest-03-input.png
+            playtest-console.log
             web-server.log
           retention-days: 7
           if-no-files-found: warn
