@@ -420,6 +420,62 @@ jobs:
           echo "Verified U1.1 rendering implementation and RenderPipelines patch."
           echo "Vanilla 26.2 shader source files are intentionally retained below:"
           echo "Eagler u1 consumes the Minecraft shader resource tree through its patched rendering pipeline."
+      - name: Stage the verified Eagler U1 shader pipeline
+        if: steps.repo_checkpoint.outputs.found != 'true' && inputs.compiled_zip_url == ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          game_dir="$(find generated-client -type f \( -path "*/game/build.gradle" -o -path "*/game/build.gradle.kts" \) -print -quit | xargs -r dirname)"
+          resources="$game_dir/src/main/resources"
+          shaders="$resources/assets/minecraft/shaders"
+          portable="U1-Patcher/portable-kit.zip"
+          expected="2ba7e3376891c64f8bf57f3687e05b8dbe1971a75475b6825449e5e5f96d71f3"
+
+          test -s "$portable"
+          echo "Portable U1 kit: $(stat -c '%s bytes' "$portable")"
+          overlay_tmp="$(mktemp --suffix=.zip)"
+          overlay_root="$(mktemp -d)"
+          trap 'rm -rf "$overlay_root" "$overlay_tmp"' EXIT
+
+          # The reviewed Eagler shader/resource overlay is inside the U1
+          # portable kit. Never use the vanilla Minecraft JAR for Eagler shaders.
+          unzip -p "$portable" inputs/resource-overlay-normal.zip > "$overlay_tmp"
+          test -s "$overlay_tmp"
+          overlay_sha="$(sha256sum "$overlay_tmp" | cut -d' ' -f1)"
+          test "$overlay_sha" = "$expected" || {
+            echo "::error::Eagler shader overlay SHA-256 mismatch: expected $expected, got $overlay_sha"
+            exit 1
+          }
+
+          unzip -q "$overlay_tmp" -d "$overlay_root"
+          shader_src="$overlay_root/assets/minecraft/shaders"
+          test -d "$shader_src"
+
+          rm -rf "$shaders"
+          mkdir -p "$shaders"
+          cp -a "$shader_src"/. "$shaders"/
+
+          echo "=== Eagler U1 shader source location ==="
+          echo "Portable kit: $portable"
+          echo "Overlay member: inputs/resource-overlay-normal.zip"
+          echo "Shader root inside overlay: assets/minecraft/shaders"
+          echo "Installed resource path: $shaders"
+          find "$shaders" -type f \( -name '*.vsh' -o -name '*.fsh' -o -name '*.glsl' \) -print | sort
+
+          for shader in \
+            core/gui.vsh \
+            core/gui.fsh \
+            core/text.vsh \
+            core/text.fsh \
+            core/position_tex_color.vsh \
+            core/position_tex_color.fsh; do
+            test -s "$shaders/$shader" || {
+              echo "::error::Required Eagler shader is missing: assets/minecraft/shaders/$shader"
+              exit 1
+            }
+          done
+          echo "Verified Eagler U1 shader pipeline without vanilla shader substitution."
+
       - name: Apply native VBV patch
         if: steps.repo_checkpoint.outputs.found != 'true' && inputs.compiled_zip_url == ''
         run: |
@@ -555,85 +611,54 @@ jobs:
           ls -lh "$resources/pack.png"
           du -sh "$resources"
           find "$resources" -type f | wc -l
-      - name: Ensure Eagler shaders and vanilla non-shader assets
+      - name: Verify Eagler shader pipeline and restore vanilla non-shader assets
         if: steps.repo_checkpoint.outputs.found != 'true' && inputs.compiled_zip_url == ''
         run: |
           set -euo pipefail
           game_dir="$(find generated-client -type f \( -path "*/game/build.gradle" -o -path "*/game/build.gradle.kts" \) -print -quit | xargs -r dirname)"
           resources="$game_dir/src/main/resources"
-          shaders_dst="$resources/assets/minecraft/shaders"
+          shaders="$resources/assets/minecraft/shaders"
 
-          if [ -f "$shaders_dst/core/gui.vsh" ]; then
-            echo "Shaders already present in game resources."
-          else
-            echo "gui.vsh missing from game resources; searching for Eagler shader sources..."
-            work="$(mktemp -d)"
-            unzip -q "$EAGLER_PATCH_BUNDLE" -d "$work/patch" || true
-            unzip -q "$EAGLER_PROJECT_SKELETON" -d "$work/skeleton" || true
-
-            found="$(find generated-client "$work" "$EAGLER_PATCHER_ROOT" -type f -path '*shaders/core/gui.vsh' ! -path "$resources/*" -print -quit 2>/dev/null || true)"
-            if [ -z "$found" ]; then
-              echo "::error::No shaders/core/gui.vsh exists anywhere in generated-client, the patch bundle, the skeleton or the patcher."
-              echo "=== Any .vsh files found ==="
-              find generated-client "$work" "$EAGLER_PATCHER_ROOT" -type f -name '*.vsh' 2>/dev/null | head -50 || true
+          # The shader tree above is the authenticated Eagler U1 tree.
+          # Do not replace it with vanilla 26.2 shader/pipeline sources.
+          for shader in \
+            core/gui.vsh \
+            core/gui.fsh \
+            core/position_tex_color.vsh \
+            core/position_tex_color.fsh \
+            core/text.vsh \
+            core/text.fsh; do
+            test -s "$shaders/$shader" || {
+              echo "::error::Eagler shader missing: assets/minecraft/shaders/$shader"
               exit 1
-            fi
-            echo "Found shader source: $found"
-            src_shaders="$(dirname "$(dirname "$found")")"
-            mkdir -p "$shaders_dst"
-            cp -a "$src_shaders"/. "$shaders_dst"/
-          fi
-
-          # Fill in missing vanilla textures/models/data, but never overwrite
-          # an existing Eagler file and never copy vanilla shaders.
-          temp_resources="$(mktemp -d)"
-          unzip -q build-input/minecraft-26.2-client.jar -d "$temp_resources"
-          rsync -a --ignore-existing --exclude 'minecraft/shaders/' \
-            "$temp_resources/assets/" "$resources/assets/"
-          for f in gpu_warnlist.json regional_compliancies.json; do
-            [ -f "$temp_resources/$f" ] && cp -n "$temp_resources/$f" "$resources/$f" || true
+            }
           done
 
-          test -f "$shaders_dst/core/gui.vsh"
-          test -f "$shaders_dst/core/gui.fsh"
-          test -f "$shaders_dst/core/position_tex_color.vsh"
-          test -f "$shaders_dst/core/text.vsh"
-          test -f "$resources/assets/minecraft/textures/gui/title/minecraft.png"
-          echo "Shaders and vanilla non-shader assets verified."
-      - name: Make vanilla GLSL helpers WebGL2 (GLSL ES 3.00) compatible
-        if: steps.repo_checkpoint.outputs.found != 'true' && inputs.compiled_zip_url == ''
-        run: |
-          set -euo pipefail
-          game_dir="$(find generated-client -type f \( -path "*/game/build.gradle" -o -path "*/game/build.gradle.kts" \) -print -quit | xargs -r dirname)"
-          shaders="$game_dir/src/main/resources/assets/minecraft/shaders"
-          test -d "$shaders"
-          python3 - "$shaders" <<'PY'
-          import re, sys, pathlib
-          root = pathlib.Path(sys.argv[1])
-          pat = re.compile(
-              r'(vec4\s+minecraft_sample_lightmap\s*\(\s*sampler2D\s+\w+\s*,\s*)ivec2\s+(\w+)(\s*\)\s*\{)')
-          patched = 0
-          for p in root.rglob("*"):
-              if not p.is_file() or p.suffix not in (".glsl", ".vsh", ".fsh"):
-                  continue
-              s = p.read_text(encoding="utf-8", errors="ignore")
-              if "minecraft_sample_lightmap" not in s:
-                  continue
-              new, n = pat.subn(r'\1ivec2 \2_i\3\n    vec2 \2 = vec2(\2_i);', s)
-              if n:
-                  p.write_text(new, encoding="utf-8")
-                  print("Patched", p)
-                  patched += n
-              else:
-                  print("Found minecraft_sample_lightmap in", p, "but signature did not match; contents:")
-                  for i, line in enumerate(s.splitlines()):
-                      if "minecraft_sample_lightmap" in line:
-                          print("  ", i + 1, line)
-          print("Total patched:", patched)
-          PY
-          echo "=== Shaders still dividing an int vector by a float literal (candidates) ==="
-          grep -rnE 'ivec[234]' "$shaders" | head -40 || true
-      - name: Setup Java 25 for Eaglercraft build
+          temp_resources="$(mktemp -d)"
+          trap 'rm -rf "$temp_resources"' EXIT
+          unzip -q build-input/minecraft-26.2-client.jar -d "$temp_resources"
+
+          # Restore ordinary Minecraft resources only. The shader tree is
+          # explicitly excluded so vanilla GLSL cannot overwrite Eagler GLSL.
+          rsync -a --ignore-existing --exclude 'minecraft/shaders/' \
+            "$temp_resources/assets/" "$resources/assets/"
+
+          for f in gpu_warnlist.json regional_compliancies.json; do
+            if [ -f "$temp_resources/$f" ]; then
+              cp -n "$temp_resources/$f" "$resources/$f" || true
+            fi
+          done
+
+          echo "=== Final Eagler shader locations ==="
+          printf '%s\n' \
+            "$shaders/core/gui.vsh" \
+            "$shaders/core/gui.fsh" \
+            "$shaders/core/position_tex_color.vsh" \
+            "$shaders/core/position_tex_color.fsh" \
+            "$shaders/core/text.vsh" \
+            "$shaders/core/text.fsh"
+          echo "Eagler U1 shader pipeline verified; vanilla shader files were not substituted."
+            - name: Setup Java 25 for Eaglercraft build
         if: steps.repo_checkpoint.outputs.found != 'true' && inputs.compiled_zip_url == ''
         uses: actions/setup-java@v5
         with:
