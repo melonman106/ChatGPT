@@ -88,7 +88,14 @@ jobs:
           check_file ViaBackport26.2-ClientSide/patch/apply_vbv_patch.py
           check_file ViaBackport26.2-ClientSide/patch/zipfile.py
           check_file ViaBackport26.2-ClientSide/pack.png
-          check_file sounds.epk
+          # sounds.epk is optional at source level. If it is absent, the compile
+          # workflow supplies a tiny valid empty EPK so the client still boots.
+          if [ -s sounds.epk ]; then
+            echo "OK: sounds.epk ($(stat -c '%s bytes' sounds.epk))"
+            sha256sum sounds.epk
+          else
+            echo "OK: sounds.epk is absent; compile workflow will create the fallback EPK."
+          fi
           check_file U1-Patcher/portable-kit.zip
           check_file u1-1-source/patcher/java-cli/eagler-patcher
 
@@ -98,7 +105,7 @@ jobs:
           echo "=== Required binary hashes ==="
           sha256sum ViaBackport26.2-ClientSide/pack.png sounds.epk U1-Patcher/portable-kit.zip
 
-          echo "Required VBV/Eagler inputs are present and non-empty."
+          echo "Required VBV/Eagler source inputs are present."
 
       - name: Validate VBV fix scripts
         shell: bash
