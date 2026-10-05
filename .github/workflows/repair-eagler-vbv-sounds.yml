@@ -1,4 +1,4 @@
-name: Build Eaglercraft 26.2 u1 VBV Client
+name: Build Eaglercraft 26.2 u1 VBV Client 1
 
 on:
   push:
