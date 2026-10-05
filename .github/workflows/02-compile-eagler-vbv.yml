@@ -658,7 +658,7 @@ jobs:
             "$shaders/core/text.vsh" \
             "$shaders/core/text.fsh"
           echo "Eagler U1 shader pipeline verified; vanilla shader files were not substituted."
-            - name: Setup Java 25 for Eaglercraft build
+      - name: Setup Java 25 for Eaglercraft build
         if: steps.repo_checkpoint.outputs.found != 'true' && inputs.compiled_zip_url == ''
         uses: actions/setup-java@v5
         with:
