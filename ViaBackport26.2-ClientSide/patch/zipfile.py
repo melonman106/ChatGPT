@@ -1,14 +1,4 @@
-"""Eagler build bootstrap shim for apply_vbv_patch.py.
-
-The build workflow invokes apply_vbv_patch.py after the U1 portable kit has
-been unpacked, but the workflow currently does not pass the verified resource
-overlay to create-dev. apply_vbv_patch.py imports the standard-library
-``zipfile`` module, so this local module is loaded first and materializes the
-pinned Eagler resource overlay before the VBV patch runs.
-
-After bootstrapping, the real Python 3 zipfile module is exported unchanged so
-apply_vbv_patch.py continues to use the normal API.
-"""
+"""Eagler build bootstrap shim for apply_vbv_patch.py."""
 from __future__ import annotations
 
 import hashlib
@@ -16,36 +6,60 @@ import importlib.util
 import os
 from pathlib import Path
 import sys
-import sysconfig
 
-# Do not assume a Debian/Ubuntu system path. GitHub-hosted runners may use the
-# hosted-toolcache Python, where the stdlib lives under /opt/hostedtoolcache.
-# sysconfig is the authoritative way to locate the active interpreter's stdlib.
-_stdlib_dir = Path(sysconfig.get_path("stdlib"))
-_stdlib_zipfile = _stdlib_dir / "zipfile.py"
 
-# Keep a few fallbacks for unusual Python installations.
-if not _stdlib_zipfile.is_file():
-    candidates = [
-        Path(sys.base_prefix) / "lib" / f"python{sys.version_info.major}.{sys.version_info.minor}" / "zipfile.py",
-        Path("/usr/lib") / f"python{sys.version_info.major}.{sys.version_info.minor}" / "zipfile.py",
-        Path("/usr/lib") / f"python{sys.version_info.major}" / "zipfile.py",
-    ]
-    _stdlib_zipfile = next((p for p in candidates if p.is_file()), _stdlib_zipfile)
+def _load_stdlib_zipfile():
+    # Do not assume a system /usr/lib Python installation. GitHub Actions
+    # currently uses the hosted-toolcache Python, e.g. /opt/hostedtoolcache/.
+    candidates = []
 
-if not _stdlib_zipfile.is_file():
+    try:
+        import sysconfig
+        stdlib = Path(sysconfig.get_path("stdlib"))
+        candidates.append(stdlib / "zipfile.py")
+    except Exception:
+        pass
+
+    base = Path(sys.base_prefix)
+    candidates.extend([
+        base / "lib" / f"python{sys.version_info.major}.{sys.version_info.minor}" / "zipfile.py",
+        base / f"lib/python{sys.version_info.major}.{sys.version_info.minor}/zipfile.py",
+        Path(sys.executable).resolve().parent.parent / "lib" / f"python{sys.version_info.major}.{sys.version_info.minor}" / "zipfile.py",
+    ])
+
+    # Also search the interpreter's sys.path for zipfile.py. This handles
+    # nonstandard Python layouts without hardcoding runner paths.
+    for entry in sys.path:
+        if not entry:
+            continue
+        p = Path(entry)
+        if p.is_dir():
+            candidates.append(p / "zipfile.py")
+
+    seen = set()
+    for candidate in candidates:
+        candidate = candidate.resolve()
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        if candidate.is_file() and candidate != Path(__file__).resolve():
+            spec = importlib.util.spec_from_file_location("_stdlib_zipfile", candidate)
+            if spec is not None and spec.loader is not None:
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+                return module
+
     raise ImportError(
-        "Could not locate the standard-library zipfile.py; "
-        f"sysconfig stdlib={_stdlib_dir}"
+        "Could not locate the standard-library zipfile.py; searched: "
+        + ", ".join(str(p) for p in seen)
     )
 
-_spec = importlib.util.spec_from_file_location("_stdlib_zipfile", _stdlib_zipfile)
-if _spec is None or _spec.loader is None:
-    raise ImportError(f"Could not load the standard-library zipfile module: {_stdlib_zipfile}")
-_stdlib = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(_stdlib)
 
-globals().update({k: v for k, v in _stdlib.__dict__.items() if k not in {"__name__", "__spec__", "__loader__"}})
+_stdlib = _load_stdlib_zipfile()
+globals().update({
+    k: v for k, v in _stdlib.__dict__.items()
+    if k not in {"__name__", "__spec__", "__loader__"}
+})
 
 
 def _materialize_eagler_overlay() -> None:
@@ -72,6 +86,21 @@ def _materialize_eagler_overlay() -> None:
             f"expected {expected}, got {digest}"
         )
 
+    print(f"[VBV resource bootstrap] applying verified overlay: {overlay}")
+    resources.mkdir(parents=True, exist_ok=True)
+
+    with _stdlib.ZipFile(overlay) as zf:
+        for info in zf.infolist():
+            name = info.filename.replace("\\", "/")
+            if not name or name.endswith("/"):
+                continue
+            target = (resources / name).resolve()
+            if os.path.commonpath((str(resources.resolve()), str(target))) != str(resources.resolve()):
+                raise SystemExit(f"::error::Unsafe resource-overlay path: {name}")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with zf.open(info, "r") as src, target.open("wb") as dst:
+                dst.write(src.read())
+
     critical = [
         "assets/minecraft/shaders/core/text.vsh",
         "assets/minecraft/shaders/core/text.fsh",
@@ -89,25 +118,6 @@ def _materialize_eagler_overlay() -> None:
         "assets/minecraft/gpu_warnlist.json",
         "assets/minecraft/regional_compliancies.json",
     ]
-
-    print(f"[VBV resource bootstrap] applying verified overlay: {overlay}")
-    resources.mkdir(parents=True, exist_ok=True)
-
-    with _stdlib.ZipFile(overlay) as zf:
-        extracted = 0
-        for info in zf.infolist():
-            name = info.filename.replace("\\", "/")
-            if not name or name.endswith("/"):
-                continue
-            # Reject traversal before writing anything.
-            target = (resources / name).resolve()
-            if os.path.commonpath((str(resources.resolve()), str(target))) != str(resources.resolve()):
-                raise SystemExit(f"::error::Unsafe resource-overlay path: {name}")
-            target.parent.mkdir(parents=True, exist_ok=True)
-            with zf.open(info, "r") as src, target.open("wb") as dst:
-                dst.write(src.read())
-            extracted += 1
-
     missing = [p for p in critical if not (resources / p).is_file()]
     if missing:
         raise SystemExit(
