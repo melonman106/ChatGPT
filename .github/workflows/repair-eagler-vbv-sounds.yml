@@ -68,6 +68,129 @@ jobs:
           sha256sum client/sounds.epk
           ls -lh client/sounds.epk
 
+      - name: Repair WebGL2 shader resources in assets.epk
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p shader-fix
+          base="https://assets.mcasset.cloud/26.2-rc-1/assets/minecraft/shaders/include"
+          for name in fog.glsl dynamictransforms.glsl projection.glsl globals.glsl light.glsl chunksection.glsl animation_sprite.glsl sample_lightmap.glsl; do
+            curl -fL --retry 3 -o "shader-fix/$name" "$base/$name"
+            test -s "shader-fix/$name"
+          done
+          python3 - <<'PY'
+          from pathlib import Path
+          import gzip, hashlib, struct, zlib
+
+          epk = Path("client/assets.epk")
+          raw = epk.read_bytes()
+          if not raw.startswith(b"EAGPKG$") or not raw.endswith(b":::YEE:>"):
+              raise SystemExit("invalid assets.epk framing")
+
+          pos = 8
+          version_len = raw[pos]; pos += 1
+          version = raw[pos:pos + version_len]; pos += version_len
+          name_len = raw[pos]; pos += 1
+          archive_name = raw[pos:pos + name_len]; pos += name_len
+          comment_len = int.from_bytes(raw[pos:pos + 2], "big"); pos += 2
+          comment = raw[pos:pos + comment_len]; pos += comment_len
+          reserved = raw[pos:pos + 8]; pos += 8
+          declared_count = int.from_bytes(raw[pos:pos + 4], "big"); pos += 4
+          compression = raw[pos:pos + 1]; pos += 1
+          if compression != b"G":
+              raise SystemExit("assets.epk is not gzip-compressed")
+          trailer = raw[-8:]
+          stream = gzip.decompress(raw[pos:-8])
+
+          entries = []
+          cur = 0
+          while cur + 4 <= len(stream):
+              tag = stream[cur:cur + 4]; cur += 4
+              if tag == b"END$":
+                  break
+              if tag not in (b"HEAD", b"FILE"):
+                  raise SystemExit(f"unknown EPK record {tag!r}")
+              nlen = stream[cur]; cur += 1
+              name = stream[cur:cur + nlen].decode("utf-8"); cur += nlen
+              plen = int.from_bytes(stream[cur:cur + 4], "big"); cur += 4
+              if tag == b"FILE":
+                  crc = stream[cur:cur + 4]; cur += 4
+                  data = stream[cur:cur + plen - 5]; cur += plen - 5
+                  if stream[cur:cur + 1] != b":": raise SystemExit(f"bad FILE terminator: {name}")
+                  cur += 1
+              else:
+                  crc = b""
+                  data = stream[cur:cur + plen]; cur += plen
+              if stream[cur:cur + 1] != b">": raise SystemExit(f"bad record terminator: {name}")
+              cur += 1
+              entries.append([tag, name, data])
+          if stream[cur - 4:cur] != b"END$":
+              raise SystemExit("EPK END record missing")
+
+          replacements = {}
+          for p in Path("shader-fix").glob("*.glsl"):
+              replacements["assets/minecraft/shaders/include/" + p.name] = p.read_bytes()
+
+          # Eagler's WebGL2 GLSL compiler does not accept several mixed int/float
+          # expressions that vanilla's shader preprocessor accepts. Keep the
+          # vanilla 26.2 interfaces, but make those expressions explicit.
+          for tag, name, data in entries:
+              if tag != b"FILE" or not name.endswith((".vsh", ".fsh", ".glsl")):
+                  continue
+              text = data.decode("utf-8", "replace")
+              text = text.replace("sample_lightmap(Sampler2, UV2)", "sample_lightmap(Sampler2, vec2(UV2))")
+              text = text.replace("minecraft_sample_lightmap(Sampler2, UV2)", "minecraft_sample_lightmap(Sampler2, vec2(UV2))")
+              if name.endswith("terrain.vsh"):
+                  text = text.replace(
+                      "vec3 pos = Position + (ChunkPosition - CameraBlockPos) + CameraOffset;",
+                      "vec3 pos = Position + vec3(ChunkPosition - CameraBlockPos) + CameraOffset;"
+                  )
+              if name.endswith("lightmap.fsh"):
+                  text = text.replace("* 16)", "* 16.0)").replace("/ 15", "/ 15.0")
+                  text = text.replace("* 16;", "* 16.0;")
+              if name.endswith(("animate_sprite_blit.fsh", "animate_sprite_interpolate.fsh")):
+                  text = text.replace(", MipMapLevel)", ", float(MipMapLevel))")
+              data = text.encode("utf-8")
+              replacements[name] = data
+
+          # WebGL2 has no texture-buffer sampler support. Keep the pipeline
+          # linkable for v1 by rendering clouds as an empty pass; clouds can be
+          # restored later with a WebGL2-native implementation.
+          cloud_vsh = """#version 330\n\nout float vertexDistance;\nout vec4 vertexColor;\n\nvoid main() {\n    gl_Position = vec4(2.0, 2.0, 2.0, 1.0);\n    vertexDistance = 0.0;\n    vertexColor = vec4(0.0);\n}\n""".encode()
+          cloud_fsh = """#version 330\nin float vertexDistance;\nin vec4 vertexColor;\nout vec4 fragColor;\nvoid main() {\n    fragColor = vertexColor;\n}\n""".encode()
+          replacements["assets/minecraft/shaders/core/rendertype_clouds.vsh"] = cloud_vsh
+          replacements["assets/minecraft/shaders/core/rendertype_clouds.fsh"] = cloud_fsh
+
+          changed = []
+          rebuilt = []
+          for tag, name, data in entries:
+              new_data = replacements.get(name, data)
+              if new_data != data:
+                  changed.append(name)
+              if tag == b"FILE":
+                  payload_len = len(new_data) + 5
+                  rec = b"FILE" + bytes([len(name.encode())]) + name.encode() + struct.pack(">I", payload_len) + struct.pack(">I", zlib.crc32(new_data) & 0xffffffff) + new_data + b":>"
+              else:
+                  rec = b"HEAD" + bytes([len(name.encode())]) + name.encode() + struct.pack(">I", len(new_data)) + new_data + b">"
+              rebuilt.append(rec)
+          rebuilt_stream = b"".join(rebuilt) + b"END$"
+          compressed = gzip.compress(rebuilt_stream, compresslevel=9, mtime=0)
+          header = (b"EAGPKG$" + bytes([len(version)]) + version + bytes([len(archive_name)]) + archive_name +
+                    struct.pack(">H", len(comment)) + comment + reserved + struct.pack(">I", len(entries)) + b"G")
+          epk.write_bytes(header + compressed + trailer)
+          print("Patched assets.epk shader resources:", len(changed))
+          for name in changed:
+              print("  ", name)
+          if not changed:
+              raise SystemExit("shader repair made no changes")
+          if len(entries) != declared_count:
+              print(f"warning: declared record count {declared_count} != parsed {len(entries)}")
+          print("New assets.epk SHA256:", hashlib.sha256(epk.read_bytes()).hexdigest())
+          PY
+
+          test -s client/assets.epk
+          echo "assets.epk shader repair complete."
+
       - name: Verify runtime bundle
         run: |
           set -euo pipefail
