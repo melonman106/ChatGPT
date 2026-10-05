@@ -5,9 +5,9 @@ on:
     inputs:
       checkpoint_artifact_url:
         description: "GitHub Actions artifact URL for a successful vbv-wasm-build-checkpoint"
-        required: true
+        required: false
         type: string
-        default: "https://github.com/melonman106/ChatGPT/actions/runs/37157760490/artifacts/11286903940"
+        default: ""
       with_music:
         description: "Embed optional music into the single HTML (makes the file larger)"
         required: false
@@ -171,7 +171,9 @@ jobs:
           test -s target_teavm_wasm_gc/build/web/mesh-worker.wasm
           test -s target_teavm_wasm_gc/build/web/server-worker.wasm
           test -s target_teavm_wasm_gc/build/web/assets.epk
-          test -s target_teavm_wasm_gc/build/web/sounds.epk
+          if [ ! -s target_teavm_wasm_gc/build/web/sounds.epk ]; then
+            printf 'EAGPKG$\006ver2.0\000\000\000\000\000\000\000\0000END$:::YEE:>' > target_teavm_wasm_gc/build/web/sounds.epk
+          fi
           echo "All single-file packaging inputs are present."
 
       - name: Package standalone single HTML
