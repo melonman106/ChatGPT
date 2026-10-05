@@ -2,7 +2,7 @@
 
 The build workflow invokes apply_vbv_patch.py after the U1 portable kit has
 been unpacked, but the workflow currently does not pass the verified resource
-overlay to create-dev.  apply_vbv_patch.py imports the standard-library
+overlay to create-dev. apply_vbv_patch.py imports the standard-library
 ``zipfile`` module, so this local module is loaded first and materializes the
 pinned Eagler resource overlay before the VBV patch runs.
 
@@ -16,16 +16,32 @@ import importlib.util
 import os
 from pathlib import Path
 import sys
+import sysconfig
 
-_STDLIB_ZIPFILE = Path(sys.base_prefix) / "lib" / f"python{sys.version_info.major}.{sys.version_info.minor}" / "zipfile.py"
-if not _STDLIB_ZIPFILE.is_file():
-    # Ubuntu GitHub runners normally use /usr/lib/pythonX.Y. Keep a second
-    # location for installations where sys.base_prefix/lib is not populated.
-    _STDLIB_ZIPFILE = Path("/usr/lib") / f"python{sys.version_info.major}" / "zipfile.py"
+# Do not assume a Debian/Ubuntu system path. GitHub-hosted runners may use the
+# hosted-toolcache Python, where the stdlib lives under /opt/hostedtoolcache.
+# sysconfig is the authoritative way to locate the active interpreter's stdlib.
+_stdlib_dir = Path(sysconfig.get_path("stdlib"))
+_stdlib_zipfile = _stdlib_dir / "zipfile.py"
 
-_spec = importlib.util.spec_from_file_location("_stdlib_zipfile", _STDLIB_ZIPFILE)
+# Keep a few fallbacks for unusual Python installations.
+if not _stdlib_zipfile.is_file():
+    candidates = [
+        Path(sys.base_prefix) / "lib" / f"python{sys.version_info.major}.{sys.version_info.minor}" / "zipfile.py",
+        Path("/usr/lib") / f"python{sys.version_info.major}.{sys.version_info.minor}" / "zipfile.py",
+        Path("/usr/lib") / f"python{sys.version_info.major}" / "zipfile.py",
+    ]
+    _stdlib_zipfile = next((p for p in candidates if p.is_file()), _stdlib_zipfile)
+
+if not _stdlib_zipfile.is_file():
+    raise ImportError(
+        "Could not locate the standard-library zipfile.py; "
+        f"sysconfig stdlib={_stdlib_dir}"
+    )
+
+_spec = importlib.util.spec_from_file_location("_stdlib_zipfile", _stdlib_zipfile)
 if _spec is None or _spec.loader is None:
-    raise ImportError(f"Could not load the standard-library zipfile module: {_STDLIB_ZIPFILE}")
+    raise ImportError(f"Could not load the standard-library zipfile module: {_stdlib_zipfile}")
 _stdlib = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_stdlib)
 
