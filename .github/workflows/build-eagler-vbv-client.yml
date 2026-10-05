@@ -519,6 +519,51 @@ jobs:
           ls -lh "$resources/pack.png"
           du -sh "$resources"
           find "$resources" -type f | wc -l
+      - name: Ensure Eagler shaders and vanilla non-shader assets
+        if: steps.repo_checkpoint.outputs.found != 'true' && inputs.compiled_zip_url == ''
+        run: |
+          set -euo pipefail
+          game_dir="$(find generated-client -type f \( -path "*/game/build.gradle" -o -path "*/game/build.gradle.kts" \) -print -quit | xargs -r dirname)"
+          resources="$game_dir/src/main/resources"
+          shaders_dst="$resources/assets/minecraft/shaders"
+
+          if [ -f "$shaders_dst/core/gui.vsh" ]; then
+            echo "Shaders already present in game resources."
+          else
+            echo "gui.vsh missing from game resources; searching for Eagler shader sources..."
+            work="$(mktemp -d)"
+            unzip -q "$EAGLER_PATCH_BUNDLE" -d "$work/patch" || true
+            unzip -q "$EAGLER_PROJECT_SKELETON" -d "$work/skeleton" || true
+
+            found="$(find generated-client "$work" "$EAGLER_PATCHER_ROOT" -type f -path '*shaders/core/gui.vsh' ! -path "$resources/*" -print -quit 2>/dev/null || true)"
+            if [ -z "$found" ]; then
+              echo "::error::No shaders/core/gui.vsh exists anywhere in generated-client, the patch bundle, the skeleton or the patcher."
+              echo "=== Any .vsh files found ==="
+              find generated-client "$work" "$EAGLER_PATCHER_ROOT" -type f -name '*.vsh' 2>/dev/null | head -50 || true
+              exit 1
+            fi
+            echo "Found shader source: $found"
+            src_shaders="$(dirname "$(dirname "$found")")"
+            mkdir -p "$shaders_dst"
+            cp -a "$src_shaders"/. "$shaders_dst"/
+          fi
+
+          # Fill in missing vanilla textures/models/data, but never overwrite
+          # an existing Eagler file and never copy vanilla shaders.
+          temp_resources="$(mktemp -d)"
+          unzip -q build-input/minecraft-26.2-client.jar -d "$temp_resources"
+          rsync -a --ignore-existing --exclude 'minecraft/shaders/' \
+            "$temp_resources/assets/" "$resources/assets/"
+          for f in gpu_warnlist.json regional_compliancies.json; do
+            [ -f "$temp_resources/$f" ] && cp -n "$temp_resources/$f" "$resources/$f" || true
+          done
+
+          test -f "$shaders_dst/core/gui.vsh"
+          test -f "$shaders_dst/core/gui.fsh"
+          test -f "$shaders_dst/core/position_tex_color.vsh"
+          test -f "$shaders_dst/core/text.vsh"
+          test -f "$resources/assets/minecraft/textures/gui/title/minecraft.png"
+          echo "Shaders and vanilla non-shader assets verified."
       - name: Setup Java 25 for Eaglercraft build
         if: steps.repo_checkpoint.outputs.found != 'true' && inputs.compiled_zip_url == ''
         uses: actions/setup-java@v5
