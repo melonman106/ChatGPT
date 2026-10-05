@@ -127,7 +127,7 @@ jobs:
           echo "=== Imported checkpoint ==="
           du -sh "$GITHUB_WORKSPACE/ModdedClientSource"
           find "$GITHUB_WORKSPACE/ModdedClientSource/target_teavm_wasm_gc/build/web" -maxdepth 1 -type f \
-            \( -name '*.wasm' -o -name '*.epk' -o -name '*.html' \) -printf '%s %p\\n' | sort -nr
+            \( -name '*.wasm' -o -name '*.epk' -o -name '*.html' \) -printf '%s %p\n' | sort -nr
 
       - name: Install single-file packaging dependency
         working-directory: ModdedClientSource
@@ -146,7 +146,6 @@ jobs:
           test -s target_teavm_wasm_gc/build/web/server-worker.wasm
           test -s target_teavm_wasm_gc/build/web/assets.epk
           test -s target_teavm_wasm_gc/build/web/sounds.epk
-          echo "Music embedding is disabled for the Cloudflare/R2 web bundle."
           echo "All single-file packaging inputs are present."
 
       - name: Package standalone single HTML
@@ -212,7 +211,7 @@ jobs:
       - name: Upload single HTML artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Eaglercraft-26.2-VBV-Single-HTML
+          name: Eaglercraft-26.2-VBV-Single-HTML-${{ github.run_id }}
           path: |
             eaglercraft-26.2-VBV-single.html
             eaglercraft-26.2-VBV-optional-music.zip
@@ -224,11 +223,11 @@ jobs:
         if: always()
         run: |
           {
-            echo "## Eaglercraft 26.2 VBV — Single HTML"
+            echo "## Eaglercraft 26.2 VBV - Single HTML"
             echo
             echo "The single-file HTML artifact is uploaded above."
             echo
             echo "[Open the GitHub Actions artifact for this run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts)"
             echo
-            echo "Artifact name: \`Eaglercraft-26.2-VBV-Single-HTML\`"
+            echo 'Artifact name: Eaglercraft-26.2-VBV-Single-HTML-${{ github.run_id }}'
           } >> "$GITHUB_STEP_SUMMARY"
