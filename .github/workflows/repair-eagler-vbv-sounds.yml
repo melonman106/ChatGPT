@@ -1,0 +1,82 @@
+name: Build Eaglercraft 26.2 u1 VBV Client
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: eagler-vbv-sounds-repair-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    name: Repair packaged sounds.epk
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Find latest successful client build
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          runs=$(gh run list --repo "${{ github.repository }}" --workflow "Build Eaglercraft 26.2 u1 VBV Client" --status success --limit 20 --json databaseId,createdAt,headSha)
+          run_id=$(printf '%s' "$runs" | jq -r '.[0].databaseId // empty')
+          if [ -z "$run_id" ]; then
+            echo "::error::No successful source client build is available to repair."
+            exit 1
+          fi
+          if [ "$run_id" = "${{ github.run_id }}" ]; then
+            run_id=$(printf '%s' "$runs" | jq -r '.[1].databaseId // empty')
+          fi
+          test -n "$run_id"
+          echo "source_run=$run_id" >> "$GITHUB_OUTPUT"
+          echo "Repairing source build run: $run_id"
+
+      - name: Download source client artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          rm -rf client
+          mkdir -p client
+          source_run="${{ steps.source.outputs.source_run }}"
+          gh run download "$source_run" --repo "${{ github.repository }}" \
+            --name "Eaglercraft-26.2-VBV-WASM-GC-${source_run}" --dir client
+          test -s client/index.html
+          echo "Source artifact:"
+          find client -maxdepth 1 -type f -printf '%s %f\n' | sort -nr
+
+      - name: Install required sounds.epk
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s "$GITHUB_WORKSPACE/sounds.epk"
+          cp -f "$GITHUB_WORKSPACE/sounds.epk" client/sounds.epk
+          test -s client/sounds.epk
+          echo "Installed repository sounds.epk:"
+          sha256sum client/sounds.epk
+          ls -lh client/sounds.epk
+
+      - name: Verify runtime bundle
+        run: |
+          set -euo pipefail
+          test -s client/index.html
+          test -s client/classes.wasm
+          test -s client/sounds.epk
+          echo "Fixed client runtime bundle is complete."
+
+      - name: Upload repaired client artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Eaglercraft-26.2-VBV-WASM-GC-${{ github.run_id }}
+          path: client
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
