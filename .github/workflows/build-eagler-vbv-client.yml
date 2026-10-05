@@ -564,6 +564,39 @@ jobs:
           test -f "$shaders_dst/core/text.vsh"
           test -f "$resources/assets/minecraft/textures/gui/title/minecraft.png"
           echo "Shaders and vanilla non-shader assets verified."
+      - name: Make vanilla GLSL helpers WebGL2 (GLSL ES 3.00) compatible
+        if: steps.repo_checkpoint.outputs.found != 'true' && inputs.compiled_zip_url == ''
+        run: |
+          set -euo pipefail
+          game_dir="$(find generated-client -type f \( -path "*/game/build.gradle" -o -path "*/game/build.gradle.kts" \) -print -quit | xargs -r dirname)"
+          shaders="$game_dir/src/main/resources/assets/minecraft/shaders"
+          test -d "$shaders"
+          python3 - "$shaders" <<'PY'
+          import re, sys, pathlib
+          root = pathlib.Path(sys.argv[1])
+          pat = re.compile(
+              r'(vec4\s+minecraft_sample_lightmap\s*\(\s*sampler2D\s+\w+\s*,\s*)ivec2\s+(\w+)(\s*\)\s*\{)')
+          patched = 0
+          for p in root.rglob("*"):
+              if not p.is_file() or p.suffix not in (".glsl", ".vsh", ".fsh"):
+                  continue
+              s = p.read_text(encoding="utf-8", errors="ignore")
+              if "minecraft_sample_lightmap" not in s:
+                  continue
+              new, n = pat.subn(r'\1ivec2 \2_i\3\n    vec2 \2 = vec2(\2_i);', s)
+              if n:
+                  p.write_text(new, encoding="utf-8")
+                  print("Patched", p)
+                  patched += n
+              else:
+                  print("Found minecraft_sample_lightmap in", p, "but signature did not match; contents:")
+                  for i, line in enumerate(s.splitlines()):
+                      if "minecraft_sample_lightmap" in line:
+                          print("  ", i + 1, line)
+          print("Total patched:", patched)
+          PY
+          echo "=== Shaders still dividing an int vector by a float literal (candidates) ==="
+          grep -rnE 'ivec[234]' "$shaders" | head -40 || true
       - name: Setup Java 25 for Eaglercraft build
         if: steps.repo_checkpoint.outputs.found != 'true' && inputs.compiled_zip_url == ''
         uses: actions/setup-java@v5
