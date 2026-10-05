@@ -323,7 +323,7 @@ else:
     )
     if not hud_match:
         raise SystemExit("Hud.extractItemHotbar method was not identified")
-    param = re.search(r"GuiGraphicsExtractor\\s+(\\w+)", hud_match.group(0))
+    param = re.search(r"GuiGraphicsExtractor\s+(\w+)", hud_match.group(0))
     if not param:
         raise SystemExit("Hud.extractItemHotbar has no GuiGraphicsExtractor parameter")
     hud_call = f"{HUD_CALL_PREFIX}{param.group(1)});"
