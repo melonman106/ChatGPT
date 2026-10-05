@@ -1785,18 +1785,6 @@ jobs:
           node --version
           echo "MODDED_CLIENT_SOURCE_READY=true" >> "$GITHUB_ENV"
 
-      - name: Restore completed WASM-GC output cache
-        id: wasm_web_cache_restore
-        if: success() && inputs.compiled_zip_url == ''
-        uses: actions/cache/restore@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-            ModdedClientSource/.gradle
-            ModdedClientSource/target_teavm_wasm_gc/build
-          key: vbv-teavm-wasm-v8-${{ hashFiles('ViaBackport26.2-ClientSide/src/main/java/**/*.java', 'ViaBackport26.2-ClientSide/src/main/resources/**/*.json', 'ViaBackport26.2-ClientSide/patch/**', 'ModsPack/**/*.zip', 'u1-1-source/**', 'U1-Patcher/portable-kit.zip') }}
-          # Exact-key restore only. Never fall back to the old v3 cache.
       - name: Snapshot generated client before expensive WASM build
         if: success() && steps.repo_checkpoint.outputs.found != 'true' && inputs.compiled_zip_url == ''
         run: |
