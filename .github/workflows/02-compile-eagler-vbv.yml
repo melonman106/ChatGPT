@@ -80,7 +80,18 @@ jobs:
           grep -RIl 'VBVArmorHud.render' vbv-build/project/game/src/main/java/net/minecraft/client | head -5
           cd vbv-build/project
           chmod +x ./gradlew
-          ./gradlew build --no-daemon --stacktrace
+          # The Eagler 26.2 platform module contains test sources but no
+          # discoverable JVM tests. Gradle 9 treats that as a hard failure;
+          # disable only that empty-test-suite failure so the actual client
+          # compilation/package tasks can complete.
+          cat > vbv-build/allow-empty-tests.gradle <<'EOF'
+          allprojects {
+            tasks.withType(Test).configureEach {
+              failOnNoDiscoveredTests = false
+            }
+          }
+          EOF
+          ./gradlew build --no-daemon --stacktrace --init-script "$GITHUB_WORKSPACE/vbv-build/allow-empty-tests.gradle"
           mkdir -p "$GITHUB_WORKSPACE/vbv-artifact"
           find target_teavm_wasm_gc/build/web -maxdepth 1 -type f -exec cp -f {} "$GITHUB_WORKSPACE/vbv-artifact/" \;
           test -s "$GITHUB_WORKSPACE/vbv-artifact/classes.wasm"
