@@ -155,8 +155,10 @@ jobs:
           if [ ! -d "$web_dir" ]; then
             echo "::error::Expected TeaVM web output directory was not created: $web_dir"
             echo "Searching for actual web/WASM output directories:"
-            find "$GITHUB_WORKSPACE/vbv-build/project" -type d \\( -path '*/build/web' -o -path '*/javascript_dist' \\) -print | sort || true
-            find "$GITHUB_WORKSPACE/vbv-build/project" -type f \\( -name '*.wasm' -o -name 'index.html' \\) -printf '%p %s bytes\\n' | sort | tail -200 || true
+            find "$GITHUB_WORKSPACE/vbv-build/project" -type d -path '*/build/web' -print | sort || true
+            find "$GITHUB_WORKSPACE/vbv-build/project" -type d -name 'javascript_dist' -print | sort || true
+            find "$GITHUB_WORKSPACE/vbv-build/project" -type f -name '*.wasm' -printf '%p %s bytes\\n' | sort | tail -200 || true
+            find "$GITHUB_WORKSPACE/vbv-build/project" -type f -name 'index.html' -printf '%p %s bytes\\n' | sort | tail -200 || true
             exit 1
           fi
 
