@@ -1,10 +1,10 @@
-name: Build Eaglercraft 26.2 u1 — immutable HTML + client mods
+name: Build Eaglercraft 26.2 u1 — client WASM mod pipeline
 
 on:
   workflow_dispatch:
   push:
     paths:
-      - "ViaBackport26.2-ClientSide/webmods/**"
+      - "ViaBackport26.2-ClientSide/**"
       - ".github/workflows/02-compile-eagler-vbv.yml"
 
 permissions:
@@ -25,55 +25,90 @@ jobs:
           echo "$sha  base.html" | sha256sum -c -
           test "$(wc -c < base.html)" -eq 94088990
 
-      - name: Inject client-side mod layer
+      - name: Extract the existing client WASM without rebuilding Minecraft
         run: |
           set -euo pipefail
           python3 - <<'PY'
+          import base64, re
           from pathlib import Path
+
+          html = Path("base.html").read_text(encoding="utf-8")
+          pat = re.compile(r'<script[^>]*id=["\']eag-inline-wasm-br["\'][^>]*>(.*?)</script>', re.S | re.I)
+          m = pat.search(html)
+          if not m:
+              raise SystemExit("eag-inline-wasm-br was not found")
+          encoded = re.sub(r'\s+', '', m.group(1))
+          data = base64.b64decode(encoded, validate=True)
+          Path("client.wasm.br").write_bytes(data)
+          print("client.wasm.br bytes:", len(data))
+          PY
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq brotli wabt
+          brotli -d -f client.wasm.br -o client.wasm
+          file client.wasm
+          wasm-objdump -h client.wasm | tee wasm-sections.txt
+          wasm-objdump -x client.wasm > wasm-exports.txt
+
+      - name: Inspect compiled mod/runtime symbols
+        run: |
+          set -euo pipefail
+          {
+            echo "=== strings matching existing mods/runtime ==="
+            strings -a client.wasm | grep -Ei 'litematica|malilib|modmenu|fabric|eagler|resource.?pack|shader|armor.?hud|cloth.?config' | head -n 500 || true
+            echo
+            echo "=== WASM imports/exports containing mod/runtime terms ==="
+            grep -Ei 'litematica|malilib|modmenu|fabric|eagler|resource|shader|armor|config' wasm-exports.txt | head -n 500 || true
+          } | tee wasm-mod-inspection.txt
+
+      - name: Repack the untouched client payload into a validation HTML
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64, hashlib, re
+          from pathlib import Path
+
           base = Path("base.html").read_text(encoding="utf-8")
-          parts = [
-              Path("ViaBackport26.2-ClientSide/webmods/vbv-mod-loader.js").read_text(encoding="utf-8"),
-              Path("ViaBackport26.2-ClientSide/webmods/resource-packs.js").read_text(encoding="utf-8"),
-              Path("ViaBackport26.2-ClientSide/webmods/uku-armor-hud.js").read_text(encoding="utf-8"),
-              Path("ViaBackport26.2-ClientSide/webmods/vbv-mod-menu-bridge.js").read_text(encoding="utf-8"),
-          ]
-          payload = "\n\n".join(parts)
-          marker = '<script id="vbv-client-mods">'
-          if marker in base:
-              raise SystemExit("Base HTML already contains vbv-client-mods; refusing to double-inject")
-          injection = f'\n{marker}\n(()=>{{\n{payload}\n}})();\n</script>\n'
-          pos = base.lower().rfind("</body>")
-          if pos < 0:
-              pos = len(base)
-          out = base[:pos] + injection + base[pos:]
+          br = Path("client.wasm.br").read_bytes()
+          encoded = base64.b64encode(br).decode("ascii")
+          pat = re.compile(r'(<script[^>]*id=["\']eag-inline-wasm-br["\'][^>]*>)(.*?)(</script>)', re.S | re.I)
+          out, n = pat.subn(lambda m: m.group(1) + encoded + m.group(3), base, count=1)
+          if n != 1:
+              raise SystemExit("failed to replace eag-inline-wasm-br")
           Path("Eaglercraft-26.2-VBV-Modded.html").write_text(out, encoding="utf-8")
-          print("Base bytes:", len(base.encode("utf-8")))
-          print("Final bytes:", len(out.encode("utf-8")))
-          print("Added bytes:", len(out.encode("utf-8")) - len(base.encode("utf-8")))
-          PY
 
-      - name: Verify immutable payloads survived injection
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          import re, hashlib
-          from pathlib import Path
-          a=Path("base.html").read_text(encoding="utf-8")
-          b=Path("Eaglercraft-26.2-VBV-Modded.html").read_text(encoding="utf-8")
-          ids=["eag-inline-decoder","eag-inline-wasm-br","eag-inline-mesh-wasm-br","eag-inline-server-wasm-br","eag-inline-assets","eag-inline-sounds"]
+          ids = [
+              "eag-inline-decoder",
+              "eag-inline-mesh-wasm-br",
+              "eag-inline-server-wasm-br",
+              "eag-inline-assets",
+              "eag-inline-sounds",
+          ]
           for ident in ids:
-              pat=re.compile(r'<script[^>]*id=["\']'+re.escape(ident)+r'["\'][^>]*>(.*?)</script>', re.S|re.I)
-              ma=pat.search(a); mb=pat.search(b)
-              if not ma or not mb:
-                  raise SystemExit(f"missing payload {ident}")
-              if ma.group(1) != mb.group(1):
-                  raise SystemExit(f"payload changed: {ident}")
-              print(ident, "OK", len(ma.group(1)))
-          print("Base SHA-256:", hashlib.sha256(a.encode()).hexdigest())
-          print("Final SHA-256:", hashlib.sha256(b.encode()).hexdigest())
+              p = re.compile(r'<script[^>]*id=["\']'+re.escape(ident)+r'["\'][^>]*>(.*?)</script>', re.S | re.I)
+              a = p.search(base)
+              b = p.search(out)
+              if not a or not b or a.group(1) != b.group(1):
+                  raise SystemExit(f"immutable payload changed: {ident}")
+              print(ident, "UNCHANGED", len(a.group(1)))
+          print("Base SHA-256:", hashlib.sha256(base.encode()).hexdigest())
+          print("Validation SHA-256:", hashlib.sha256(out.encode()).hexdigest())
           PY
 
-      - name: Package artifact
+      - name: Upload WASM inspection artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Eaglercraft-26.2-client-wasm-inspection-${{ github.run_id }}
+          path: |
+            client.wasm
+            client.wasm.br
+            wasm-sections.txt
+            wasm-exports.txt
+            wasm-mod-inspection.txt
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Package validation HTML
         uses: actions/upload-artifact@v4
         with:
           name: Eaglercraft-26.2-VBV-Modded-${{ github.run_id }}
