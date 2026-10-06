@@ -13,6 +13,10 @@ public final class VBVSimpleHudConfig {
     public static boolean movement = true;
     public static boolean effects = true;
     public static boolean equipment = true;
+    public static boolean armorShowNumbers = false;
+    public static int armorWarningPercent = 20;
+    public static int armorXOffset = 0;
+    public static int armorYOffset = 0;
 
     private VBVSimpleHudConfig() {}
 
@@ -29,5 +33,9 @@ public final class VBVSimpleHudConfig {
         movement = true;
         effects = true;
         equipment = true;
+        armorShowNumbers = false;
+        armorWarningPercent = 20;
+        armorXOffset = 0;
+        armorYOffset = 0;
     }
 }
