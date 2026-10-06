@@ -156,7 +156,7 @@ jobs:
               "eag-inline-sounds",
           ]
           for ident in ids:
-              pat = re.compile(r'<script[^>]*id=["\\']'+re.escape(ident)+r'["\\'][^>]*>(.*?)</script>', re.S | re.I)
+              pat = re.compile(r'''<script[^>]*id=["']''' + re.escape(ident) + r'''["'][^>]*>(.*?)</script>''', re.S | re.I)
               a = pat.search(base)
               b = pat.search(out)
               if not a or not b:
@@ -189,7 +189,7 @@ jobs:
               "eag-inline-sounds",
           ]
           for ident in ids:
-              pat = re.compile(r'<script[^>]*id=["\']'+re.escape(ident)+r'["\'][^>]*>(.*?)</script>', re.S | re.I)
+              pat = re.compile(r'''<script[^>]*id=["']''' + re.escape(ident) + r'''["'][^>]*>(.*?)</script>''', re.S | re.I)
               a = pat.search(base)
               b = pat.search(out)
               if not a or not b:
