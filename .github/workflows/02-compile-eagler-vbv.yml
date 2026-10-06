@@ -146,6 +146,28 @@ jobs:
           EOF
           ./gradlew build --no-daemon --stacktrace --init-script "$GITHUB_WORKSPACE/vbv-build/allow-empty-tests.gradle"
 
+          # Gradle compiles the game, but the u1 WASM-GC client is assembled by
+          # the authenticated standalone linkers. The previous step stopped
+          # immediately after Gradle, so target_teavm_wasm_gc/build/web never
+          # existed. Run the same precise link/deploy pipeline used by the u1
+          # single-HTML packager.
+          test -s wasm-toolchain/link-web-target-standalone.js
+          test -s wasm-toolchain/link-server-standalone.js
+          test -s wasm-toolchain/deploy_wasm_web.sh
+
+          node wasm-toolchain/link-web-target-standalone.js client
+          node wasm-toolchain/link-web-target-standalone.js mesh
+          node wasm-toolchain/link-server-standalone.js
+
+          runtime_js="target_teavm_wasm_gc/build/generated/teavm/wasm-gc/classes.wasm-runtime.js"
+          test -s "$runtime_js"
+          test "$(stat -c%s "$runtime_js")" -eq 13984
+          test "$(sha256sum "$runtime_js" | cut -d' ' -f1)" = "1e80092312d7bfe6efa74f8bb372d5521bc0549dcfbf384f25a145261a80d124"
+
+          # deploy_wasm_web.sh assembles the three standalone WASM images and
+          # the hosted web bundle under target_teavm_wasm_gc/build/web.
+          EAGLER_USE_DEDICATED_SERVER_WASM=1 bash wasm-toolchain/deploy_wasm_web.sh
+
           mkdir -p "$GITHUB_WORKSPACE/vbv-artifact"
 
           # The Eaglercraft u1 skeleton has a fixed WASM-GC web output directory.
