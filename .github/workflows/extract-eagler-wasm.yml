@@ -201,9 +201,12 @@ jobs:
           cd repo
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # GitHub's normal repository limit is 100 MB per file. Keep the
+          # large binary WASM in the Actions artifact, not in git history.
+          find Eaglercraft-26.2-u1-ExtractedWASM -type f -size +90M -print -delete
           git add -A Eaglercraft-26.2-u1-ExtractedWASM
           if git diff --cached --quiet; then
-            echo "No extracted WASM changes to commit."
+            echo "No repository-safe extracted WASM changes to commit."
           else
             git commit -m "Update extracted Eaglercraft 26.2 WASM"
             git push
