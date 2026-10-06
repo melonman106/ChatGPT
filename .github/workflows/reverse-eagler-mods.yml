@@ -122,7 +122,7 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
-          import re, struct
+          import re
 
           wasm = Path('work/old/payloads/client.wasm').read_bytes()
           out = Path('work/old/reverse'); out.mkdir(parents=True, exist_ok=True)
@@ -174,7 +174,6 @@ jobs:
               lines.append(f'- 0x{pos:08x} ({pos:,}) `{n}` :: {text}')
           (out/'wasm-deep-map.md').write_text('\n'.join(lines), encoding='utf-8')
 
-          # Produce a compact printable-string database for later automated matching.
           strings=[]
           for m in re.finditer(rb'[ -~]{4,}', wasm):
               s=m.group().decode('utf-8','replace')
@@ -183,13 +182,120 @@ jobs:
           (out/'relevant-strings.tsv').write_text('\n'.join(strings), encoding='utf-8')
           PY
 
+      - name: Parse TeaVM GC type section without relying on WABT
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          data = Path('work/old/payloads/client.wasm').read_bytes()
+          out = Path('work/old/reverse/teavm-gc')
+          out.mkdir(parents=True, exist_ok=True)
+
+          def uleb(p):
+              v=0; s=0
+              while True:
+                  if p >= len(data): raise ValueError('EOF in uleb')
+                  b=data[p]; p+=1; v |= (b & 0x7f) << s
+                  if not (b & 0x80): return v,p
+                  s += 7
+                  if s > 70: raise ValueError('bad uleb')
+
+          def sleb(p):
+              v=0; s=0
+              while True:
+                  if p >= len(data): raise ValueError('EOF in sleb')
+                  b=data[p]; p+=1; v |= (b & 0x7f) << s
+                  if not (b & 0x80):
+                      if b & 0x40: v -= 1 << (s+7)
+                      return v,p
+                  s += 7
+                  if s > 70: raise ValueError('bad sleb')
+
+          def section_list():
+              p=8; result=[]
+              while p < len(data):
+                  sid=data[p]; p+=1
+                  size,p=uleb(p); start=p; end=start+size
+                  if end > len(data): raise ValueError('section exceeds file')
+                  result.append((sid,start,end))
+                  p=end
+              return result
+
+          def type_name(b):
+              return {0x7f:'i32',0x7e:'i64',0x7d:'f32',0x7c:'f64',0x7b:'v128',0x70:'funcref',0x6f:'externref',0x6b:'eqref',0x6c:'i31ref',0x6d:'structref',0x6e:'arrayref',0x77:'i16',0x78:'i8'}.get(b, f'0x{b:02x}')
+
+          def fieldtype(p):
+              b=data[p]; p+=1
+              if b in (0x77,0x78): storage=type_name(b)
+              elif b in (0x63,0x64):
+                  ht,p=sleb(p); storage=('ref null ' if b==0x63 else 'ref ') + str(ht)
+              else: storage=type_name(b)
+              if p >= len(data): raise ValueError('EOF after field type')
+              mut=data[p]; p+=1
+              return f'{storage} {"mut" if mut else "const"}',p
+
+          sections=section_list()
+          type_sec=next(((s,e) for sid,s,e in sections if sid==1),None)
+          if not type_sec:
+              raise SystemExit('no type section')
+          p,end=type_sec
+          count,p=uleb(p)
+          report=[f'type_count={count}', f'type_section_start={type_sec[0]}', '']
+          forms={}
+          failures=[]
+          interesting=[]
+          for i in range(count):
+              try:
+                  form=data[p]; p+=1; forms[form]=forms.get(form,0)+1
+                  if form==0x60:
+                      np,p=uleb(p); params=[]
+                      for _ in range(np): params.append(type_name(data[p])); p+=1
+                      nr,p=uleb(p); results=[]
+                      for _ in range(nr): results.append(type_name(data[p])); p+=1
+                      if i < 500 or i % 10000 == 0: interesting.append(f'{i}: func ({", ".join(params)}) -> ({", ".join(results)})')
+                  elif form==0x5e:
+                      ft,p=fieldtype(p); interesting.append(f'{i}: array [{ft}]')
+                  elif form==0x5f:
+                      nf,p=uleb(p); fields=[]
+                      for _ in range(nf): ft,p=fieldtype(p); fields.append(ft)
+                      interesting.append(f'{i}: struct {{{"; ".join(fields)}}}')
+                  else:
+                      failures.append(f'type {i}: unsupported form 0x{form:02x} at {p-1}')
+                      break
+              except Exception as exc:
+                  failures.append(f'type {i}: {exc} at {p}')
+                  break
+
+          report += ['## type-form counts']
+          for k,v in sorted(forms.items()): report.append(f'0x{k:02x}: {v}')
+          report += ['', '## recovered composite types'] + interesting
+          report += ['', '## parser failures'] + failures
+          report += ['', f'parser_end={p}', f'type_section_end={end}']
+          (out/'type-section-report.txt').write_text('\n'.join(report), encoding='utf-8')
+
+          # Find likely TeaVM metadata/custom names and associate nearby offsets.
+          needles=(b'teavm',b'litematica',b'malilib',b'modmenu',b'fabric')
+          rows=[]
+          for n in needles:
+              pos=0
+              while True:
+                  pos=data.find(n,pos)
+                  if pos < 0: break
+                  rows.append((pos,n.decode()))
+                  pos += 1
+          rows=sorted(set(rows))
+          (out/'metadata-string-offsets.tsv').write_text('\n'.join(f'0x{p:08x}\t{p}\t{n}' for p,n in rows), encoding='utf-8')
+          PY
+
       - name: Attempt standard WASM decompilation and preserve diagnostics
         run: |
           set +e
           mkdir -p work/old/reverse/decompile
-          wasm2wat work/old/payloads/client.wasm -o work/old/reverse/decompile/client.wat 2> work/old/reverse/decompile/wasm2wat.stderr
+          wasm2wat --enable-all work/old/payloads/client.wasm -o work/old/reverse/decompile/client.wat 2> work/old/reverse/decompile/wasm2wat.stderr
           echo $? > work/old/reverse/decompile/wasm2wat.exit
-          wasm-decompile work/old/payloads/client.wasm -o work/old/reverse/decompile/client.dcmp 2> work/old/reverse/decompile/wasm-decompile.stderr
+          wasm-decompile --enable-all work/old/payloads/client.wasm -o work/old/reverse/decompile/client.dcmp 2> work/old/reverse/decompile/wasm-decompile.stderr
           echo $? > work/old/reverse/decompile/wasm-decompile.exit
           wasm-objdump -x work/old/payloads/client.wasm > work/old/reverse/decompile/wasm-objdump.txt 2>&1
           echo $? > work/old/reverse/decompile/wasm-objdump.exit
@@ -203,19 +309,24 @@ jobs:
           import re
           p=Path('work/old/reverse/wasm-deep-map.md').read_text(encoding='utf-8')
           kit=Path('work/kit-report/u1-kit-mod-search.md').read_text(encoding='utf-8')
+          gc=Path('work/old/reverse/teavm-gc/type-section-report.txt').read_text(encoding='utf-8')
           summary=['# Eagler 26.2 compiled-mod recovery summary','',
-                   'This report compares the known compiled modded client against the physical U1 build kit. It is intentionally source-recovery oriented: namespaces, method/class strings, custom TeaVM metadata, byte offsets, and any matching patch/source files are retained.','',
+                   'This report compares the known compiled modded client against the physical U1 build kit and additionally parses the WebAssembly GC type section directly, because WABT stops at the 0x5e composite-type form.','',
                    '## Results','',
                    f'- Litematica-related hits: {len(re.findall("litematica", p, re.I))}',
                    f'- MaLiLib-related hits: {len(re.findall("malilib", p, re.I))}',
                    f'- Mod Menu-related hits: {len(re.findall("modmenu", p, re.I))}',
                    f'- U1-kit source/path matches: {len(re.findall("litematica|malilib|modmenu", kit, re.I))}',
+                   f'- Direct GC type parser forms: {len(re.findall("^0x[0-9a-f]+:", gc, re.M))}',
+                   f'- Direct GC parser failures: {len(re.findall("^type \\d+:|^parser", gc, re.M))}',
                    '',
                    '## Files','',
-                   '- `wasm-deep-map.md`: section table, TeaVM/custom-section strings, byte offsets and surrounding printable strings.',
+                   '- `wasm-deep-map.md`: section table, custom-section strings, byte offsets and surrounding printable strings.',
                    '- `relevant-strings.tsv`: machine-readable offsets for relevant strings.',
+                   '- `teavm-gc/type-section-report.txt`: direct parser for function/array/struct type forms, including 0x5e arrays.',
+                   '- `teavm-gc/metadata-string-offsets.tsv`: relevant metadata string offsets.',
                    '- `u1-kit-mod-search.md`: matching paths and text inside the physical U1 ZIPs.',
-                   '- `decompile/`: standard WABT/Binaryen diagnostics; failures are preserved rather than discarded.',
+                   '- `decompile/`: standard WABT diagnostics; failures are preserved rather than discarded.',
                    '']
           Path('work/old/reverse/RECOVERY-SUMMARY.md').write_text('\n'.join(summary), encoding='utf-8')
           PY
