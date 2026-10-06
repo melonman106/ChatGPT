@@ -28,6 +28,7 @@ public final class VBVSimpleHudConfigScreen extends Screen {
         addToggle("Movement", 3, 1, () -> VBVSimpleHudConfig.movement = !VBVSimpleHudConfig.movement, () -> VBVSimpleHudConfig.movement);
         addToggle("Effects", 4, 1, () -> VBVSimpleHudConfig.effects = !VBVSimpleHudConfig.effects, () -> VBVSimpleHudConfig.effects);
         addToggle("Equipment HUD", 5, 1, () -> VBVSimpleHudConfig.equipment = !VBVSimpleHudConfig.equipment, () -> VBVSimpleHudConfig.equipment);
+        addToggle("Armor durability numbers", 6, 0, () -> VBVSimpleHudConfig.armorShowNumbers = !VBVSimpleHudConfig.armorShowNumbers, () -> VBVSimpleHudConfig.armorShowNumbers);
 
         addRenderableWidget(Button.builder(Component.literal("Reset defaults"), button -> {
             VBVSimpleHudConfig.reset();
