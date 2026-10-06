@@ -70,7 +70,7 @@ jobs:
           for v in jar vineflower bundle skeleton overlay external_root sounds music; do eval "x=\"\${$v:-}\""; echo "$v=$x"; [ -n "$x" ] || { echo "::error::Missing $v"; exit 1; }; done
           bs="$(sha256sum "$bundle" | cut -d' ' -f1)"
           ss="$(sha256sum "$skeleton" | cut -d' ' -f1)"
-          test "$ss" = "a9172bdd903ea65afd4c87cdb29b500c237c823fdd94789c2e90561b1b049469" || { echo "::error::Unexpected project skeleton SHA-256: $ss"; exit 1; }
+          test "$ss" = "3656a83ed8187e2d859612c566f3aa73e242bf1e4633990c5bb4929e0a846c94" || { echo "::error::Unexpected project skeleton SHA-256: $ss"; exit 1; }
           os="$(sha256sum "$overlay" | cut -d' ' -f1)"
           rm -rf vbv-build
           mkdir -p vbv-build
