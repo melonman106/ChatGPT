@@ -1,24 +1,26 @@
 package com.melonman106.vbvclient;
 
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 
+/**
+ * Native Eaglercraft implementation of uku's Armor HUD for 26.2 u1.
+ *
+ * The original mod is intentionally minimalist: it shows the four equipped
+ * armor items and a visual low-durability warning without putting durability
+ * numbers on the screen. This native port keeps that behavior while exposing
+ * position/number options through the existing VBV HUD configuration screen.
+ */
 public final class VBVArmorHud {
     private static final int STEP = 20;
-    private static final int SIZE = 22;
+    private static final int SIZE = 20;
     private static final int HOTBAR_OFFSET = 98;
 
     private VBVArmorHud() {}
 
-    /**
-     * Native Eaglercraft 26.2 version of the useful Armor HUD behavior from
-     * Uku's Armor HUD 26.2. Four armor slots are shown vertically to the
-     * left of the hotbar: helmet, chestplate, leggings, boots.
-     */
     public static void render(GuiGraphicsExtractor graphics) {
         Minecraft minecraft = Minecraft.getInstance();
         if (!(minecraft.getCameraEntity() instanceof Player player)) return;
@@ -30,40 +32,58 @@ public final class VBVArmorHud {
             EquipmentSlot.FEET
         };
 
-        int left = graphics.guiWidth() / 2 - HOTBAR_OFFSET - SIZE;
-        int top = graphics.guiHeight() - (SIZE + STEP * (slots.length - 1)) - 2;
+        int left = graphics.guiWidth() / 2 - HOTBAR_OFFSET - SIZE
+            + VBVSimpleHudConfig.armorXOffset;
+        int top = graphics.guiHeight() - (SIZE + STEP * (slots.length - 1)) - 2
+            + VBVSimpleHudConfig.armorYOffset;
 
         for (int i = 0; i < slots.length; i++) {
             ItemStack stack = player.getItemBySlot(slots[i]);
             int x = left;
             int y = top + STEP * i;
 
-            // Keep the widget visually close to Uku's Armor HUD slot size.
-            graphics.fill(x, y, x + SIZE, y + SIZE, 0x66000000);
-            graphics.outline(x, y, SIZE, SIZE, 0x99FFFFFF);
+            // Vanilla-like slot backing, kept deliberately quiet.
+            graphics.fill(x, y, x + SIZE, y + SIZE, 0x55000000);
 
-            if (stack.isEmpty()) continue;
+            if (stack.isEmpty()) {
+                graphics.outline(x, y, SIZE, SIZE, 0x44999999);
+                continue;
+            }
 
-            // Render the actual equipped armor item.
-            graphics.item(stack, x + 3, y + 3);
+            graphics.item(stack, x + 2, y + 2);
 
-            // Render remaining durability, matching the 26.2 source's
-            // numeric durability behavior.
             if (stack.isDamageableItem()) {
-                int remaining = Math.max(0, stack.getMaxDamage() - stack.getDamageValue());
                 int max = Math.max(1, stack.getMaxDamage());
-                int percent = Math.max(0, Math.min(100, remaining * 100 / max));
+                int remaining = Math.max(0, max - stack.getDamageValue());
+                int percent = remaining * 100 / max;
 
-                int color = stack.getBarColor();
-                if (percent <= 20) {
-                    color = 0xFFFF5555;
-                } else if (percent <= 50) {
-                    color = 0xFFFFFF55;
+                // Match uku's warning-focused presentation: no durability
+                // numbers by default, only a warning when the item is close
+                // to breaking.
+                if (percent <= VBVSimpleHudConfig.armorWarningPercent) {
+                    int warning = percent <= 10 ? 0xFFFF5555 : 0xFFFFAA00;
+                    graphics.outline(x - 1, y - 1, SIZE + 2, SIZE + 2, warning);
+
+                    if (VBVSimpleHudConfig.armorShowNumbers) {
+                        graphics.text(
+                            minecraft.font,
+                            Integer.toString(remaining),
+                            x + SIZE + 2,
+                            y + 6,
+                            warning,
+                            true
+                        );
+                    }
+                } else if (VBVSimpleHudConfig.armorShowNumbers) {
+                    graphics.text(
+                        minecraft.font,
+                        Integer.toString(remaining),
+                        x + SIZE + 2,
+                        y + 6,
+                        stack.getBarColor(),
+                        true
+                    );
                 }
-
-                Font font = minecraft.font;
-                String durability = Integer.toString(remaining);
-                graphics.text(font, durability, x + SIZE + 2, y + 7, color, true);
             }
         }
     }
