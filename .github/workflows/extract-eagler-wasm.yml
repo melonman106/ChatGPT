@@ -175,12 +175,35 @@ jobs:
           pathlib.Path("extracted/mod-map.md").write_text("\n".join(report), encoding="utf-8")
           PY
 
+      - name: Copy extracted WASM to repository
+        run: |
+          set -euo pipefail
+          rm -rf Eaglercraft-26.2-u1-ExtractedWASM
+          cp -a extracted Eaglercraft-26.2-u1-ExtractedWASM
+          find Eaglercraft-26.2-u1-ExtractedWASM -type f | sort > Eaglercraft-26.2-u1-ExtractedWASM/FILE-LIST.txt
+          printf 'Extracted from: %s\n' "${{ inputs.html_url }}" > Eaglercraft-26.2-u1-ExtractedWASM/EXTRACTION-INFO.txt
+          printf 'Extracted at: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> Eaglercraft-26.2-u1-ExtractedWASM/EXTRACTION-INFO.txt
       - name: Write checksums and archive
         run: |
           set -euo pipefail
           find extracted -type f -print0 | sort -z | xargs -0 sha256sum > extracted/SHA256SUMS.txt
           tar -czf eaglercraft-wasm-extracted.tar.gz extracted
           ls -lh eaglercraft-wasm-extracted.tar.gz
+
+      - name: Commit extracted WASM to repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A Eaglercraft-26.2-u1-ExtractedWASM
+          if git diff --cached --quiet; then
+            echo "No extracted WASM changes to commit."
+          else
+            git commit -m "Update Eaglercraft 26.2 extracted WASM"
+            git push
+          fi
 
       - name: Upload extracted WASM and map
         uses: actions/upload-artifact@v4
