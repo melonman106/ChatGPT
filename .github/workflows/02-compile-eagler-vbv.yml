@@ -52,31 +52,124 @@ jobs:
           for o,s in hits[:1000]: print(f"0x{o:08x} {s}")
           PY
 
-      - name: Prepare actual client-mod source payloads
+      - name: Prepare native client-mod payloads
         run: |
           set -euo pipefail
           mkdir -p injected-mods
-          cat ViaBackport26.2-ClientSide/webmods/resource-packs.js > injected-mods/resource-packs.js
-          cat ViaBackport26.2-ClientSide/webmods/uku-armor-hud.js > injected-mods/uku-armor-hud.js
-          echo "Prepared mod source payloads"
+          cp ViaBackport26.2-ClientSide/webmods/resource-packs.js injected-mods/resource-packs.js
+          cp ViaBackport26.2-ClientSide/webmods/uku-armor-hud.js injected-mods/uku-armor-hud.js
 
-      - name: Build the modded HTML without EaglerForge
+          python3 - <<'PY'
+          import base64
+          from pathlib import Path
+
+          mods = {}
+          for name in ("resource-packs.js", "uku-armor-hud.js"):
+              data = Path("injected-mods/" + name).read_bytes()
+              mods[name] = "data:text/javascript;base64," + base64.b64encode(data).decode("ascii")
+
+          Path("mod-urls.txt").write_text("\\n".join(mods.values()), encoding="utf-8")
+          print("Prepared native mod payload URLs:", ", ".join(mods))
+          PY
+
+      - name: Inject mods through the existing Eagler launch configuration
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64, re
+          from pathlib import Path
+
+          base = Path("base.html").read_text(encoding="utf-8")
+          rp = base64.b64encode(Path("injected-mods/resource-packs.js").read_bytes()).decode("ascii")
+          ah = base64.b64encode(Path("injected-mods/uku-armor-hud.js").read_bytes()).decode("ascii")
+
+          bridge = f'''<script data-vbv-native-mod-bootstrap>
+          (() => {{
+            const mods = [
+              "data:text/javascript;base64,{rp}",
+              "data:text/javascript;base64,{ah}"
+            ];
+
+            /*
+             * The immutable client already owns Minecraft/Fabric/Mod Menu.
+             * We only add entries to its launch configuration; no loader,
+             * EaglerForge, WASM replacement, or second renderer is installed.
+             */
+            const install = () => {{
+              const opts = globalThis.eaglercraftXOpts;
+              if (!opts || typeof opts !== "object") return false;
+              const old = Array.isArray(opts.Mods) ? opts.Mods : [];
+              opts.Mods = old.concat(mods);
+              globalThis.VBVNativeMods = mods.slice();
+              return true;
+            }};
+
+            if (!install()) {{
+              const timer = setInterval(() => {{
+                if (install()) clearInterval(timer);
+              }}, 0);
+              setTimeout(() => clearInterval(timer), 10000);
+            }}
+          }})();
+          </script>'''
+
+          # Put the bootstrap immediately before the first Eagler launch-options
+          # script so the existing client sees the Mods list at startup.
+          m = re.search(r'<script[^>]*>\\s*(?:const|let|var)\\s+[^<]*eaglercraftXOpts', base, re.I)
+          if m:
+              pos = m.start()
+          else:
+              marker = 'window.eaglercraftXOpts'
+              pos = base.find(marker)
+              if pos < 0:
+                  raise SystemExit("Existing eaglercraftXOpts was not found; refusing to pretend the native mod loader exists")
+              pos = base.rfind("<script", 0, pos)
+
+          out = base[:pos] + bridge + "\\n" + base[pos:]
+          if out == base:
+              raise SystemExit("Native mod bootstrap was not inserted")
+
+          Path("Eaglercraft-26.2-VBV-Modded.html").write_text(out, encoding="utf-8")
+          print("Injected native launch-config bootstrap")
+          print("Output bytes:", len(out.encode()))
+          PY
+
+      - name: Prove the client was not rebuilt and reject fake DOM integration
         run: |
           set -euo pipefail
           python3 - <<'PY'
           import re
           from pathlib import Path
-          base=Path("base.html").read_text(encoding="utf-8")
-          mods=[Path("injected-mods/resource-packs.js").read_text(),Path("injected-mods/uku-armor-hud.js").read_text()]
-          # Keep the original compiled client completely intact. These are loaded
-          # as client-side mod modules by the existing Eagler runtime bridge.
-          block='\\n<script data-vbv-client-mod="resource-packs">'+mods[0]+'</script>\\n<script data-vbv-client-mod="uku-armor-hud">'+mods[1]+'</script>\\n'
-          out=base.replace('</body>',block+'</body>',1)
-          if out==base: raise SystemExit("Could not insert client-mod modules")
-          Path("Eaglercraft-26.2-VBV-Modded.html").write_text(out,encoding='utf-8')
-          print("Base bytes:",len(base.encode()))
-          print("Modded bytes:",len(out.encode()))
-          print("Added client mod modules:",2)
+
+          base = Path("base.html").read_text(encoding="utf-8")
+          out = Path("Eaglercraft-26.2-VBV-Modded.html").read_text(encoding="utf-8")
+
+          if "vbv-uku-armor-hud" in out:
+              raise SystemExit("Fake DOM Armor HUD detected; build rejected")
+
+          ids = [
+              "eag-inline-decoder",
+              "eag-inline-wasm-br",
+              "eag-inline-mesh-wasm-br",
+              "eag-inline-server-wasm-br",
+              "eag-inline-assets",
+              "eag-inline-sounds",
+          ]
+          for ident in ids:
+              pat = re.compile(r'<script[^>]*id=["\\']'+re.escape(ident)+r'["\\'][^>]*>(.*?)</script>', re.S | re.I)
+              a = pat.search(base)
+              b = pat.search(out)
+              if not a or not b:
+                  raise SystemExit(f"missing payload: {ident}")
+              if a.group(1) != b.group(1):
+                  raise SystemExit(f"Minecraft payload changed: {ident}")
+              print(ident, "BYTE-PRESERVED")
+
+          if 'data-vbv-native-mod-bootstrap' not in out:
+              raise SystemExit("Native mod bootstrap missing")
+
+          print("All six original Eagler payloads are unchanged.")
+          print("No EaglerForge or fake DOM Armor HUD was added.")
           PY
 
       - name: Verify the original Minecraft payloads were not rebuilt
