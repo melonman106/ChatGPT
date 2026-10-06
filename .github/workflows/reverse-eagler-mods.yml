@@ -1,0 +1,231 @@
+name: Reverse-map compiled Eagler mods
+
+on:
+  workflow_dispatch:
+    inputs:
+      html_url:
+        description: "Direct URL to the known modded Eaglercraft single-HTML build"
+        required: true
+        default: "https://github.com/melonman106/ChatGPT/releases/download/1/eaglercraft-26.2-modded-2026-10-05-1523.html"
+        type: string
+
+jobs:
+  reverse-map:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download old compiled client
+        run: |
+          set -euo pipefail
+          mkdir -p work/old work/kit-report
+          curl -fL --retry 5 --retry-all-errors "${{ inputs.html_url }}" -o work/old/client.html
+          test -s work/old/client.html
+          sha256sum work/old/client.html
+
+      - name: Extract every embedded payload
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64, pathlib, re
+          from html.parser import HTMLParser
+
+          class P(HTMLParser):
+              def __init__(self):
+                  super().__init__(convert_charrefs=False)
+                  self.i = None
+                  self.b = []
+                  self.d = {}
+              def handle_starttag(self, tag, attrs):
+                  if tag.lower() != 'script': return
+                  ident = dict(attrs).get('id')
+                  self.i = ident if ident and ident.startswith('eag-inline-') else None
+                  self.b = []
+              def handle_data(self, data):
+                  if self.i: self.b.append(data)
+              def handle_endtag(self, tag):
+                  if tag.lower() == 'script' and self.i:
+                      self.d[self.i] = ''.join(self.b)
+                      self.i = None
+                      self.b = []
+
+          src = pathlib.Path('work/old/client.html').read_text(encoding='utf-8')
+          p = P(); p.feed(src)
+          out = pathlib.Path('work/old/payloads'); out.mkdir(parents=True, exist_ok=True)
+          names = {
+              'eag-inline-decoder':'decoder.wasm',
+              'eag-inline-wasm-br':'client.wasm.br',
+              'eag-inline-mesh-wasm-br':'mesh.wasm.br',
+              'eag-inline-server-wasm-br':'server.wasm.br',
+              'eag-inline-assets':'assets.epk',
+              'eag-inline-sounds':'sounds.epk',
+          }
+          for ident, name in names.items():
+              if ident not in p.d:
+                  print('missing', ident); continue
+              raw = base64.b64decode(re.sub(r'\s+', '', p.d[ident]), validate=True)
+              (out/name).write_bytes(raw)
+              print(name, len(raw))
+          PY
+          sudo apt-get update
+          sudo apt-get install -y brotli wabt binaryen unzip
+          brotli -d -f work/old/payloads/client.wasm.br -o work/old/payloads/client.wasm
+          brotli -d -f work/old/payloads/mesh.wasm.br -o work/old/payloads/mesh.wasm
+          brotli -d -f work/old/payloads/server.wasm.br -o work/old/payloads/server.wasm
+
+      - name: Inspect physical U1 build kit and patch sources
+        run: |
+          set -euo pipefail
+          root="$GITHUB_WORKSPACE/Eaglercraft-26.2-u1-Extracted"
+          test -d "$root"
+          python3 - <<'PY'
+          from pathlib import Path
+          import zipfile, re
+
+          root = Path('Eaglercraft-26.2-u1-Extracted')
+          out = Path('work/kit-report'); out.mkdir(parents=True, exist_ok=True)
+          report = []
+          for zname in ['source-patch-bundle.zip', 'project-skeleton-v5-teavm-runtime-verified.zip', 'inputs/resource-overlay-normal.zip']:
+              zp = root/zname
+              report.append(f'## {zname}')
+              if not zp.exists():
+                  report.append('MISSING')
+                  continue
+              with zipfile.ZipFile(zp) as z:
+                  names = z.namelist()
+                  report.append(f'entries: {len(names)}')
+                  hits = []
+                  for n in names:
+                      if any(x in n.lower() for x in ('litematica','malilib','modmenu','eagler','fabric.mod')):
+                          hits.append(n)
+                  report.append('### Matching paths')
+                  report.extend('- '+x for x in hits[:200])
+                  report.append('')
+                  for n in names:
+                      if n.endswith('/') or z.getinfo(n).file_size > 4_000_000:
+                          continue
+                      try: data=z.read(n).decode('utf-8','ignore')
+                      except Exception: continue
+                      if re.search(r'Litematica|litematica|MaLiLib|malilib|ModMenu|modmenu|fabric\.mod\.json', data):
+                          report.append(f'### Text hit: {n}')
+                          lines=data.splitlines()
+                          for i,line in enumerate(lines,1):
+                              if re.search(r'Litematica|litematica|MaLiLib|malilib|ModMenu|modmenu|fabric\.mod\.json', line):
+                                  report.append(f'{i}: {line[:500]}')
+                          report.append('')
+          (out/'u1-kit-mod-search.md').write_text('\n'.join(report), encoding='utf-8')
+          PY
+
+      - name: Recover WASM strings, offsets, descriptors and custom sections
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re, struct
+
+          wasm = Path('work/old/payloads/client.wasm').read_bytes()
+          out = Path('work/old/reverse'); out.mkdir(parents=True, exist_ok=True)
+
+          def uleb(data, p):
+              v=0; s=0
+              while True:
+                  b=data[p]; p+=1; v |= (b&127)<<s
+                  if not b&128: return v,p
+                  s+=7
+
+          sections=[]; p=8
+          while p < len(wasm):
+              sid=wasm[p]; p+=1
+              sz,p2=uleb(wasm,p); start=p2; end=start+sz
+              if end>len(wasm): break
+              name=''
+              if sid==0:
+                  q=start; nl,q=uleb(wasm,q); name=wasm[q:q+nl].decode('utf-8','replace')
+              sections.append((sid,name,start,sz))
+              p=end
+
+          lines=['# Deep reverse map of the compiled Eagler client','',f'WASM bytes: {len(wasm):,}','', '## WASM sections','']
+          for sid,name,start,sz in sections:
+              lines.append(f'- id={sid} name={name or "(standard)"} offset={start:,} size={sz:,}')
+          lines += ['', '## Custom-section string inventory','']
+          for sid,name,start,sz in sections:
+              if sid != 0: continue
+              blob=wasm[start:start+sz]
+              for s in sorted(set(x.decode('utf-8','replace') for x in re.findall(rb'[ -~]{4,}', blob))):
+                  if any(k in s.lower() for k in ('teavm','litematica','malilib','modmenu','fabric','mixin','mappings','source','method','class')):
+                      lines.append(f'- [{name}] {s}')
+
+          lines += ['', '## Litematica/MaLiLib/Mod Menu strings with byte offsets','']
+          needles=(b'fi.dy.masa.litematica',b'fi.dy.masa.malilib',b'com.terraformersmc.modmenu',b'Litematica',b'MaLiLib',b'ModMenu')
+          hits=[]
+          for needle in needles:
+              pos=0
+              while True:
+                  pos=wasm.find(needle,pos)
+                  if pos<0: break
+                  lo=max(0,pos-180); hi=min(len(wasm),pos+len(needle)+300)
+                  chunk=wasm[lo:hi]
+                  printable=re.findall(rb'[ -~]{4,}',chunk)
+                  text=' | '.join(x.decode('utf-8','replace') for x in printable)
+                  hits.append((pos,needle.decode(),text[:1000]))
+                  pos += 1
+          for pos,n,text in sorted(set(hits)):
+              lines.append(f'- 0x{pos:08x} ({pos:,}) `{n}` :: {text}')
+          (out/'wasm-deep-map.md').write_text('\n'.join(lines), encoding='utf-8')
+
+          # Produce a compact printable-string database for later automated matching.
+          strings=[]
+          for m in re.finditer(rb'[ -~]{4,}', wasm):
+              s=m.group().decode('utf-8','replace')
+              if any(k in s.lower() for k in ('litematica','malilib','modmenu','fabric','eagler','teavm')):
+                  strings.append(f'0x{m.start():08x}\t{m.start()}\t{s}')
+          (out/'relevant-strings.tsv').write_text('\n'.join(strings), encoding='utf-8')
+          PY
+
+      - name: Attempt standard WASM decompilation and preserve diagnostics
+        run: |
+          set +e
+          mkdir -p work/old/reverse/decompile
+          wasm2wat work/old/payloads/client.wasm -o work/old/reverse/decompile/client.wat 2> work/old/reverse/decompile/wasm2wat.stderr
+          echo $? > work/old/reverse/decompile/wasm2wat.exit
+          wasm-decompile work/old/payloads/client.wasm -o work/old/reverse/decompile/client.dcmp 2> work/old/reverse/decompile/wasm-decompile.stderr
+          echo $? > work/old/reverse/decompile/wasm-decompile.exit
+          wasm-objdump -x work/old/payloads/client.wasm > work/old/reverse/decompile/wasm-objdump.txt 2>&1
+          echo $? > work/old/reverse/decompile/wasm-objdump.exit
+          set -e
+
+      - name: Generate reverse-engineering summary
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          p=Path('work/old/reverse/wasm-deep-map.md').read_text(encoding='utf-8')
+          kit=Path('work/kit-report/u1-kit-mod-search.md').read_text(encoding='utf-8')
+          summary=['# Eagler 26.2 compiled-mod recovery summary','',
+                   'This report compares the known compiled modded client against the physical U1 build kit. It is intentionally source-recovery oriented: namespaces, method/class strings, custom TeaVM metadata, byte offsets, and any matching patch/source files are retained.','',
+                   '## Results','',
+                   f'- Litematica-related hits: {len(re.findall("litematica", p, re.I))}',
+                   f'- MaLiLib-related hits: {len(re.findall("malilib", p, re.I))}',
+                   f'- Mod Menu-related hits: {len(re.findall("modmenu", p, re.I))}',
+                   f'- U1-kit source/path matches: {len(re.findall("litematica|malilib|modmenu", kit, re.I))}',
+                   '',
+                   '## Files','',
+                   '- `wasm-deep-map.md`: section table, TeaVM/custom-section strings, byte offsets and surrounding printable strings.',
+                   '- `relevant-strings.tsv`: machine-readable offsets for relevant strings.',
+                   '- `u1-kit-mod-search.md`: matching paths and text inside the physical U1 ZIPs.',
+                   '- `decompile/`: standard WABT/Binaryen diagnostics; failures are preserved rather than discarded.',
+                   '']
+          Path('work/old/reverse/RECOVERY-SUMMARY.md').write_text('\n'.join(summary), encoding='utf-8')
+          PY
+
+      - name: Upload reverse-engineering bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: eagler-26.2-deep-mod-recovery
+          path: |
+            work/old/reverse/**
+            work/kit-report/**
+          compression-level: 0
+          retention-days: 30
