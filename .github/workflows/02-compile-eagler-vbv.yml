@@ -56,13 +56,34 @@ jobs:
       - name: Validate recovered legacy WASM inputs
         run: |
           set -euo pipefail
+          echo "Downloaded artifact layout:"
+          find recovered-wasm -maxdepth 4 -type f -printf '%p %s bytes\\n' | sort
+
+          client_wasm="$(find recovered-wasm -type f -name 'client.wasm' -size +0c -print -quit)"
+          mod_map="$(find recovered-wasm -type f -name 'mod-map.md' -size +0c -print -quit)"
+          test -n "$client_wasm"
+          test -n "$mod_map"
+
+          mkdir -p recovered-wasm/extracted
+          if [ "$client_wasm" != "recovered-wasm/extracted/client.wasm" ]; then
+            cp -f "$client_wasm" recovered-wasm/extracted/client.wasm
+          fi
+          if [ "$mod_map" != "recovered-wasm/extracted/mod-map.md" ]; then
+            cp -f "$mod_map" recovered-wasm/extracted/mod-map.md
+          fi
+
           test -s recovered-wasm/extracted/client.wasm
           test -s recovered-wasm/extracted/mod-map.md
           echo "Recovered legacy client WASM: $(stat -c%s recovered-wasm/extracted/client.wasm) bytes"
           echo "Recovered mod map: $(stat -c%s recovered-wasm/extracted/mod-map.md) bytes"
-          grep -q '^## Litematica' recovered-wasm/extracted/mod-map.md
-          grep -q '^## MaLiLib' recovered-wasm/extracted/mod-map.md
-          grep -q '^## Mod Menu' recovered-wasm/extracted/mod-map.md
+
+          for section in Litematica MaLiLib "Mod Menu"; do
+            if ! grep -q "^## $section" recovered-wasm/extracted/mod-map.md; then
+              echo "::error::Recovered mod map is missing section: $section"
+              sed -n '1,80p' recovered-wasm/extracted/mod-map.md
+              exit 1
+            fi
+          done
 
       - name: Prepare Uku's Armor HUD 26.2 dependencies
         run: |
