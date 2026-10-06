@@ -33,7 +33,6 @@ jobs:
           base = Path("base.html").read_text(encoding="utf-8")
           parts = [
               Path("ViaBackport26.2-ClientSide/webmods/vbv-mod-loader.js").read_text(encoding="utf-8"),
-              Path("ViaBackport26.2-ClientSide/webmods/fullbright.js").read_text(encoding="utf-8"),
               Path("ViaBackport26.2-ClientSide/webmods/resource-packs.js").read_text(encoding="utf-8"),
               Path("ViaBackport26.2-ClientSide/webmods/uku-armor-hud.js").read_text(encoding="utf-8"),
           ]
