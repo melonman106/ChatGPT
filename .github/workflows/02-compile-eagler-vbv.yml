@@ -46,31 +46,66 @@ jobs:
           sudo apt-get install -y -qq brotli wabt
           brotli -d -f client.wasm.br -o client.wasm
           file client.wasm
-          wasm-objdump -h client.wasm | tee wasm-sections.txt
-          # WABT 1.0.34 cannot fully decode every exception/tag/global encoding
-          # emitted by this TeaVM/Eagler build. Keep the section inspection but
-          # never discard the extracted WASM just because -x rejects a field.
+
+          # WABT can inspect the section table but this TeaVM/Eagler WASM
+          # contains encodings that its decoder rejects. Neither failure is
+          # allowed to destroy the extracted payload or stop later inspection.
+          set +e
+          wasm-objdump -h client.wasm > wasm-sections.txt 2>wasm-sections-errors.txt
+          section_status=$?
+          set -e
+          echo "wasm-objdump -h exit status: $section_status" | tee -a wasm-sections.txt
+          cat wasm-sections-errors.txt || true
+
           set +e
           wasm-objdump -x client.wasm > wasm-exports.txt 2>wasm-objdump-errors.txt
           objdump_status=$?
           set -e
           echo "wasm-objdump -x exit status: $objdump_status" | tee -a wasm-exports.txt
           if [ "$objdump_status" -ne 0 ]; then
-            echo "WABT could not fully decode this WASM; raw WASM and string inspection remain valid." | tee -a wasm-exports.txt
+            echo "WABT could not fully decode this WASM; raw WASM and custom inspection remain valid." | tee -a wasm-exports.txt
           fi
 
-      - name: Inspect compiled mod/runtime symbols
+      - name: Inspect compiled mod/runtime strings without requiring a full WASM decode
         run: |
           set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          data = Path("client.wasm").read_bytes()
+          strings = []
+          for m in re.finditer(rb'[ -~]{4,}', data):
+              try:
+                  s = m.group().decode("ascii")
+              except UnicodeDecodeError:
+                  continue
+              strings.append((m.start(), s))
+
+          needles = re.compile(
+              r'litematica|malilib|modmenu|fabric|eagler|resource.?pack|shader|'
+              r'armor.?hud|cloth.?config|u1|teavm', re.I)
+          with open("wasm-runtime-strings.txt", "w", encoding="utf-8") as f:
+              for off, s in strings:
+                  if needles.search(s):
+                      f.write(f"0x{off:08x} {s}\n")
+          print("ASCII strings found:", len(strings))
+          print("Matching runtime strings:", sum(1 for _, s in strings if needles.search(s)))
+          PY
+
           {
-            echo "=== strings matching existing mods/runtime ==="
-            strings -a client.wasm | grep -Ei 'litematica|malilib|modmenu|fabric|eagler|resource.?pack|shader|armor.?hud|cloth.?config' | head -n 1000 || true
+            echo "=== matching compiled strings ==="
+            head -n 2000 wasm-runtime-strings.txt || true
             echo
-            echo "=== WASM exports/imports recovered by WABT ==="
-            grep -Ei 'litematica|malilib|modmenu|fabric|eagler|resource|shader|armor|config' wasm-exports.txt | head -n 1000 || true
+            echo "=== WABT section table ==="
+            cat wasm-sections.txt || true
             echo
             echo "=== WABT parser diagnostics ==="
+            cat wasm-sections-errors.txt || true
             cat wasm-objdump-errors.txt || true
+            echo
+            echo "=== recovered WABT exports/imports ==="
+            grep -Ei 'litematica|malilib|modmenu|fabric|eagler|resource|shader|armor|config' wasm-exports.txt | head -n 1000 || true
           } | tee wasm-mod-inspection.txt
 
       - name: Verify the compressed WASM can be decompressed and byte-preserved
@@ -125,8 +160,10 @@ jobs:
             client.wasm.br
             roundtrip.wasm.br
             wasm-sections.txt
+            wasm-sections-errors.txt
             wasm-exports.txt
             wasm-objdump-errors.txt
+            wasm-runtime-strings.txt
             wasm-mod-inspection.txt
           compression-level: 0
           if-no-files-found: error
