@@ -1,4 +1,4 @@
-name: Build Eaglercraft 26.2 u1 — client mod integration
+name: Build Eaglercraft 26.2 u1 VBV Client
 
 on:
   workflow_dispatch:
@@ -9,161 +9,87 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download and verify immutable base HTML
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Java 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: Set up Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install Eaglercraft 26.2 u1 build kit
         run: |
           set -euo pipefail
-          url="https://github.com/melonman106/ChatGPT/releases/download/1/eaglercraft-26.2-modded-2026-10-05-1523.html"
-          sha="778f89bb91cbd3cd3b97341c7a63df5895fab70e1b8461017bffd2efd2f4fbbe"
-          curl -fL --retry 3 "$url" -o base.html
-          echo "$sha  base.html" | sha256sum -c -
-          test "$(wc -c < base.html)" -eq 94088990
+          curl -fL --retry 3 "https://github.com/melonman106/ChatGPT/releases/download/Modded/Eaglercraft-26.2-u1-Setup.jar" -o Eaglercraft-26.2-u1-Setup.jar
+          echo "57bfcacdf24310d48f462a9a508fe2a59acad8487a8de34bb40963c46183c1bd  Eaglercraft-26.2-u1-Setup.jar" | sha256sum -c -
+          rm -rf Eaglercraft-26.2-u1
+          java -jar Eaglercraft-26.2-u1-Setup.jar --install-dir Eaglercraft-26.2-u1
+          test -d Eaglercraft-26.2-u1
 
-      - name: Inspect the existing compiled client for its built-in mod runtime
+      - name: Build native VBV client
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          import base64,re
-          from pathlib import Path
-          html=Path("base.html").read_text(encoding="utf-8")
-          m=re.search(r"""<script[^>]*id=["']eag-inline-wasm-br["'][^>]*>(.*?)</script>""",html,re.S|re.I)
-          if not m: raise SystemExit("client.wasm.br payload not found")
-          Path("client.wasm.br").write_bytes(base64.b64decode(re.sub(r'\\s+','',m.group(1))))
-          PY
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq brotli
-          brotli -d -f client.wasm.br -o client.wasm
-          python3 - <<'PY'
-          import re
-          from pathlib import Path
-          d=Path("client.wasm").read_bytes()
-          needles=re.compile(rb'litematica|malilib|modmenu|fabric|resource.?pack|shader|armor.?hud|cloth.?config',re.I)
-          hits=[]
-          for m in re.finditer(rb'[ -~]{4,}',d):
-              if needles.search(m.group()): hits.append((m.start(),m.group().decode('ascii','replace')))
-          Path("existing-mod-symbols.txt").write_text('\\n'.join(f"0x{o:08x} {s}" for o,s in hits),encoding='utf-8')
-          print("Existing compiled mod/runtime strings:",len(hits))
-          for o,s in hits[:1000]: print(f"0x{o:08x} {s}")
-          PY
+          root="$GITHUB_WORKSPACE/Eaglercraft-26.2-u1"
+          patcher="$(find "$root" -maxdepth 5 -type f \( -name 'U1-Patcher' -o -name 'eagler-patcher' \) -print -quit || true)"
+          if [ -z "$patcher" ]; then echo "::error::U1-Patcher not found"; find "$root" -maxdepth 6 -type f | sort | head -1000; exit 1; fi
+          chmod +x "$patcher" || true
+          "$patcher" --help 2>&1 | head -200 || true
+          jar="$(find "$root" -type f -iname '*minecraft*26.2*.jar' -print -quit || true)"
+          [ -n "$jar" ] || jar="$(find "$root" -type f -iname '*client*.jar' -print -quit || true)"
+          vineflower="$(find "$root" -type f -iname 'vineflower-1.12.0.jar' -print -quit || true)"
+          bundle="$(find "$root" -type f -iname '*source-patch-bundle*.zip' -print -quit || true)"
+          skeleton="$(find "$root" -type f -iname 'project-skeleton-u1-nettyfix.zip' -print -quit || true)"
+          overlay="$(find "$root" -type f -iname 'resource-overlay-normal.zip' -print -quit || true)"
+          external_root="$(find "$root" -type d -path '*/inputs/resources' -print -quit || true)"
+          sounds="$(find "$root" -type f -name sounds.epk -print -quit || true)"
+          music="$(find "$root" -type f -name music.epk -print -quit || true)"
+          for v in jar vineflower bundle skeleton overlay external_root sounds music; do eval "x=\"\${$v:-}\""; echo "$v=$x"; [ -n "$x" ] || { echo "::error::Missing $v"; exit 1; }; done
+          bs="$(sha256sum "$bundle" | cut -d' ' -f1)"
+          ss="$(sha256sum "$skeleton" | cut -d' ' -f1)"
+          os="$(sha256sum "$overlay" | cut -d' ' -f1)"
+          rm -rf vbv-build
+          mkdir -p vbv-build
+          "$patcher" create-dev --jar "$jar" --output "$GITHUB_WORKSPACE/vbv-build/project" --vineflower "$vineflower" --java17 "$(command -v java)" --patch-bundle "$bundle" --expected-bundle-sha256 "$bs" --project-skeleton "$skeleton" --expected-skeleton-sha256 "$ss" --resource-overlay "$overlay" --expected-resource-overlay-sha256 "$os" --external-resource-root "$external_root"
+          python3 ViaBackport26.2-ClientSide/patch/apply_vbv_patch.py "$GITHUB_WORKSPACE/vbv-build/project"
+          test -f vbv-build/project/game/src/main/java/com/melonman106/vbvclient/VBVArmorHud.java
+          grep -RIl 'VBVArmorHud.render' vbv-build/project/game/src/main/java/net/minecraft/client | head -5
+          cd vbv-build/project
+          chmod +x ./gradlew
+          ./gradlew build --no-daemon --stacktrace
+          mkdir -p "$GITHUB_WORKSPACE/vbv-artifact"
+          find target_teavm_wasm_gc/build/web -maxdepth 1 -type f -exec cp -f {} "$GITHUB_WORKSPACE/vbv-artifact/" \;
+          test -s "$GITHUB_WORKSPACE/vbv-artifact/classes.wasm"
 
-      - name: Prepare browser-side client UI modules
+      - name: Verify native Armor HUD is compiled
         run: |
           set -euo pipefail
-          mkdir -p injected-mods
-          cp ViaBackport26.2-ClientSide/webmods/vbv-mod-loader.js injected-mods/vbv-mod-loader.js
-          cp ViaBackport26.2-ClientSide/webmods/resource-packs.js injected-mods/resource-packs.js
-          cp ViaBackport26.2-ClientSide/webmods/uku-armor-hud.js injected-mods/uku-armor-hud.js
-          cp ViaBackport26.2-ClientSide/webmods/vbv-mod-menu-bridge.js injected-mods/vbv-mod-menu-bridge.js
+          grep -RIl 'class VBVArmorHud' vbv-build/project/game/src/main/java | head -5
+          grep -RIl 'VBVArmorHud.render' vbv-build/project/game/src/main/java/net/minecraft/client | head -5
+          test -s vbv-artifact/classes.wasm
 
-      - name: Inject UI modules without touching the game launch configuration
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-          import html
-
-          base = Path("base.html").read_text(encoding="utf-8")
-          names = [
-              "vbv-mod-loader.js",
-              "resource-packs.js",
-              "uku-armor-hud.js",
-              "vbv-mod-menu-bridge.js",
-          ]
-          tags = []
-          for name in names:
-              data = Path("injected-mods/" + name).read_text(encoding="utf-8")
-              # Append after the complete immutable document. This deliberately
-              # avoids eaglercraftXOpts and cannot shift the Minecraft canvas.
-              tags.append('<script data-vbv-browser-mod="' + html.escape(name, quote=True) + '">\\n' + data + '\\n</script>')
-          marker = "\\n<!-- VBV browser client modules: no launch-config/WASM modification -->\\n" + "\\n".join(tags) + "\\n"
-          out = base + marker
-          Path("Eaglercraft-26.2-VBV-Modded.html").write_text(out, encoding="utf-8")
-          print("Appended browser modules after the immutable HTML document.")
-          print("Output bytes:", len(out.encode("utf-8")))
-          PY
-
-      - name: Verify browser modules and preserve all Minecraft payloads
-
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          import re
-          from pathlib import Path
-
-          base = Path("base.html").read_text(encoding="utf-8")
-          out = Path("Eaglercraft-26.2-VBV-Modded.html").read_text(encoding="utf-8")
-
-          required = ["VBVClientMods", "Resource Packs", "uku's Armor HUD", "data-vbv-browser-mod"]
-          for marker in required:
-              if marker not in out:
-                  raise SystemExit("Required browser module marker missing: " + marker)
-          if "eaglercraftXOpts.Mods" in out or "data-vbv-native-mod-bootstrap" in out:
-              raise SystemExit("Forbidden launch-config mod injection detected")
-
-          ids = [
-              "eag-inline-decoder",
-              "eag-inline-wasm-br",
-              "eag-inline-mesh-wasm-br",
-              "eag-inline-server-wasm-br",
-              "eag-inline-assets",
-              "eag-inline-sounds",
-          ]
-          for ident in ids:
-              pat = re.compile(r'''<script[^>]*id=["']''' + re.escape(ident) + r'''["'][^>]*>(.*?)</script>''', re.S | re.I)
-              a = pat.search(base)
-              b = pat.search(out)
-              if not a or not b:
-                  raise SystemExit(f"missing payload: {ident}")
-              if a.group(1) != b.group(1):
-                  raise SystemExit(f"Minecraft payload changed: {ident}")
-              print(ident, "BYTE-PRESERVED")
-
-          if "data-vbv-browser-mod" not in out:
-              raise SystemExit("VBV browser modules missing")
-
-          print("All six original Eagler payloads are unchanged.")
-          print("No EaglerForge or launch-config/WASM modification was added.")
-          PY
-
-      - name: Verify the original Minecraft payloads were not rebuilt
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          import re
-          from pathlib import Path
-          base = Path("base.html").read_text(encoding="utf-8")
-          out = Path("Eaglercraft-26.2-VBV-Modded.html").read_text(encoding="utf-8")
-          ids = [
-              "eag-inline-decoder",
-              "eag-inline-wasm-br",
-              "eag-inline-mesh-wasm-br",
-              "eag-inline-server-wasm-br",
-              "eag-inline-assets",
-              "eag-inline-sounds",
-          ]
-          for ident in ids:
-              pat = re.compile(r'''<script[^>]*id=["']''' + re.escape(ident) + r'''["'][^>]*>(.*?)</script>''', re.S | re.I)
-              a = pat.search(base)
-              b = pat.search(out)
-              if not a or not b:
-                  raise SystemExit(f"missing payload: {ident}")
-              if a.group(1) != b.group(1):
-                  raise SystemExit(f"Minecraft payload changed: {ident}")
-              print(ident, "BYTE-PRESERVED")
-          print("All six original Eagler payloads are unchanged.")
-          PY
-
-      - name: Upload the actually injected client
+      - name: Upload compiled native client
         uses: actions/upload-artifact@v4
         with:
-          name: Eaglercraft-26.2-VBV-RealInjector-${{ github.run_id }}
-          path: Eaglercraft-26.2-VBV-Modded.html
-          compression-level: 0
+          name: Eaglercraft-26.2-VBV-WASM-GC-${{ github.run_id }}
+          path: vbv-artifact
           if-no-files-found: error
           retention-days: 14
+          compression-level: 0
