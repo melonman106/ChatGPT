@@ -93,8 +93,8 @@ jobs:
           # UkuLib is published by Modrinth using its project/version Maven
           # coordinates, not the Java package path used by its mod filename.
           curl -fL --retry 4 --retry-all-errors \
-            "https://api.modrinth.com/maven/maven.modrinth/Y8uFrUil/ZNmjxBpi/Y8uFrUil-ZNmjxBpi.jar" \
-            -o vbv-build/dependencies/ukulib-fabric-2.1.0+26.2.jar
+            "https://cdn.modrinth.com/data/Y8uFrUil/versions/olOAyH3N/ukulib-fabric-2.1.1%2B26.2.jar" \
+            -o vbv-build/dependencies/ukulib-fabric-2.1.1+26.2.jar
 
           # Fabric's Sponge Mixin is hosted on Fabric Maven, not Maven Central.
           curl -fL --retry 4 --retry-all-errors \
