@@ -18,59 +18,73 @@ jobs:
           set -euo pipefail
           mkdir -p work extracted
           curl -fL --retry 5 --retry-all-errors "${{ inputs.html_url }}" -o work/client.html
+          test -s work/client.html
           ls -lh work/client.html
 
       - name: Extract embedded payloads
         run: |
           set -euo pipefail
           python3 - <<'PY'
-          import base64, pathlib, re
+          import base64
+          import pathlib
+          import re
+          from html.parser import HTMLParser
+
+          class ScriptParser(HTMLParser):
+              def __init__(self):
+                  super().__init__(convert_charrefs=False)
+                  self.current_id = None
+                  self.parts = []
+                  self.payloads = {}
+              def handle_starttag(self, tag, attrs):
+                  if tag.lower() != "script":
+                      return
+                  attrs = dict(attrs)
+                  ident = attrs.get("id")
+                  if ident and ident.startswith("eag-inline-"):
+                      self.current_id = ident
+                      self.parts = []
+                  else:
+                      self.current_id = None
+              def handle_data(self, data):
+                  if self.current_id:
+                      self.parts.append(data)
+              def handle_endtag(self, tag):
+                  if tag.lower() == "script" and self.current_id:
+                      self.payloads[self.current_id] = "".join(self.parts)
+                      self.current_id = None
+                      self.parts = []
 
           src = pathlib.Path("work/client.html").read_text(encoding="utf-8")
+          parser = ScriptParser()
+          parser.feed(src)
+
           out = pathlib.Path("extracted")
           out.mkdir(exist_ok=True)
 
-          pattern = re.compile(
-              r'<script[^>]*id=["\']([^"\']+)["\'][^>]*>'
-              r'\\s*([A-Za-z0-9+/=\\s]+?)\\s*</script>',
-              re.I,
-          )
+          names = {
+              "eag-inline-decoder": "decoder.wasm",
+              "eag-inline-wasm-br": "client.wasm.br",
+              "eag-inline-mesh-wasm-br": "mesh.wasm.br",
+              "eag-inline-server-wasm-br": "server.wasm.br",
+              "eag-inline-assets": "assets.epk",
+              "eag-inline-sounds": "sounds.epk",
+          }
 
           found = 0
-          for ident, payload in pattern.findall(src):
-              if not ident.startswith("eag-inline-"):
+          for ident, fn in names.items():
+              if ident not in parser.payloads:
+                  print(f"WARNING: missing {ident}")
                   continue
-              raw = base64.b64decode(re.sub(r"\\s+", "", payload))
-              name = ident.removeprefix("eag-inline-")
-              suffix = {
-                  "decoder": ".wasm",
-                  "wasm-br": ".wasm.br",
-                  "mesh-wasm-br": ".wasm.br",
-                  "server-wasm-br": ".wasm.br",
-                  "assets": ".epk",
-                  "sounds": ".epk",
-              }.get(name, ".bin")
-              # Keep the semantic names used by the bootstrap.
-              if name == "wasm-br":
-                  fn = "client.wasm.br"
-              elif name == "mesh-wasm-br":
-                  fn = "mesh.wasm.br"
-              elif name == "server-wasm-br":
-                  fn = "server.wasm.br"
-              elif name == "decoder":
-                  fn = "decoder.wasm"
-              elif name == "assets":
-                  fn = "assets.epk"
-              elif name == "sounds":
-                  fn = "sounds.epk"
-              else:
-                  fn = name + suffix
+              clean = re.sub(r"\s+", "", parser.payloads[ident])
+              raw = base64.b64decode(clean, validate=True)
               (out / fn).write_bytes(raw)
               found += 1
               print(f"extracted {fn}: {len(raw):,} bytes")
 
           if found < 4:
-              raise SystemExit(f"Expected embedded Eagler payloads, found only {found}")
+              print("Available eag-inline scripts:", sorted(parser.payloads))
+              raise SystemExit(f"Expected at least 4 embedded Eagler payloads, found {found}")
           PY
 
       - name: Decompress Brotli WASM
@@ -88,44 +102,42 @@ jobs:
         run: |
           set -euo pipefail
           python3 - <<'PY'
-          import pathlib, re
+          import pathlib
+          import re
 
           wasm = pathlib.Path("extracted/client.wasm").read_bytes()
-
-          # Recover printable UTF-8/ASCII strings from the TeaVM WASM.
-          strings = re.findall(rb"[ -~]{4,}", wasm)
-          strings = [s.decode("utf-8", "replace") for s in strings]
+          strings = [
+              s.decode("utf-8", "replace")
+              for s in re.findall(rb"[ -~]{4,}", wasm)
+          ]
 
           prefixes = {
-              "litematica": ("fi.dy.masa.litematica",),
-              "malilib": ("fi.dy.masa.malilib",),
-              "modmenu": ("com.terraformersmc.modmenu",),
+              "Litematica": "fi.dy.masa.litematica",
+              "MaLiLib": "fi.dy.masa.malilib",
+              "Mod Menu": "com.terraformersmc.modmenu",
           }
 
-          report = []
-          report.append("# Embedded client mod map")
-          report.append("")
-          report.append(f"client.wasm size: {len(wasm):,} bytes")
-          report.append("")
+          report = [
+              "# Embedded Eaglercraft 26.2 client mod map",
+              "",
+              f"client.wasm size: {len(wasm):,} bytes",
+              "",
+          ]
 
-          for mod, ps in prefixes.items():
-              vals = sorted({s for s in strings if any(p in s for p in ps)})
-              report.append(f"## {mod}")
-              report.append(f"Recovered strings/types: {len(vals)}")
-              report.append("")
-              report.extend(f"- {v}" for v in vals)
+          for name, prefix in prefixes.items():
+              vals = sorted({s for s in strings if prefix in s})
+              report += [f"## {name}", "", f"Recovered strings/types: {len(vals)}", ""]
+              report += [f"- {v}" for v in vals]
               report.append("")
 
-          # Useful metadata/version strings around the mod identifiers.
-          needles = [
+          needles = (
               "Litematica", "litematica", "MaLiLib", "malilib",
               "Mod Menu", "modmenu", "fabric.mod.json",
               "onInitializeClient", "ModMenuApi"
-          ]
-          report.append("## Relevant metadata/runtime strings")
-          report.append("")
-          for s in sorted({s for s in strings if any(n in s for n in needles)}):
-              report.append(f"- {s}")
+          )
+          vals = sorted({s for s in strings if any(n in s for n in needles)})
+          report += ["## Relevant metadata/runtime strings", ""]
+          report += [f"- {v}" for v in vals]
 
           pathlib.Path("extracted/mod-map.md").write_text("\n".join(report), encoding="utf-8")
           PY
