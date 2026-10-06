@@ -302,39 +302,46 @@ if open_name is None:
     raise SystemExit("Could not find a method on Minecraft that takes a single Screen")
 print("Screen-opening method on Minecraft:", open_name, "(candidates:", screen_methods, ")")
 
-HUD_CALL_PREFIX = "com.melonman106.vbvclient.VBVSimpleHud.render("
-
-hud_path = None
-hud_src = None
-for p, s in java_files():
-    if re.search(r"class\s+Hud\b", s) and "GuiGraphicsExtractor" in s and "extractItemHotbar" in s:
-        hud_path, hud_src = p, s
-        break
-
-if hud_path is None:
-    raise SystemExit("Hud.java with GuiGraphicsExtractor/extractItemHotbar was not identified")
-
-if HUD_CALL_PREFIX in hud_src:
-    print("VBV Armor HUD hook already present.")
-else:
+HUD_CALL = "com.melonman106.vbvclient.VBVSimpleHud.render(graphics);"
+if HUD_CALL not in hud_src:
     hud_match = re.search(
-        r"(?:public|private|protected)\s+void\s+extractItemHotbar\s*\([^)]*\)\s*\{",
+        r"(?:public|private|protected)\\s+void\\s+extractItemHotbar\\s*\\([^)]*\\)\\s*\\{",
         hud_src
     )
     if not hud_match:
         raise SystemExit("Hud.extractItemHotbar method was not identified")
-    param = re.search(r"GuiGraphicsExtractor\s+(\w+)", hud_match.group(0))
+    param = re.search(r"GuiGraphicsExtractor\\s+(\\w+)", hud_match.group(0))
     if not param:
         raise SystemExit("Hud.extractItemHotbar has no GuiGraphicsExtractor parameter")
-    hud_call = f"{HUD_CALL_PREFIX}{param.group(1)});"
-
+    HUD_CALL = HUD_CALL.replace("graphics", param.group(1))
     end = find_method_end(hud_src, hud_match.start())
     if end is None:
         raise SystemExit("Could not find end of Hud.extractItemHotbar")
-
-    hud_src = hud_src[:end] + "\n        " + hud_call + "\n    " + hud_src[end:]
+    hud_src = hud_src[:end] + "\\n        " + HUD_CALL + "\\n    " + hud_src[end:]
     hud_path.write_text(hud_src, encoding="utf-8")
-    print("Inserted Armor HUD hook at the end of", hud_path, "using parameter", param.group(1))
+    print("Inserted existing VBV Simple HUD hook into", hud_path)
+else:
+    print("Existing VBV Simple HUD hook already present.")
+
+ARMOR_CALL = "com.melonman106.vbvclient.VBVArmorHud.render(graphics);"
+hud_src = hud_path.read_text(encoding="utf-8")
+if ARMOR_CALL in hud_src:
+    print("VBV Armor HUD own hook already present.")
+else:
+    _m = re.search(r"(?:public|private|protected)\\s+void\\s+extractItemHotbar\\s*\\([^)]*\\)\\s*\\{", hud_src)
+    if not _m:
+        raise SystemExit("Hud.extractItemHotbar method was not identified")
+    _param = re.search(r"GuiGraphicsExtractor\\s+(\\w+)", _m.group(0))
+    if not _param:
+        raise SystemExit("Hud.extractItemHotbar has no GuiGraphicsExtractor parameter")
+    ARMOR_CALL = ARMOR_CALL.replace("graphics", _param.group(1))
+    _end = find_method_end(hud_src, _m.start())
+    if _end is None:
+        raise SystemExit("Could not find end of Hud.extractItemHotbar")
+    hud_src = hud_src[:_end] + "\\n        " + ARMOR_CALL + "\\n    " + hud_src[_end:]
+    hud_path.write_text(hud_src, encoding="utf-8")
+    print("Inserted Armor HUD hook into", hud_path)
+
 
 nav = DEST / "VBVNav.java"
 nav_src = nav.read_text(encoding="utf-8")
