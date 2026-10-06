@@ -124,8 +124,8 @@ jobs:
                   raise SystemExit(f"Minecraft payload changed: {ident}")
               print(ident, "BYTE-PRESERVED")
 
-          if 'data-vbv-native-mod-bootstrap' not in out:
-              raise SystemExit("Native mod bootstrap missing")
+          if "data-vbv-browser-mod" not in out:
+              raise SystemExit("VBV browser modules missing")
 
           print("All six original Eagler payloads are unchanged.")
           print("No EaglerForge or launch-config/WASM modification was added.")
