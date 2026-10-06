@@ -1,0 +1,74 @@
+name: Apply Uku's Armor HUD fix
+
+on:
+  workflow_dispatch:
+    inputs:
+      trigger_build:
+        description: "Start 'Build Eaglercraft 26.2 u1 VBV Client' after committing the fix"
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check inputs exist
+        run: |
+          set -euo pipefail
+          test -f apply_armor_hud_fix.py || { echo "::error::apply_armor_hud_fix.py must be in the repository root."; exit 1; }
+          test -d ViaBackport26.2-ClientSide/src/main/java/com/melonman106/vbvclient || { echo "::error::Client source directory not found."; exit 1; }
+
+      - name: Apply fix
+        run: python3 apply_armor_hud_fix.py
+
+      - name: Sanity-check the patched files
+        run: |
+          set -euo pipefail
+          src=ViaBackport26.2-ClientSide/src/main/java/com/melonman106/vbvclient
+          for f in VBVArmorHud VBVArmorHudConfig VBVArmorHudConfigScreen; do
+            test -s "$src/$f.java" || { echo "::error::$f.java missing"; exit 1; }
+          done
+          grep -q 'VBVArmorHudConfigScreen' "$src/VBVModDetailsScreen.java"
+          grep -q 'ARMOR_CALL' ViaBackport26.2-ClientSide/patch/apply_vbv_patch.py
+          if grep -q 'VBVArmorHud.render' "$src/VBVSimpleHud.java"; then
+            echo "::error::VBVSimpleHud still calls the armor HUD."; exit 1
+          fi
+          python3 -m py_compile ViaBackport26.2-ClientSide/patch/apply_vbv_patch.py
+          echo "All checks passed."
+
+      - name: Commit and push
+        id: commit
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add ViaBackport26.2-ClientSide
+          if git diff --cached --quiet; then
+            echo "Nothing to commit; the fix is already applied."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git commit -m "Add Uku's Armor HUD config screen and independent HUD hook"
+          git push origin HEAD
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      # Pushes made with GITHUB_TOKEN do not trigger other workflows,
+      # so start the client build explicitly.
+      - name: Start client build
+        if: inputs.trigger_build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run "Build Eaglercraft 26.2 u1 VBV Client" --repo "${{ github.repository }}" --ref "${{ github.ref_name }}"
+          echo "Started the client build. Use its artifact URL in the single-HTML packaging workflow."
