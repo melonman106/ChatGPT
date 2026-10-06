@@ -178,7 +178,7 @@ jobs:
       - name: Write checksums and archive
         run: |
           set -euo pipefail
-          sha256sum extracted/* > extracted/SHA256SUMS.txt
+          find extracted -type f -print0 | sort -z | xargs -0 sha256sum > extracted/SHA256SUMS.txt
           tar -czf eaglercraft-wasm-extracted.tar.gz extracted
           ls -lh eaglercraft-wasm-extracted.tar.gz
 
