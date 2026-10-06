@@ -1,0 +1,58 @@
+name: Extract Eaglercraft 26.2 u1 Everything
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/01-extract-eagler-u1-everything.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Download and install Eaglercraft 26.2 u1 Setup
+        run: |
+          set -euo pipefail
+          curl -fL --retry 3 "https://github.com/melonman106/ChatGPT/releases/download/Modded/Eaglercraft-26.2-u1-Setup.jar" -o Eaglercraft-26.2-u1-Setup.jar
+          echo "57bfcacdf24310d48f462a9a508fe2a59acad8487a8de34bb40963c46183c1bd  Eaglercraft-26.2-u1-Setup.jar" | sha256sum -c -
+          rm -rf Eaglercraft-26.2-u1
+          java -jar Eaglercraft-26.2-u1-Setup.jar --install-dir Eaglercraft-26.2-u1
+
+      - name: Extract everything into the repository
+        run: |
+          set -euo pipefail
+          dest="$GITHUB_WORKSPACE/Eaglercraft-26.2-u1-Extracted"
+          rm -rf "$dest"
+          mkdir -p "$dest"
+          cp -a Eaglercraft-26.2-u1/. "$dest/"
+          find "$dest" -type f -printf '%P\n' | LC_ALL=C sort > "$dest/FILE-LIST.txt"
+          find "$dest" -type d -printf '%P/\n' | LC_ALL=C sort > "$dest/DIRECTORY-LIST.txt"
+          printf 'Eaglercraft 26.2 u1 complete extraction\nGenerated: %s\nFiles: %s\nDirectories: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(wc -l < "$dest/FILE-LIST.txt")" "$(wc -l < "$dest/DIRECTORY-LIST.txt")" > "$dest/EXTRACTION-INFO.txt"
+          echo "Extracted files: $(wc -l < "$dest/FILE-LIST.txt")"
+          echo "Extracted directories: $(wc -l < "$dest/DIRECTORY-LIST.txt")"
+          du -sh "$dest"
+
+      - name: Commit extraction to main repository
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A Eaglercraft-26.2-u1-Extracted
+          if git diff --cached --quiet; then
+            echo "Extraction is already identical to the repository."
+            exit 0
+          fi
+          git commit -m "Extract complete Eaglercraft 26.2 u1 build kit"
+          git push origin HEAD:main
