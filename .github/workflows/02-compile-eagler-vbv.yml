@@ -47,20 +47,42 @@ jobs:
           brotli -d -f client.wasm.br -o client.wasm
           file client.wasm
           wasm-objdump -h client.wasm | tee wasm-sections.txt
-          wasm-objdump -x client.wasm > wasm-exports.txt
+          # WABT 1.0.34 cannot fully decode every exception/tag/global encoding
+          # emitted by this TeaVM/Eagler build. Keep the section inspection but
+          # never discard the extracted WASM just because -x rejects a field.
+          set +e
+          wasm-objdump -x client.wasm > wasm-exports.txt 2>wasm-objdump-errors.txt
+          objdump_status=$?
+          set -e
+          echo "wasm-objdump -x exit status: $objdump_status" | tee -a wasm-exports.txt
+          if [ "$objdump_status" -ne 0 ]; then
+            echo "WABT could not fully decode this WASM; raw WASM and string inspection remain valid." | tee -a wasm-exports.txt
+          fi
 
       - name: Inspect compiled mod/runtime symbols
         run: |
           set -euo pipefail
           {
             echo "=== strings matching existing mods/runtime ==="
-            strings -a client.wasm | grep -Ei 'litematica|malilib|modmenu|fabric|eagler|resource.?pack|shader|armor.?hud|cloth.?config' | head -n 500 || true
+            strings -a client.wasm | grep -Ei 'litematica|malilib|modmenu|fabric|eagler|resource.?pack|shader|armor.?hud|cloth.?config' | head -n 1000 || true
             echo
-            echo "=== WASM imports/exports containing mod/runtime terms ==="
-            grep -Ei 'litematica|malilib|modmenu|fabric|eagler|resource|shader|armor|config' wasm-exports.txt | head -n 500 || true
+            echo "=== WASM exports/imports recovered by WABT ==="
+            grep -Ei 'litematica|malilib|modmenu|fabric|eagler|resource|shader|armor|config' wasm-exports.txt | head -n 1000 || true
+            echo
+            echo "=== WABT parser diagnostics ==="
+            cat wasm-objdump-errors.txt || true
           } | tee wasm-mod-inspection.txt
 
-      - name: Repack the untouched client payload into a validation HTML
+      - name: Verify the compressed WASM can be decompressed and byte-preserved
+        run: |
+          set -euo pipefail
+          brotli -f -q 11 client.wasm -o roundtrip.wasm.br
+          brotli -d -f roundtrip.wasm.br -o roundtrip.wasm
+          cmp client.wasm roundtrip.wasm
+          echo "WASM brotli round-trip: OK"
+          sha256sum client.wasm client.wasm.br
+
+      - name: Repack the existing client payload into a validation HTML
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -101,8 +123,10 @@ jobs:
           path: |
             client.wasm
             client.wasm.br
+            roundtrip.wasm.br
             wasm-sections.txt
             wasm-exports.txt
+            wasm-objdump-errors.txt
             wasm-mod-inspection.txt
           compression-level: 0
           if-no-files-found: error
