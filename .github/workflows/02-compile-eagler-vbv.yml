@@ -98,7 +98,7 @@ jobs:
 
           # Fabric's Sponge Mixin is hosted on Fabric Maven, not Maven Central.
           curl -fL --retry 4 --retry-all-errors \
-            "https://maven.fabricmc.net/maven/net/fabricmc/sponge-mixin/0.17.3%2Bmixin.0.8.7/sponge-mixin-0.17.3%2Bmixin.0.8.7.jar" \
+            "https://repo1.maven.org/maven2/net/fabricmc/sponge-mixin/0.17.3%2Bmixin.0.8.7/sponge-mixin-0.17.3%2Bmixin.0.8.7.jar" \
             -o vbv-build/dependencies/sponge-mixin-0.17.3+mixin.0.8.7.jar
 
           # MixinExtras common is on Maven Central.
