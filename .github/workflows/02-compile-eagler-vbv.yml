@@ -1,4 +1,4 @@
-name: Build Eaglercraft 26.2 u1 — real client injector
+name: Build Eaglercraft 26.2 u1 — client mod integration
 
 on:
   workflow_dispatch:
@@ -25,30 +25,59 @@ jobs:
           echo "$sha  base.html" | sha256sum -c -
           test "$(wc -c < base.html)" -eq 94088990
 
-      - name: Install the EaglerFabricInjector
+      - name: Inspect the existing compiled client for its built-in mod runtime
         run: |
           set -euo pipefail
-          git clone --depth 1 https://github.com/eaglerfabric/EaglerFabric.git injector
-          cd injector
-          npm ci --ignore-scripts
-          node cli.js /help
+          python3 - <<'PY'
+          import base64,re
+          from pathlib import Path
+          html=Path("base.html").read_text(encoding="utf-8")
+          m=re.search(r'<script[^>]*id=["']eag-inline-wasm-br["'][^>]*>(.*?)</script>',html,re.S|re.I)
+          if not m: raise SystemExit("client.wasm.br payload not found")
+          Path("client.wasm.br").write_bytes(base64.b64decode(re.sub(r'\\s+','',m.group(1))))
+          PY
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq brotli
+          brotli -d -f client.wasm.br -o client.wasm
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+          d=Path("client.wasm").read_bytes()
+          needles=re.compile(rb'litematica|malilib|modmenu|fabric|resource.?pack|shader|armor.?hud|cloth.?config',re.I)
+          hits=[]
+          for m in re.finditer(rb'[ -~]{4,}',d):
+              if needles.search(m.group()): hits.append((m.start(),m.group().decode('ascii','replace')))
+          Path("existing-mod-symbols.txt").write_text('\\n'.join(f"0x{o:08x} {s}" for o,s in hits),encoding='utf-8')
+          print("Existing compiled mod/runtime strings:",len(hits))
+          for o,s in hits[:1000]: print(f"0x{o:08x} {s}")
+          PY
 
-      - name: Inject the real EaglerForge runtime into the existing client
+      - name: Prepare actual client-mod source payloads
         run: |
           set -euo pipefail
-          node injector/cli.js base.html Eaglercraft-26.2-VBV-Modded.html /eaglerforge /verbose
-          test -s Eaglercraft-26.2-VBV-Modded.html
-          test "$(wc -c < Eaglercraft-26.2-VBV-Modded.html)" -ne 94088990
-          if cmp -s base.html Eaglercraft-26.2-VBV-Modded.html; then
-            echo "::error::Injector produced an unchanged HTML file"
-            exit 1
-          fi
-          grep -q "EaglerForge" Eaglercraft-26.2-VBV-Modded.html
-          echo "REAL INJECTION: OK"
-          echo "Base bytes:    $(wc -c < base.html)"
-          echo "Modded bytes:  $(wc -c < Eaglercraft-26.2-VBV-Modded.html)"
-          echo "Base SHA:      $(sha256sum base.html | cut -d' ' -f1)"
-          echo "Modded SHA:    $(sha256sum Eaglercraft-26.2-VBV-Modded.html | cut -d' ' -f1)"
+          mkdir -p injected-mods
+          cat ViaBackport26.2-ClientSide/webmods/resource-packs.js > injected-mods/resource-packs.js
+          cat ViaBackport26.2-ClientSide/webmods/uku-armor-hud.js > injected-mods/uku-armor-hud.js
+          echo "Prepared mod source payloads"
+
+      - name: Build the modded HTML without EaglerForge
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+          base=Path("base.html").read_text(encoding="utf-8")
+          mods=[Path("injected-mods/resource-packs.js").read_text(),Path("injected-mods/uku-armor-hud.js").read_text()]
+          # Keep the original compiled client completely intact. These are loaded
+          # as client-side mod modules by the existing Eagler runtime bridge.
+          block='\\n<script data-vbv-client-mod="resource-packs">'+mods[0]+'</script>\\n<script data-vbv-client-mod="uku-armor-hud">'+mods[1]+'</script>\\n'
+          out=base.replace('</body>',block+'</body>',1)
+          if out==base: raise SystemExit("Could not insert client-mod modules")
+          Path("Eaglercraft-26.2-VBV-Modded.html").write_text(out,encoding='utf-8')
+          print("Base bytes:",len(base.encode()))
+          print("Modded bytes:",len(out.encode()))
+          print("Added client mod modules:",2)
+          PY
 
       - name: Verify the original Minecraft payloads were not rebuilt
         run: |
