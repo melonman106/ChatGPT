@@ -84,7 +84,7 @@ jobs:
           # discoverable JVM tests. Gradle 9 treats that as a hard failure;
           # disable only that empty-test-suite failure so the actual client
           # compilation/package tasks can complete.
-          cat > vbv-build/allow-empty-tests.gradle <<'EOF'
+          cat > "$GITHUB_WORKSPACE/vbv-build/allow-empty-tests.gradle" <<'EOF'
           allprojects {
             tasks.withType(Test).configureEach {
               failOnNoDiscoveredTests = false
