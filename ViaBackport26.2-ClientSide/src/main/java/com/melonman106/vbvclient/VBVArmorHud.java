@@ -1,90 +1,49 @@
 package com.melonman106.vbvclient;
 
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 
-/**
- * Native Eaglercraft implementation of uku's Armor HUD for 26.2 u1.
- *
- * The original mod is intentionally minimalist: it shows the four equipped
- * armor items and a visual low-durability warning without putting durability
- * numbers on the screen. This native port keeps that behavior while exposing
- * position/number options through the existing VBV HUD configuration screen.
- */
 public final class VBVArmorHud {
-    private static final int STEP = 20;
-    private static final int SIZE = 20;
-    private static final int HOTBAR_OFFSET = 98;
-
-    private VBVArmorHud() {}
-
-    public static void render(GuiGraphicsExtractor graphics) {
-        Minecraft minecraft = Minecraft.getInstance();
-        if (!(minecraft.getCameraEntity() instanceof Player player)) return;
-
-        EquipmentSlot[] slots = {
-            EquipmentSlot.HEAD,
-            EquipmentSlot.CHEST,
-            EquipmentSlot.LEGS,
-            EquipmentSlot.FEET
-        };
-
-        int left = graphics.guiWidth() / 2 - HOTBAR_OFFSET - SIZE
-            + VBVSimpleHudConfig.armorXOffset;
-        int top = graphics.guiHeight() - (SIZE + STEP * (slots.length - 1)) - 2
-            + VBVSimpleHudConfig.armorYOffset;
-
-        for (int i = 0; i < slots.length; i++) {
-            ItemStack stack = player.getItemBySlot(slots[i]);
-            int x = left;
-            int y = top + STEP * i;
-
-            // Vanilla-like slot backing, kept deliberately quiet.
-            graphics.fill(x, y, x + SIZE, y + SIZE, 0x55000000);
-
-            if (stack.isEmpty()) {
-                graphics.outline(x, y, SIZE, SIZE, 0x44999999);
-                continue;
-            }
-
-            graphics.item(stack, x + 2, y + 2);
-
-            if (stack.isDamageableItem()) {
-                int max = Math.max(1, stack.getMaxDamage());
-                int remaining = Math.max(0, max - stack.getDamageValue());
-                int percent = remaining * 100 / max;
-
-                // Match uku's warning-focused presentation: no durability
-                // numbers by default, only a warning when the item is close
-                // to breaking.
-                if (percent <= VBVSimpleHudConfig.armorWarningPercent) {
-                    int warning = percent <= 10 ? 0xFFFF5555 : 0xFFFFAA00;
-                    graphics.outline(x - 1, y - 1, SIZE + 2, SIZE + 2, warning);
-
-                    if (VBVSimpleHudConfig.armorShowNumbers) {
-                        graphics.text(
-                            minecraft.font,
-                            Integer.toString(remaining),
-                            x + SIZE + 2,
-                            y + 6,
-                            warning,
-                            true
-                        );
-                    }
-                } else if (VBVSimpleHudConfig.armorShowNumbers) {
-                    graphics.text(
-                        minecraft.font,
-                        Integer.toString(remaining),
-                        x + SIZE + 2,
-                        y + 6,
-                        stack.getBarColor(),
-                        true
-                    );
-                }
+    private static final int STEP=20, SIZE=22, HOTBAR_OFFSET=98;
+    private static final EquipmentSlot[] SLOTS={EquipmentSlot.HEAD,EquipmentSlot.CHEST,EquipmentSlot.LEGS,EquipmentSlot.FEET};
+    private VBVArmorHud(){}
+    public static void render(GuiGraphicsExtractor graphics){try{renderInner(graphics);}catch(Throwable t){VBVArmorHudConfig.enabled=false;}}
+    private static void renderInner(GuiGraphicsExtractor graphics){
+        if(!VBVArmorHudConfig.enabled)return;
+        Minecraft minecraft=Minecraft.getInstance();
+        if(!(minecraft.getCameraEntity() instanceof Player player))return;
+        boolean left=VBVArmorHudConfig.leftSide;
+        int baseX=left?graphics.guiWidth()/2-HOTBAR_OFFSET-SIZE:graphics.guiWidth()/2+HOTBAR_OFFSET;
+        int top=graphics.guiHeight()-(SIZE+STEP*(SLOTS.length-1))-2;
+        Font font=minecraft.font;
+        for(int i=0;i<SLOTS.length;i++){
+            ItemStack stack=player.getItemBySlot(SLOTS[i]);
+            if(stack.isEmpty()&&!VBVArmorHudConfig.showEmptySlots)continue;
+            int x=baseX,y=top+STEP*i;
+            graphics.fill(x,y,x+SIZE,y+SIZE,0x66000000);
+            graphics.outline(x,y,SIZE,SIZE,0x99FFFFFF);
+            if(stack.isEmpty())continue;
+            graphics.item(stack,x+3,y+3);
+            if(!stack.isDamageableItem())continue;
+            int max=Math.max(1,stack.getMaxDamage()), remaining=Math.max(0,max-stack.getDamageValue());
+            int percent=Math.max(0,Math.min(100,remaining*100/max));
+            int color=stack.getBarColor()|0xFF000000;
+            if(VBVArmorHudConfig.warning){if(percent<=20)color=0xFFFF5555;else if(percent<=50)color=0xFFFFFF55;}
+            int mode=VBVArmorHudConfig.durabilityMode;
+            if(mode==VBVArmorHudConfig.DURA_NUMBER)drawText(graphics,font,Integer.toString(remaining),x,y,left,color);
+            else if(mode==VBVArmorHudConfig.DURA_PERCENT)drawText(graphics,font,percent+"%",x,y,left,color);
+            else if(mode==VBVArmorHudConfig.DURA_BAR){
+                int filled=Math.max(1,remaining*(SIZE-4)/max);
+                graphics.fill(x+2,y+SIZE-4,x+SIZE-2,y+SIZE-2,0xFF000000);
+                graphics.fill(x+2,y+SIZE-4,x+2+filled,y+SIZE-3,color);
             }
         }
+    }
+    private static void drawText(GuiGraphicsExtractor graphics,Font font,String text,int x,int y,boolean left,int color){
+        int tx=left?x-font.width(text)-2:x+SIZE+2; graphics.text(font,text,tx,y+7,color,true);
     }
 }
