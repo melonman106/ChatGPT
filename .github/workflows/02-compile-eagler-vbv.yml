@@ -147,16 +147,36 @@ jobs:
           ./gradlew build --no-daemon --stacktrace --init-script "$GITHUB_WORKSPACE/vbv-build/allow-empty-tests.gradle"
 
           mkdir -p "$GITHUB_WORKSPACE/vbv-artifact"
-          classes_wasm="$(find . -type f -name 'classes.wasm' -print -quit)"
-          test -n "$classes_wasm"
+          echo "TeaVM WASM outputs:"
+          find . -type f -name '*.wasm' -printf '%p %s bytes\\n' | sort
+
+          classes_wasm="$(find . -type f -name 'classes.wasm' -size +0c -print -quit || true)"
+          if [ -z "$classes_wasm" ]; then
+            classes_wasm="$(find . -type f -name '*.wasm' -size +0c -print -quit || true)"
+          fi
+          if [ -z "$classes_wasm" ]; then
+            echo "::error::Gradle succeeded but no non-empty WASM output was found."
+            find . -type f -printf '%p %s bytes\\n' | grep -Ei 'wasm|teavm|web' | tail -200 || true
+            exit 1
+          fi
+
+          echo "Selected TeaVM WASM: $classes_wasm"
+          cp -f "$classes_wasm" "$GITHUB_WORKSPACE/vbv-artifact/classes.wasm"
+          test -s "$GITHUB_WORKSPACE/vbv-artifact/classes.wasm"
+
           web_dir="$(dirname "$classes_wasm")"
-          cp -a "$web_dir"/. "$GITHUB_WORKSPACE/vbv-artifact/"
+          for f in "$web_dir"/*; do
+            [ -f "$f" ] || continue
+            base="$(basename "$f")"
+            [ "$base" = "classes.wasm" ] && continue
+            cp -f "$f" "$GITHUB_WORKSPACE/vbv-artifact/$base"
+          done
+
           mkdir -p "$GITHUB_WORKSPACE/vbv-artifact/dependencies"
           cp -a "$GITHUB_WORKSPACE/vbv-build/dependencies"/. "$GITHUB_WORKSPACE/vbv-artifact/dependencies/"
           mkdir -p "$GITHUB_WORKSPACE/vbv-artifact/recovered"
           cp -f "$GITHUB_WORKSPACE/recovered-wasm/extracted/client.wasm" "$GITHUB_WORKSPACE/vbv-artifact/recovered/legacy-client.wasm"
           cp -f "$GITHUB_WORKSPACE/recovered-wasm/extracted/mod-map.md" "$GITHUB_WORKSPACE/vbv-artifact/recovered/mod-map.md"
-          test -s "$GITHUB_WORKSPACE/vbv-artifact/classes.wasm"
 
       - name: Verify native Armor HUD and recovered legacy injection
         run: |
