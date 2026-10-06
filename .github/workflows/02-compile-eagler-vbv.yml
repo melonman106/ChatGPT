@@ -93,7 +93,19 @@ jobs:
           EOF
           ./gradlew build --no-daemon --stacktrace --init-script "$GITHUB_WORKSPACE/vbv-build/allow-empty-tests.gradle"
           mkdir -p "$GITHUB_WORKSPACE/vbv-artifact"
-          find target_teavm_wasm_gc/build/web -maxdepth 1 -type f -exec cp -f {} "$GITHUB_WORKSPACE/vbv-artifact/" \;
+          # The exact TeaVM output path differs between Eagler 26.2 build variants.
+          # Locate the generated web bundle from the file that proves the native
+          # client was packaged, then copy the complete containing directory.
+          classes_wasm="$(find . -type f -name 'classes.wasm' -print -quit)"
+          if [ -z "$classes_wasm" ]; then
+            echo "::error::Gradle succeeded but classes.wasm was not found in the build tree"
+            find . -type f \( -name '*.wasm' -o -name '*.html' \) -print | head -200
+            exit 1
+          fi
+          web_dir="$(dirname "$classes_wasm")"
+          echo "TeaVM web output: $web_dir"
+          find "$web_dir" -maxdepth 1 -type f -print
+          cp -a "$web_dir"/. "$GITHUB_WORKSPACE/vbv-artifact/"
           test -s "$GITHUB_WORKSPACE/vbv-artifact/classes.wasm"
 
       - name: Verify native Armor HUD is compiled
