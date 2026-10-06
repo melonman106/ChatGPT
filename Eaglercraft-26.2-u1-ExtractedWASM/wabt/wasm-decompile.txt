@@ -1,0 +1,2 @@
+=== wasm-decompile ===
+1.0.34
