@@ -302,6 +302,16 @@ if open_name is None:
     raise SystemExit("Could not find a method on Minecraft that takes a single Screen")
 print("Screen-opening method on Minecraft:", open_name, "(candidates:", screen_methods, ")")
 
+hud_path = None
+hud_src = None
+for p, s in java_files():
+    if p.name == "Hud.java" and re.search(r"class\s+Hud\b", s):
+        hud_path = p
+        hud_src = s
+        break
+if hud_path is None:
+    raise SystemExit("Hud.java was not identified; VBV HUD hooks cannot be installed")
+
 HUD_CALL = "com.melonman106.vbvclient.VBVSimpleHud.render(graphics);"
 if HUD_CALL not in hud_src:
     hud_match = re.search(
