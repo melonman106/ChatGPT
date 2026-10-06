@@ -98,6 +98,39 @@ jobs:
           file extracted/*.wasm
           ls -lh extracted
 
+      - name: Run WABT WebAssembly reverse-engineering tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y wabt
+          mkdir -p extracted/wabt
+          wabt_version="$(wasm2wat --version 2>&1 || true)"
+          printf '%s\\n' "$wabt_version" | tee extracted/wabt/VERSION.txt
+
+          for tool in wasm-objdump wasm-stats wasm-validate wasm2wat wasm-decompile wasm2c; do
+            if command -v "$tool" >/dev/null 2>&1; then
+              echo "=== $tool ===" | tee "extracted/wabt/$tool.txt"
+              "$tool" --version 2>&1 | tee -a "extracted/wabt/$tool.txt" || true
+            fi
+          done
+
+          # Structural inspection should survive even if full validation fails.
+          wasm-objdump -h -x extracted/client.wasm > extracted/wabt/client-objdump.txt 2>&1 || true
+          wasm-stats extracted/client.wasm > extracted/wabt/client-stats.txt 2>&1 || true
+          wasm-validate extracted/client.wasm > extracted/wabt/client-validate.txt 2>&1 || true
+
+          # Try the full feature set. Keep every result, including parser failures,
+          # because the failing byte offset is useful to the custom TeaVM parser.
+          wasm2wat --enable-all extracted/client.wasm -o extracted/wabt/client.wat > extracted/wabt/wasm2wat.log 2>&1 || true
+          wasm-decompile --enable-all extracted/client.wasm -o extracted/wabt/client.dcmp > extracted/wabt/wasm-decompile.log 2>&1 || true
+          wasm2c --enable-all extracted/client.wasm -o extracted/wabt/client.c > extracted/wabt/wasm2c.log 2>&1 || true
+
+          # Repeat without custom-section processing where supported by this WABT build.
+          wasm2wat --enable-all --ignore-custom-section-errors extracted/client.wasm \
+            -o extracted/wabt/client-ignore-custom.wat > extracted/wabt/wasm2wat-ignore-custom.log 2>&1 || true
+
+          find extracted/wabt -maxdepth 1 -type f -printf '%f %s bytes\\n' | sort
+
       - name: Map Litematica, MaLiLib and Mod Menu
         run: |
           set -euo pipefail
@@ -164,6 +197,7 @@ jobs:
             extracted/assets.epk
             extracted/sounds.epk
             extracted/mod-map.md
+            extracted/wabt/**
             extracted/SHA256SUMS.txt
             eaglercraft-wasm-extracted.tar.gz
           compression-level: 0
