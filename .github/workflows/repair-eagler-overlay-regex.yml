@@ -6,6 +6,7 @@ on:
 
 permissions:
   contents: write
+  workflows: write
 
 jobs:
   repair:
@@ -31,7 +32,7 @@ jobs:
           if count != 1:
               raise SystemExit(f"expected exactly one broken overlay regex, found {count}")
           path.write_text(text.replace(old, new), encoding='utf-8')
-          print('Fixed shader overlay ZIP member regex: \\\\. -> \\.')
+          print('Fixed shader overlay ZIP member regex.')
           PY
 
           git diff --check
