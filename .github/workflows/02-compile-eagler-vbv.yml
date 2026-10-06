@@ -52,89 +52,44 @@ jobs:
           for o,s in hits[:1000]: print(f"0x{o:08x} {s}")
           PY
 
-      - name: Prepare native client-mod payloads
+      - name: Prepare browser-side client UI modules
         run: |
           set -euo pipefail
           mkdir -p injected-mods
+          cp ViaBackport26.2-ClientSide/webmods/vbv-mod-loader.js injected-mods/vbv-mod-loader.js
           cp ViaBackport26.2-ClientSide/webmods/resource-packs.js injected-mods/resource-packs.js
           cp ViaBackport26.2-ClientSide/webmods/uku-armor-hud.js injected-mods/uku-armor-hud.js
+          cp ViaBackport26.2-ClientSide/webmods/vbv-mod-menu-bridge.js injected-mods/vbv-mod-menu-bridge.js
 
-          python3 - <<'PY'
-          import base64
-          from pathlib import Path
-
-          mods = {}
-          for name in ("resource-packs.js", "uku-armor-hud.js"):
-              data = Path("injected-mods/" + name).read_bytes()
-              mods[name] = "data:text/javascript;base64," + base64.b64encode(data).decode("ascii")
-
-          Path("mod-urls.txt").write_text("\\n".join(mods.values()), encoding="utf-8")
-          print("Prepared native mod payload URLs:", ", ".join(mods))
-          PY
-
-      - name: Inject mods through the existing Eagler launch configuration
+      - name: Inject UI modules without touching the game launch configuration
         run: |
           set -euo pipefail
           python3 - <<'PY'
-          import base64, re
           from pathlib import Path
+          import html
 
           base = Path("base.html").read_text(encoding="utf-8")
-          rp = base64.b64encode(Path("injected-mods/resource-packs.js").read_bytes()).decode("ascii")
-          ah = base64.b64encode(Path("injected-mods/uku-armor-hud.js").read_bytes()).decode("ascii")
-
-          bridge = f'''<script data-vbv-native-mod-bootstrap>
-          (() => {{
-            const mods = [
-              "data:text/javascript;base64,{rp}",
-              "data:text/javascript;base64,{ah}"
-            ];
-
-            /*
-             * The immutable client already owns Minecraft/Fabric/Mod Menu.
-             * We only add entries to its launch configuration; no loader,
-             * EaglerForge, WASM replacement, or second renderer is installed.
-             */
-            const install = () => {{
-              const opts = globalThis.eaglercraftXOpts;
-              if (!opts || typeof opts !== "object") return false;
-              const old = Array.isArray(opts.Mods) ? opts.Mods : [];
-              opts.Mods = old.concat(mods);
-              globalThis.VBVNativeMods = mods.slice();
-              return true;
-            }};
-
-            if (!install()) {{
-              const timer = setInterval(() => {{
-                if (install()) clearInterval(timer);
-              }}, 0);
-              setTimeout(() => clearInterval(timer), 10000);
-            }}
-          }})();
-          </script>'''
-
-          # Put the bootstrap immediately before the first Eagler launch-options
-          # script so the existing client sees the Mods list at startup.
-          m = re.search(r'<script[^>]*>\\s*(?:const|let|var)\\s+[^<]*eaglercraftXOpts', base, re.I)
-          if m:
-              pos = m.start()
-          else:
-              marker = 'window.eaglercraftXOpts'
-              pos = base.find(marker)
-              if pos < 0:
-                  raise SystemExit("Existing eaglercraftXOpts was not found; refusing to pretend the native mod loader exists")
-              pos = base.rfind("<script", 0, pos)
-
-          out = base[:pos] + bridge + "\\n" + base[pos:]
-          if out == base:
-              raise SystemExit("Native mod bootstrap was not inserted")
-
+          names = [
+              "vbv-mod-loader.js",
+              "resource-packs.js",
+              "uku-armor-hud.js",
+              "vbv-mod-menu-bridge.js",
+          ]
+          tags = []
+          for name in names:
+              data = Path("injected-mods/" + name).read_text(encoding="utf-8")
+              # Append after the complete immutable document. This deliberately
+              # avoids eaglercraftXOpts and cannot shift the Minecraft canvas.
+              tags.append('<script data-vbv-browser-mod="' + html.escape(name, quote=True) + '">\\n' + data + '\\n</script>')
+          marker = "\\n<!-- VBV browser client modules: no launch-config/WASM modification -->\\n" + "\\n".join(tags) + "\\n"
+          out = base + marker
           Path("Eaglercraft-26.2-VBV-Modded.html").write_text(out, encoding="utf-8")
-          print("Injected native launch-config bootstrap")
-          print("Output bytes:", len(out.encode()))
+          print("Appended browser modules after the immutable HTML document.")
+          print("Output bytes:", len(out.encode("utf-8")))
           PY
 
-      - name: Prove the client was not rebuilt and reject fake DOM integration
+      - name: Verify browser modules and preserve all Minecraft payloads
+
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -144,8 +99,12 @@ jobs:
           base = Path("base.html").read_text(encoding="utf-8")
           out = Path("Eaglercraft-26.2-VBV-Modded.html").read_text(encoding="utf-8")
 
-          if "vbv-uku-armor-hud" in out:
-              raise SystemExit("Fake DOM Armor HUD detected; build rejected")
+          required = ["VBVClientMods", "Resource Packs", "uku's Armor HUD", "data-vbv-browser-mod"]
+          for marker in required:
+              if marker not in out:
+                  raise SystemExit("Required browser module marker missing: " + marker)
+          if "eaglercraftXOpts.Mods" in out or "data-vbv-native-mod-bootstrap" in out:
+              raise SystemExit("Forbidden launch-config mod injection detected")
 
           ids = [
               "eag-inline-decoder",
@@ -169,7 +128,7 @@ jobs:
               raise SystemExit("Native mod bootstrap missing")
 
           print("All six original Eagler payloads are unchanged.")
-          print("No EaglerForge or fake DOM Armor HUD was added.")
+          print("No EaglerForge or launch-config/WASM modification was added.")
           PY
 
       - name: Verify the original Minecraft payloads were not rebuilt
