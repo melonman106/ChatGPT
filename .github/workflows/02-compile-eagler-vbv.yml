@@ -2,6 +2,15 @@ name: Build Eaglercraft 26.2 u1 VBV Client
 
 on:
   workflow_dispatch:
+    inputs:
+      reverse_run_id:
+        description: "Successful reverse-map workflow run containing the recovered WASM artifact"
+        required: false
+        default: "37531655199"
+      reverse_artifact_id:
+        description: "Recovered WASM artifact ID"
+        required: false
+        default: "11445140777"
   push:
     paths:
       - "ViaBackport26.2-ClientSide/**"
@@ -15,7 +24,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 150
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
 
@@ -35,6 +44,25 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 24
+
+      - name: Download recovered legacy WASM analysis
+        uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ inputs.reverse_run_id || '37531655199' }}
+          artifact-ids: ${{ inputs.reverse_artifact_id || '11445140777' }}
+          github-token: ${{ github.token }}
+          path: recovered-wasm
+
+      - name: Validate recovered legacy WASM inputs
+        run: |
+          set -euo pipefail
+          test -s recovered-wasm/extracted/client.wasm
+          test -s recovered-wasm/extracted/mod-map.md
+          echo "Recovered legacy client WASM: $(stat -c%s recovered-wasm/extracted/client.wasm) bytes"
+          echo "Recovered mod map: $(stat -c%s recovered-wasm/extracted/mod-map.md) bytes"
+          grep -q '^## Litematica' recovered-wasm/extracted/mod-map.md
+          grep -q '^## MaLiLib' recovered-wasm/extracted/mod-map.md
+          grep -q '^## Mod Menu' recovered-wasm/extracted/mod-map.md
 
       - name: Validate committed Eaglercraft 26.2 u1 build kit
         run: |
@@ -70,8 +98,6 @@ jobs:
 
           "$patcher" --help 2>&1 | head -200 || true
 
-          # The committed u1 kit contains the patcher and every build input,
-          # but intentionally does not contain the official Mojang client JAR.
           curl -fL --retry 3 \
             "https://piston-data.mojang.com/v1/objects/2dc72797acbc1b63fc16a11c4ac393605f453754/client.jar" \
             -o "$jar"
@@ -101,6 +127,23 @@ jobs:
             --expected-resource-overlay-sha256 "$os" \
             --external-resource-root "$external_root"
 
+          # This is the pre-WASM injection point. The recovered legacy client
+          # is compiled WASM, so we inject its recovered symbols into the Java
+          # tree before TeaVM instead of trying to splice two unrelated WASM
+          # modules after compilation.
+          python3 ViaBackport26.2-ClientSide/patch/inject_recovered_wasm_map.py \
+            "$GITHUB_WORKSPACE/vbv-build/project" \
+            "$GITHUB_WORKSPACE/recovered-wasm/extracted/mod-map.md"
+          test -s vbv-build/project/game/src/main/java/com/melonman106/vbvclient/VBVRecoveredLegacyMods.java
+          grep -q 'fi.dy.masa.litematica' vbv-build/project/game/src/main/java/com/melonman106/vbvclient/VBVRecoveredLegacyMods.java
+
+          # Keep the recovered client available to the build artifact for the
+          # next binary-level transplant/bridge stage, without feeding it to
+          # Gradle as a second executable WASM module.
+          mkdir -p "$GITHUB_WORKSPACE/vbv-build/recovered"
+          cp -f recovered-wasm/extracted/client.wasm "$GITHUB_WORKSPACE/vbv-build/recovered/legacy-client.wasm"
+          cp -f recovered-wasm/extracted/mod-map.md "$GITHUB_WORKSPACE/vbv-build/recovered/mod-map.md"
+
           python3 ViaBackport26.2-ClientSide/patch/apply_vbv_patch.py "$GITHUB_WORKSPACE/vbv-build/project"
           test -f vbv-build/project/game/src/main/java/com/melonman106/vbvclient/VBVArmorHud.java
           grep -RIl 'VBVArmorHud.render' vbv-build/project/game/src/main/java/net/minecraft/client | head -5
@@ -127,13 +170,16 @@ jobs:
           echo "TeaVM web output: $web_dir"
           find "$web_dir" -maxdepth 1 -type f -print
           cp -a "$web_dir"/. "$GITHUB_WORKSPACE/vbv-artifact/"
+          cp -a "$GITHUB_WORKSPACE/vbv-build/recovered" "$GITHUB_WORKSPACE/vbv-artifact/"
           test -s "$GITHUB_WORKSPACE/vbv-artifact/classes.wasm"
 
-      - name: Verify native Armor HUD is compiled
+      - name: Verify native Armor HUD and recovered legacy injection
         run: |
           set -euo pipefail
           grep -RIl 'class VBVArmorHud' vbv-build/project/game/src/main/java | head -5
           grep -RIl 'VBVArmorHud.render' vbv-build/project/game/src/main/java/net/minecraft/client | head -5
+          test -s vbv-build/project/game/src/main/java/com/melonman106/vbvclient/VBVRecoveredLegacyMods.java
+          grep -q 'fi.dy.masa.litematica' vbv-build/project/game/src/main/java/com/melonman106/vbvclient/VBVRecoveredLegacyMods.java
           test -s vbv-artifact/classes.wasm
 
       - name: Upload compiled native client
