@@ -1,4 +1,4 @@
-name: Build Eaglercraft 26.2 u1 — client WASM mod pipeline
+name: Build Eaglercraft 26.2 u1 — real client injector
 
 on:
   workflow_dispatch:
@@ -25,154 +25,63 @@ jobs:
           echo "$sha  base.html" | sha256sum -c -
           test "$(wc -c < base.html)" -eq 94088990
 
-      - name: Extract the existing client WASM without rebuilding Minecraft
+      - name: Install the EaglerFabricInjector
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          import base64, re
-          from pathlib import Path
+          git clone --depth 1 https://github.com/eaglerfabric/EaglerFabric.git injector
+          cd injector
+          npm ci --ignore-scripts
+          node cli.js /help
 
-          html = Path("base.html").read_text(encoding="utf-8")
-          pat = re.compile(r'<script[^>]*id=["\']eag-inline-wasm-br["\'][^>]*>(.*?)</script>', re.S | re.I)
-          m = pat.search(html)
-          if not m:
-              raise SystemExit("eag-inline-wasm-br was not found")
-          encoded = re.sub(r'\s+', '', m.group(1))
-          data = base64.b64decode(encoded, validate=True)
-          Path("client.wasm.br").write_bytes(data)
-          print("client.wasm.br bytes:", len(data))
-          PY
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq brotli wabt
-          brotli -d -f client.wasm.br -o client.wasm
-          file client.wasm
-
-          # WABT can inspect the section table but this TeaVM/Eagler WASM
-          # contains encodings that its decoder rejects. Neither failure is
-          # allowed to destroy the extracted payload or stop later inspection.
-          set +e
-          wasm-objdump -h client.wasm > wasm-sections.txt 2>wasm-sections-errors.txt
-          section_status=$?
-          set -e
-          echo "wasm-objdump -h exit status: $section_status" | tee -a wasm-sections.txt
-          cat wasm-sections-errors.txt || true
-
-          set +e
-          wasm-objdump -x client.wasm > wasm-exports.txt 2>wasm-objdump-errors.txt
-          objdump_status=$?
-          set -e
-          echo "wasm-objdump -x exit status: $objdump_status" | tee -a wasm-exports.txt
-          if [ "$objdump_status" -ne 0 ]; then
-            echo "WABT could not fully decode this WASM; raw WASM and custom inspection remain valid." | tee -a wasm-exports.txt
+      - name: Inject the real EaglerForge runtime into the existing client
+        run: |
+          set -euo pipefail
+          node injector/cli.js base.html Eaglercraft-26.2-VBV-Modded.html /eaglerforge /verbose
+          test -s Eaglercraft-26.2-VBV-Modded.html
+          test "$(wc -c < Eaglercraft-26.2-VBV-Modded.html)" -ne 94088990
+          if cmp -s base.html Eaglercraft-26.2-VBV-Modded.html; then
+            echo "::error::Injector produced an unchanged HTML file"
+            exit 1
           fi
+          grep -q "EaglerForge" Eaglercraft-26.2-VBV-Modded.html
+          echo "REAL INJECTION: OK"
+          echo "Base bytes:    $(wc -c < base.html)"
+          echo "Modded bytes:  $(wc -c < Eaglercraft-26.2-VBV-Modded.html)"
+          echo "Base SHA:      $(sha256sum base.html | cut -d' ' -f1)"
+          echo "Modded SHA:    $(sha256sum Eaglercraft-26.2-VBV-Modded.html | cut -d' ' -f1)"
 
-      - name: Inspect compiled mod/runtime strings without requiring a full WASM decode
+      - name: Verify the original Minecraft payloads were not rebuilt
         run: |
           set -euo pipefail
           python3 - <<'PY'
-          from pathlib import Path
           import re
-
-          data = Path("client.wasm").read_bytes()
-          strings = []
-          for m in re.finditer(rb'[ -~]{4,}', data):
-              try:
-                  s = m.group().decode("ascii")
-              except UnicodeDecodeError:
-                  continue
-              strings.append((m.start(), s))
-
-          needles = re.compile(
-              r'litematica|malilib|modmenu|fabric|eagler|resource.?pack|shader|'
-              r'armor.?hud|cloth.?config|u1|teavm', re.I)
-          with open("wasm-runtime-strings.txt", "w", encoding="utf-8") as f:
-              for off, s in strings:
-                  if needles.search(s):
-                      f.write(f"0x{off:08x} {s}\n")
-          print("ASCII strings found:", len(strings))
-          print("Matching runtime strings:", sum(1 for _, s in strings if needles.search(s)))
-          PY
-
-          {
-            echo "=== matching compiled strings ==="
-            head -n 2000 wasm-runtime-strings.txt || true
-            echo
-            echo "=== WABT section table ==="
-            cat wasm-sections.txt || true
-            echo
-            echo "=== WABT parser diagnostics ==="
-            cat wasm-sections-errors.txt || true
-            cat wasm-objdump-errors.txt || true
-            echo
-            echo "=== recovered WABT exports/imports ==="
-            grep -Ei 'litematica|malilib|modmenu|fabric|eagler|resource|shader|armor|config' wasm-exports.txt | head -n 1000 || true
-          } | tee wasm-mod-inspection.txt
-
-      - name: Verify the compressed WASM can be decompressed and byte-preserved
-        run: |
-          set -euo pipefail
-          brotli -f -q 11 client.wasm -o roundtrip.wasm.br
-          brotli -d -f roundtrip.wasm.br -o roundtrip.wasm
-          cmp client.wasm roundtrip.wasm
-          echo "WASM brotli round-trip: OK"
-          sha256sum client.wasm client.wasm.br
-
-      - name: Repack the existing client payload into a validation HTML
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          import base64, hashlib, re
           from pathlib import Path
-
           base = Path("base.html").read_text(encoding="utf-8")
-          br = Path("client.wasm.br").read_bytes()
-          encoded = base64.b64encode(br).decode("ascii")
-          pat = re.compile(r'(<script[^>]*id=["\']eag-inline-wasm-br["\'][^>]*>)(.*?)(</script>)', re.S | re.I)
-          out, n = pat.subn(lambda m: m.group(1) + encoded + m.group(3), base, count=1)
-          if n != 1:
-              raise SystemExit("failed to replace eag-inline-wasm-br")
-          Path("Eaglercraft-26.2-VBV-Modded.html").write_text(out, encoding="utf-8")
-
+          out = Path("Eaglercraft-26.2-VBV-Modded.html").read_text(encoding="utf-8")
           ids = [
               "eag-inline-decoder",
+              "eag-inline-wasm-br",
               "eag-inline-mesh-wasm-br",
               "eag-inline-server-wasm-br",
               "eag-inline-assets",
               "eag-inline-sounds",
           ]
           for ident in ids:
-              p = re.compile(r'<script[^>]*id=["\']'+re.escape(ident)+r'["\'][^>]*>(.*?)</script>', re.S | re.I)
-              a = p.search(base)
-              b = p.search(out)
-              if not a or not b or a.group(1) != b.group(1):
-                  raise SystemExit(f"immutable payload changed: {ident}")
-              print(ident, "UNCHANGED", len(a.group(1)))
-          print("Base SHA-256:", hashlib.sha256(base.encode()).hexdigest())
-          print("Validation SHA-256:", hashlib.sha256(out.encode()).hexdigest())
+              pat = re.compile(r'<script[^>]*id=["\']'+re.escape(ident)+r'["\'][^>]*>(.*?)</script>', re.S | re.I)
+              a = pat.search(base)
+              b = pat.search(out)
+              if not a or not b:
+                  raise SystemExit(f"missing payload: {ident}")
+              if a.group(1) != b.group(1):
+                  raise SystemExit(f"Minecraft payload changed: {ident}")
+              print(ident, "BYTE-PRESERVED")
+          print("All six original Eagler payloads are unchanged.")
           PY
 
-      - name: Upload WASM inspection artifacts
+      - name: Upload the actually injected client
         uses: actions/upload-artifact@v4
         with:
-          name: Eaglercraft-26.2-client-wasm-inspection-${{ github.run_id }}
-          path: |
-            client.wasm
-            client.wasm.br
-            roundtrip.wasm.br
-            wasm-sections.txt
-            wasm-sections-errors.txt
-            wasm-exports.txt
-            wasm-objdump-errors.txt
-            wasm-runtime-strings.txt
-            wasm-mod-inspection.txt
-          compression-level: 0
-          if-no-files-found: error
-          retention-days: 14
-
-      - name: Package validation HTML
-        uses: actions/upload-artifact@v4
-        with:
-          name: Eaglercraft-26.2-VBV-Modded-${{ github.run_id }}
+          name: Eaglercraft-26.2-VBV-RealInjector-${{ github.run_id }}
           path: Eaglercraft-26.2-VBV-Modded.html
           compression-level: 0
           if-no-files-found: error
