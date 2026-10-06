@@ -1,0 +1,158 @@
+name: Extract embedded Eaglercraft WASM
+
+on:
+  workflow_dispatch:
+    inputs:
+      html_url:
+        description: "Direct URL to the Eaglercraft single-HTML build"
+        required: true
+        default: "https://github.com/melonman106/ChatGPT/releases/download/1/eaglercraft-26.2-modded-2026-10-05-1523.html"
+        type: string
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download single-HTML client
+        run: |
+          set -euo pipefail
+          mkdir -p work extracted
+          curl -fL --retry 5 --retry-all-errors "${{ inputs.html_url }}" -o work/client.html
+          ls -lh work/client.html
+
+      - name: Extract embedded payloads
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64, pathlib, re
+
+          src = pathlib.Path("work/client.html").read_text(encoding="utf-8")
+          out = pathlib.Path("extracted")
+          out.mkdir(exist_ok=True)
+
+          pattern = re.compile(
+              r'<script[^>]*id=["\']([^"\']+)["\'][^>]*>'
+              r'\\s*([A-Za-z0-9+/=\\s]+?)\\s*</script>',
+              re.I,
+          )
+
+          found = 0
+          for ident, payload in pattern.findall(src):
+              if not ident.startswith("eag-inline-"):
+                  continue
+              raw = base64.b64decode(re.sub(r"\\s+", "", payload))
+              name = ident.removeprefix("eag-inline-")
+              suffix = {
+                  "decoder": ".wasm",
+                  "wasm-br": ".wasm.br",
+                  "mesh-wasm-br": ".wasm.br",
+                  "server-wasm-br": ".wasm.br",
+                  "assets": ".epk",
+                  "sounds": ".epk",
+              }.get(name, ".bin")
+              # Keep the semantic names used by the bootstrap.
+              if name == "wasm-br":
+                  fn = "client.wasm.br"
+              elif name == "mesh-wasm-br":
+                  fn = "mesh.wasm.br"
+              elif name == "server-wasm-br":
+                  fn = "server.wasm.br"
+              elif name == "decoder":
+                  fn = "decoder.wasm"
+              elif name == "assets":
+                  fn = "assets.epk"
+              elif name == "sounds":
+                  fn = "sounds.epk"
+              else:
+                  fn = name + suffix
+              (out / fn).write_bytes(raw)
+              found += 1
+              print(f"extracted {fn}: {len(raw):,} bytes")
+
+          if found < 4:
+              raise SystemExit(f"Expected embedded Eagler payloads, found only {found}")
+          PY
+
+      - name: Decompress Brotli WASM
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y brotli
+          brotli -d -f extracted/client.wasm.br -o extracted/client.wasm
+          brotli -d -f extracted/mesh.wasm.br -o extracted/mesh.wasm
+          brotli -d -f extracted/server.wasm.br -o extracted/server.wasm
+          file extracted/*.wasm
+          ls -lh extracted
+
+      - name: Map Litematica, MaLiLib and Mod Menu
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import pathlib, re
+
+          wasm = pathlib.Path("extracted/client.wasm").read_bytes()
+
+          # Recover printable UTF-8/ASCII strings from the TeaVM WASM.
+          strings = re.findall(rb"[ -~]{4,}", wasm)
+          strings = [s.decode("utf-8", "replace") for s in strings]
+
+          prefixes = {
+              "litematica": ("fi.dy.masa.litematica",),
+              "malilib": ("fi.dy.masa.malilib",),
+              "modmenu": ("com.terraformersmc.modmenu",),
+          }
+
+          report = []
+          report.append("# Embedded client mod map")
+          report.append("")
+          report.append(f"client.wasm size: {len(wasm):,} bytes")
+          report.append("")
+
+          for mod, ps in prefixes.items():
+              vals = sorted({s for s in strings if any(p in s for p in ps)})
+              report.append(f"## {mod}")
+              report.append(f"Recovered strings/types: {len(vals)}")
+              report.append("")
+              report.extend(f"- {v}" for v in vals)
+              report.append("")
+
+          # Useful metadata/version strings around the mod identifiers.
+          needles = [
+              "Litematica", "litematica", "MaLiLib", "malilib",
+              "Mod Menu", "modmenu", "fabric.mod.json",
+              "onInitializeClient", "ModMenuApi"
+          ]
+          report.append("## Relevant metadata/runtime strings")
+          report.append("")
+          for s in sorted({s for s in strings if any(n in s for n in needles)}):
+              report.append(f"- {s}")
+
+          pathlib.Path("extracted/mod-map.md").write_text("\n".join(report), encoding="utf-8")
+          PY
+
+      - name: Write checksums and archive
+        run: |
+          set -euo pipefail
+          sha256sum extracted/* > extracted/SHA256SUMS.txt
+          tar -czf eaglercraft-wasm-extracted.tar.gz extracted
+          ls -lh eaglercraft-wasm-extracted.tar.gz
+
+      - name: Upload extracted WASM and map
+        uses: actions/upload-artifact@v4
+        with:
+          name: eaglercraft-26.2-wasm-extracted
+          path: |
+            extracted/client.wasm
+            extracted/client.wasm.br
+            extracted/mesh.wasm
+            extracted/mesh.wasm.br
+            extracted/server.wasm
+            extracted/server.wasm.br
+            extracted/decoder.wasm
+            extracted/assets.epk
+            extracted/sounds.epk
+            extracted/mod-map.md
+            extracted/SHA256SUMS.txt
+            eaglercraft-wasm-extracted.tar.gz
+          compression-level: 0
+          retention-days: 14
