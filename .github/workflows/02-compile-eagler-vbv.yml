@@ -68,18 +68,27 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p vbv-build/dependencies
+
+          # UkuLib is published by Modrinth using its project/version Maven
+          # coordinates, not the Java package path used by its mod filename.
           curl -fL --retry 4 --retry-all-errors \
-            "https://api.modrinth.com/maven/net/uku3lig/ukulib-fabric/2.1.0%2B26.2/ukulib-fabric-2.1.0%2B26.2.jar" \
+            "https://api.modrinth.com/maven/maven.modrinth/Y8uFrUil/ZNmjxBpi/Y8uFrUil-ZNmjxBpi.jar" \
             -o vbv-build/dependencies/ukulib-fabric-2.1.0+26.2.jar
+
+          # Fabric's Sponge Mixin is hosted on Fabric Maven, not Maven Central.
           curl -fL --retry 4 --retry-all-errors \
-            "https://repo.maven.apache.org/maven2/net/fabricmc/sponge-mixin/0.17.3+mixin.0.8.7/sponge-mixin-0.17.3%2Bmixin.0.8.7.jar" \
+            "https://maven.fabricmc.net/maven/net/fabricmc/sponge-mixin/0.17.3%2Bmixin.0.8.7/sponge-mixin-0.17.3%2Bmixin.0.8.7.jar" \
             -o vbv-build/dependencies/sponge-mixin-0.17.3+mixin.0.8.7.jar
+
+          # MixinExtras common is on Maven Central.
           curl -fL --retry 4 --retry-all-errors \
             "https://repo.maven.apache.org/maven2/io/github/llamalad7/mixinextras-common/0.5.4/mixinextras-common-0.5.4.jar" \
             -o vbv-build/dependencies/mixinextras-common-0.5.4.jar
+
           test -s vbv-build/dependencies/ukulib-fabric-2.1.0+26.2.jar
           test -s vbv-build/dependencies/sponge-mixin-0.17.3+mixin.0.8.7.jar
           test -s vbv-build/dependencies/mixinextras-common-0.5.4.jar
+          file vbv-build/dependencies/*.jar
           sha256sum vbv-build/dependencies/*.jar
 
       - name: Validate committed Eaglercraft 26.2 u1 build kit
@@ -138,8 +147,6 @@ jobs:
             --expected-resource-overlay-sha256 "$os" \
             --external-resource-root "$external_root"
 
-          # Uku's upstream Fabric/Mixin injection is replaced by the native
-          # Eagler HUD hook. The HUD itself remains part of the pre-TeaVM tree.
           python3 ViaBackport26.2-ClientSide/patch/inject_recovered_wasm_map.py \
             "$GITHUB_WORKSPACE/vbv-build/project" \
             "$GITHUB_WORKSPACE/recovered-wasm/extracted/mod-map.md"
