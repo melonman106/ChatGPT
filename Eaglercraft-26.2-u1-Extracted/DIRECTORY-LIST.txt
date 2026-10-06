@@ -1,0 +1,15 @@
+/
+bootstrap/
+bootstrap/macos/
+bootstrap/windows/
+inputs/
+inputs/resources/
+inputs/resources/assets/
+inputs/resources/assets/minecraft/
+inputs/resources/assets/minecraft/font/
+inputs/resources/assets/minecraft/lang/
+iwa/
+tools/
+tools/audio/
+tools/audio/vendor/
+tools/audio/vendor/pako-2.1.0/
