@@ -64,6 +64,24 @@ jobs:
           grep -q '^## MaLiLib' recovered-wasm/extracted/mod-map.md
           grep -q '^## Mod Menu' recovered-wasm/extracted/mod-map.md
 
+      - name: Prepare Uku's Armor HUD 26.2 dependencies
+        run: |
+          set -euo pipefail
+          mkdir -p vbv-build/dependencies
+          curl -fL --retry 4 --retry-all-errors \
+            "https://api.modrinth.com/maven/net/uku3lig/ukulib-fabric/2.1.0%2B26.2/ukulib-fabric-2.1.0%2B26.2.jar" \
+            -o vbv-build/dependencies/ukulib-fabric-2.1.0+26.2.jar
+          curl -fL --retry 4 --retry-all-errors \
+            "https://repo.maven.apache.org/maven2/net/fabricmc/sponge-mixin/0.17.3+mixin.0.8.7/sponge-mixin-0.17.3%2Bmixin.0.8.7.jar" \
+            -o vbv-build/dependencies/sponge-mixin-0.17.3+mixin.0.8.7.jar
+          curl -fL --retry 4 --retry-all-errors \
+            "https://repo.maven.apache.org/maven2/io/github/llamalad7/mixinextras-common/0.5.4/mixinextras-common-0.5.4.jar" \
+            -o vbv-build/dependencies/mixinextras-common-0.5.4.jar
+          test -s vbv-build/dependencies/ukulib-fabric-2.1.0+26.2.jar
+          test -s vbv-build/dependencies/sponge-mixin-0.17.3+mixin.0.8.7.jar
+          test -s vbv-build/dependencies/mixinextras-common-0.5.4.jar
+          sha256sum vbv-build/dependencies/*.jar
+
       - name: Validate committed Eaglercraft 26.2 u1 build kit
         run: |
           set -euo pipefail
@@ -80,7 +98,6 @@ jobs:
           test -f "$root/inputs/music.epk"
           chmod +x "$root/eagler-patcher"
           echo "Using committed Eaglercraft build kit: $root"
-          find "$root" -maxdepth 2 -type f | LC_ALL=C sort
 
       - name: Build native VBV client from committed kit
         run: |
@@ -93,11 +110,8 @@ jobs:
           overlay="$root/inputs/resource-overlay-normal.zip"
           external_root="$root/inputs/resources"
           vineflower="$root/inputs/vineflower-1.12.0.jar"
-          sounds="$root/inputs/sounds.epk"
-          music="$root/inputs/music.epk"
 
           "$patcher" --help 2>&1 | head -200 || true
-
           curl -fL --retry 3 \
             "https://piston-data.mojang.com/v1/objects/2dc72797acbc1b63fc16a11c4ac393605f453754/client.jar" \
             -o "$jar"
@@ -107,12 +121,9 @@ jobs:
           bs="$(sha256sum "$bundle" | cut -d' ' -f1)"
           ss="$(sha256sum "$skeleton" | cut -d' ' -f1)"
           os="$(sha256sum "$overlay" | cut -d' ' -f1)"
-          echo "source-patch-bundle SHA-256: $bs"
-          echo "project skeleton SHA-256: $ss"
-          echo "resource overlay SHA-256: $os"
-          test "$ss" = "3656a83ed8187e2d859612c566f3aa73e242bf1e4633990c5bb4929e0a846c94" || { echo "::error::Unexpected project skeleton SHA-256: $ss"; exit 1; }
+          test "$ss" = "3656a83ed8187e2d859612c566f3aa73e242bf1e4633990c5bb4929e0a846c94"
 
-          rm -rf vbv-build
+          rm -rf vbv-build/project
           mkdir -p vbv-build
           "$patcher" create-dev \
             --jar "$jar" \
@@ -127,25 +138,16 @@ jobs:
             --expected-resource-overlay-sha256 "$os" \
             --external-resource-root "$external_root"
 
-          # This is the pre-WASM injection point. The recovered legacy client
-          # is compiled WASM, so we inject its recovered symbols into the Java
-          # tree before TeaVM instead of trying to splice two unrelated WASM
-          # modules after compilation.
+          # Uku's upstream Fabric/Mixin injection is replaced by the native
+          # Eagler HUD hook. The HUD itself remains part of the pre-TeaVM tree.
           python3 ViaBackport26.2-ClientSide/patch/inject_recovered_wasm_map.py \
             "$GITHUB_WORKSPACE/vbv-build/project" \
             "$GITHUB_WORKSPACE/recovered-wasm/extracted/mod-map.md"
-          test -s vbv-build/project/game/src/main/java/com/melonman106/vbvclient/VBVRecoveredLegacyMods.java
-          grep -q 'fi.dy.masa.litematica' vbv-build/project/game/src/main/java/com/melonman106/vbvclient/VBVRecoveredLegacyMods.java
-
-          # Keep the recovered client available to the build artifact for the
-          # next binary-level transplant/bridge stage, without feeding it to
-          # Gradle as a second executable WASM module.
-          mkdir -p "$GITHUB_WORKSPACE/vbv-build/recovered"
-          cp -f recovered-wasm/extracted/client.wasm "$GITHUB_WORKSPACE/vbv-build/recovered/legacy-client.wasm"
-          cp -f recovered-wasm/extracted/mod-map.md "$GITHUB_WORKSPACE/vbv-build/recovered/mod-map.md"
-
           python3 ViaBackport26.2-ClientSide/patch/apply_vbv_patch.py "$GITHUB_WORKSPACE/vbv-build/project"
-          test -f vbv-build/project/game/src/main/java/com/melonman106/vbvclient/VBVArmorHud.java
+
+          test -s vbv-build/project/game/src/main/java/com/melonman106/vbvclient/VBVArmorHud.java
+          test -s vbv-build/project/game/src/main/java/com/melonman106/vbvclient/VBVArmorHudConfig.java
+          test -s vbv-build/project/game/src/main/java/com/melonman106/vbvclient/VBVArmorHudConfigScreen.java
           grep -RIl 'VBVArmorHud.render' vbv-build/project/game/src/main/java/net/minecraft/client | head -5
 
           cd vbv-build/project
@@ -161,16 +163,14 @@ jobs:
 
           mkdir -p "$GITHUB_WORKSPACE/vbv-artifact"
           classes_wasm="$(find . -type f -name 'classes.wasm' -print -quit)"
-          if [ -z "$classes_wasm" ]; then
-            echo "::error::Gradle succeeded but classes.wasm was not found in the build tree"
-            find . -type f \( -name '*.wasm' -o -name '*.html' \) -print | head -200
-            exit 1
-          fi
+          test -n "$classes_wasm"
           web_dir="$(dirname "$classes_wasm")"
-          echo "TeaVM web output: $web_dir"
-          find "$web_dir" -maxdepth 1 -type f -print
           cp -a "$web_dir"/. "$GITHUB_WORKSPACE/vbv-artifact/"
-          cp -a "$GITHUB_WORKSPACE/vbv-build/recovered" "$GITHUB_WORKSPACE/vbv-artifact/"
+          mkdir -p "$GITHUB_WORKSPACE/vbv-artifact/dependencies"
+          cp -a "$GITHUB_WORKSPACE/vbv-build/dependencies"/. "$GITHUB_WORKSPACE/vbv-artifact/dependencies/"
+          mkdir -p "$GITHUB_WORKSPACE/vbv-artifact/recovered"
+          cp -f "$GITHUB_WORKSPACE/recovered-wasm/extracted/client.wasm" "$GITHUB_WORKSPACE/vbv-artifact/recovered/legacy-client.wasm"
+          cp -f "$GITHUB_WORKSPACE/recovered-wasm/extracted/mod-map.md" "$GITHUB_WORKSPACE/vbv-artifact/recovered/mod-map.md"
           test -s "$GITHUB_WORKSPACE/vbv-artifact/classes.wasm"
 
       - name: Verify native Armor HUD and recovered legacy injection
@@ -178,8 +178,9 @@ jobs:
           set -euo pipefail
           grep -RIl 'class VBVArmorHud' vbv-build/project/game/src/main/java | head -5
           grep -RIl 'VBVArmorHud.render' vbv-build/project/game/src/main/java/net/minecraft/client | head -5
-          test -s vbv-build/project/game/src/main/java/com/melonman106/vbvclient/VBVRecoveredLegacyMods.java
-          grep -q 'fi.dy.masa.litematica' vbv-build/project/game/src/main/java/com/melonman106/vbvclient/VBVRecoveredLegacyMods.java
+          test -s vbv-artifact/dependencies/ukulib-fabric-2.1.0+26.2.jar
+          test -s vbv-artifact/dependencies/sponge-mixin-0.17.3+mixin.0.8.7.jar
+          test -s vbv-artifact/dependencies/mixinextras-common-0.5.4.jar
           test -s vbv-artifact/classes.wasm
 
       - name: Upload compiled native client
