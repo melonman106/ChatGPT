@@ -9,7 +9,6 @@ public final class VBVSimpleHud {
 
     public static void render(GuiGraphicsExtractor graphics) {
         // Equipment HUD has its own toggle; it must not depend on the text HUD master switch.
-        if (VBVSimpleHudConfig.equipment) VBVArmorHud.render(graphics);
         if (!VBVSimpleHudConfig.enabled) return;
 
         Minecraft minecraft = Minecraft.getInstance();
