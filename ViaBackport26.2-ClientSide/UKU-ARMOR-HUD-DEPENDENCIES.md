@@ -1,8 +1,8 @@
 # Uku's Armor HUD 26.2 dependencies
 
-The upstream Uku's Armor HUD 26.2 project declares these dependencies:
+The upstream Uku's Armor HUD 0.12.0+mc26.2 project declares these dependencies:
 
-- UkuLib `2.1.0+26.2`
+- UkuLib `2.1.1+26.2`
 - Sponge Mixin `0.17.3+mixin.0.8.7` (compile-time; supplied by the Minecraft/Fabric runtime upstream)
 - MixinExtras `0.5.4` (compile-time/annotation processor upstream)
 - Minecraft `26.2`
