@@ -147,30 +147,35 @@ jobs:
           ./gradlew build --no-daemon --stacktrace --init-script "$GITHUB_WORKSPACE/vbv-build/allow-empty-tests.gradle"
 
           mkdir -p "$GITHUB_WORKSPACE/vbv-artifact"
-          echo "TeaVM WASM outputs:"
-          find . -type f -name '*.wasm' -printf '%p %s bytes\\n' | sort
 
-          classes_wasm="$(find . -type f -name 'classes.wasm' -size +0c -print -quit || true)"
-          if [ -z "$classes_wasm" ]; then
-            classes_wasm="$(find . -type f -name '*.wasm' -size +0c -print -quit || true)"
-          fi
-          if [ -z "$classes_wasm" ]; then
-            echo "::error::Gradle succeeded but no non-empty WASM output was found."
-            find . -type f -printf '%p %s bytes\\n' | grep -Ei 'wasm|teavm|web' | tail -200 || true
+          # The Eaglercraft u1 skeleton has a fixed WASM-GC web output directory.
+          # Do not guess the output from arbitrary Gradle files: use the actual
+          # deployable web bundle and verify every required runtime file.
+          web_dir="$GITHUB_WORKSPACE/vbv-build/project/target_teavm_wasm_gc/build/web"
+          if [ ! -d "$web_dir" ]; then
+            echo "::error::Expected TeaVM web output directory was not created: $web_dir"
+            echo "Searching for actual web/WASM output directories:"
+            find "$GITHUB_WORKSPACE/vbv-build/project" -type d \\( -path '*/build/web' -o -path '*/javascript_dist' \\) -print | sort || true
+            find "$GITHUB_WORKSPACE/vbv-build/project" -type f \\( -name '*.wasm' -o -name 'index.html' \\) -printf '%p %s bytes\\n' | sort | tail -200 || true
             exit 1
           fi
 
-          echo "Selected TeaVM WASM: $classes_wasm"
-          cp -f "$classes_wasm" "$GITHUB_WORKSPACE/vbv-artifact/classes.wasm"
-          test -s "$GITHUB_WORKSPACE/vbv-artifact/classes.wasm"
+          echo "=== TeaVM web output ==="
+          find "$web_dir" -maxdepth 1 -type f -printf '%f %s bytes\\n' | sort
 
-          web_dir="$(dirname "$classes_wasm")"
-          for f in "$web_dir"/*; do
-            [ -f "$f" ] || continue
-            base="$(basename "$f")"
-            [ "$base" = "classes.wasm" ] && continue
-            cp -f "$f" "$GITHUB_WORKSPACE/vbv-artifact/$base"
+          for required in index.html classes.wasm mesh-worker.wasm server-worker.wasm assets.epk; do
+            if [ ! -s "$web_dir/$required" ]; then
+              echo "::error::TeaVM web output is missing $required"
+              exit 1
+            fi
           done
+
+          cp -a "$web_dir"/. "$GITHUB_WORKSPACE/vbv-artifact/"
+          test -s "$GITHUB_WORKSPACE/vbv-artifact/index.html"
+          test -s "$GITHUB_WORKSPACE/vbv-artifact/classes.wasm"
+          test -s "$GITHUB_WORKSPACE/vbv-artifact/mesh-worker.wasm"
+          test -s "$GITHUB_WORKSPACE/vbv-artifact/server-worker.wasm"
+          test -s "$GITHUB_WORKSPACE/vbv-artifact/assets.epk"
 
           mkdir -p "$GITHUB_WORKSPACE/vbv-artifact/dependencies"
           cp -a "$GITHUB_WORKSPACE/vbv-build/dependencies"/. "$GITHUB_WORKSPACE/vbv-artifact/dependencies/"
