@@ -62,7 +62,7 @@ jobs:
           test "$(stat -c%s "$jar")" -eq 39193383
           vineflower="$(find "$root" -type f -iname 'vineflower-1.12.0.jar' -print -quit || true)"
           bundle="$(find "$root" -type f -iname '*source-patch-bundle*.zip' -print -quit || true)"
-          skeleton="$(find "$root" -type f -iname 'project-skeleton-u1-nettyfix.zip' -print -quit || true)"
+          skeleton="$(find "$root" -type f \( -iname 'project-skeleton-u1-nettyfix.zip' -o -iname '*project*skeleton*.zip' \) -print -quit || true)"
           overlay="$(find "$root" -type f -iname 'resource-overlay-normal.zip' -print -quit || true)"
           external_root="$(find "$root" -type d -path '*/inputs/resources' -print -quit || true)"
           sounds="$(find "$root" -type f -name sounds.epk -print -quit || true)"
@@ -70,10 +70,11 @@ jobs:
           for v in jar vineflower bundle skeleton overlay external_root sounds music; do eval "x=\"\${$v:-}\""; echo "$v=$x"; [ -n "$x" ] || { echo "::error::Missing $v"; exit 1; }; done
           bs="$(sha256sum "$bundle" | cut -d' ' -f1)"
           ss="$(sha256sum "$skeleton" | cut -d' ' -f1)"
+          test "$ss" = "a9172bdd903ea65afd4c87cdb29b500c237c823fdd94789c2e90561b1b049469" || { echo "::error::Unexpected project skeleton SHA-256: $ss"; exit 1; }
           os="$(sha256sum "$overlay" | cut -d' ' -f1)"
           rm -rf vbv-build
           mkdir -p vbv-build
-          "$patcher" create-dev --jar "$jar" --output "$GITHUB_WORKSPACE/vbv-build/project" --vineflower "$vineflower" --java17 "$(command -v java)" --patch-bundle "$bundle" --expected-bundle-sha256 "$bs" --project-skeleton "$skeleton" --expected-skeleton-sha256 "$ss" --resource-overlay "$overlay" --expected-resource-overlay-sha256 "$os" --external-resource-root "$external_root"
+          "$patcher" create-dev --jar "$jar" --output "$GITHUB_WORKSPACE/vbv-build/project" --vineflower "$vineflower" --java17 "${JAVA_HOME_17_X64}/bin/java" --patch-bundle "$bundle" --expected-bundle-sha256 "$bs" --project-skeleton "$skeleton" --expected-skeleton-sha256 "$ss" --resource-overlay "$overlay" --expected-resource-overlay-sha256 "$os" --external-resource-root "$external_root"
           python3 ViaBackport26.2-ClientSide/patch/apply_vbv_patch.py "$GITHUB_WORKSPACE/vbv-build/project"
           test -f vbv-build/project/game/src/main/java/com/melonman106/vbvclient/VBVArmorHud.java
           grep -RIl 'VBVArmorHud.render' vbv-build/project/game/src/main/java/net/minecraft/client | head -5
