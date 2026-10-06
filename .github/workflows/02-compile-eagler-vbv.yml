@@ -32,7 +32,7 @@ jobs:
           import base64,re
           from pathlib import Path
           html=Path("base.html").read_text(encoding="utf-8")
-          m=re.search(r'<script[^>]*id=["']eag-inline-wasm-br["'][^>]*>(.*?)</script>',html,re.S|re.I)
+          m=re.search(r"""<script[^>]*id=["']eag-inline-wasm-br["'][^>]*>(.*?)</script>""",html,re.S|re.I)
           if not m: raise SystemExit("client.wasm.br payload not found")
           Path("client.wasm.br").write_bytes(base64.b64decode(re.sub(r'\\s+','',m.group(1))))
           PY
