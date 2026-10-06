@@ -52,8 +52,14 @@ jobs:
           if [ -z "$patcher" ]; then echo "::error::U1-Patcher not found"; find "$root" -maxdepth 6 -type f | sort | head -1000; exit 1; fi
           chmod +x "$patcher" || true
           "$patcher" --help 2>&1 | head -200 || true
-          jar="$(find "$root" -type f -iname '*minecraft*26.2*.jar' -print -quit || true)"
-          [ -n "$jar" ] || jar="$(find "$root" -type f -iname '*client*.jar' -print -quit || true)"
+          # The Setup JAR contains the patcher inputs, but the official Minecraft
+          # client JAR is intentionally NOT bundled. Download the pinned 26.2 client.
+          jar="$GITHUB_WORKSPACE/minecraft-26.2-client.jar"
+          curl -fL --retry 3 \
+            "https://piston-data.mojang.com/v1/objects/2dc72797acbc1b63fc16a11c4ac393605f453754/client.jar" \
+            -o "$jar"
+          echo "40896ee9f1e2bec3c934daac7e93d41e9e3d9c2f8ae0ca366d52ffbfd1afa290  $jar" | sha256sum -c -
+          test "$(stat -c%s "$jar")" -eq 39193383
           vineflower="$(find "$root" -type f -iname 'vineflower-1.12.0.jar' -print -quit || true)"
           bundle="$(find "$root" -type f -iname '*source-patch-bundle*.zip' -print -quit || true)"
           skeleton="$(find "$root" -type f -iname 'project-skeleton-u1-nettyfix.zip' -print -quit || true)"
