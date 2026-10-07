@@ -1,10 +1,10 @@
-name: Build Eaglercraft 26.2 u1 VBV Client
+name: Inject Eaglercraft 26.2 u1 Mods (No Rebuild)
 
 on:
   workflow_dispatch:
     inputs:
       reverse_run_id:
-        description: "Successful reverse-map workflow run containing the recovered WASM artifact"
+        description: "Successful reverse-map workflow run containing the recovered modded WASM"
         required: false
         default: "37531655199"
       reverse_artifact_id:
@@ -13,8 +13,7 @@ on:
         default: "11445140777"
   push:
     paths:
-      - "ViaBackport26.2-ClientSide/**"
-      - "Eaglercraft-26.2-u1-Extracted/**"
+      - "ViaBackport26.2-ClientSide/patch/inject_recovered_wasm_into_html.js"
       - ".github/workflows/02-compile-eagler-vbv.yml"
 
 permissions:
@@ -22,30 +21,13 @@ permissions:
   actions: read
 
 jobs:
-  build:
+  inject:
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Java 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
-
-      - name: Set up Java 25
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "25"
-
-      - name: Set up Node 24
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
-
-      - name: Download recovered legacy WASM analysis
+      - name: Download recovered modded client WASM
         uses: actions/download-artifact@v4
         with:
           run-id: ${{ inputs.reverse_run_id || '37531655199' }}
@@ -53,7 +35,7 @@ jobs:
           github-token: ${{ github.token }}
           path: recovered-wasm
 
-      - name: Validate recovered legacy WASM inputs
+      - name: Validate recovered mod payload
         run: |
           set -euo pipefail
           client_wasm="$(find recovered-wasm -type f -name 'client.wasm' -size +0c -print -quit)"
@@ -68,160 +50,64 @@ jobs:
           for section in Litematica MaLiLib "Mod Menu"; do
             grep -q "^## $section" recovered-wasm/extracted/mod-map.md
           done
+          echo "Recovered WASM: $(stat -c%s recovered-wasm/extracted/client.wasm) bytes"
+          sha256sum recovered-wasm/extracted/client.wasm
 
-      - name: Prepare Uku's Armor HUD 26.2 dependencies
+      - name: Download the known-good working Eagler client
         run: |
           set -euo pipefail
-          mkdir -p vbv-build/dependencies
+          curl -fL --retry 5 --retry-all-errors \
+            "https://github.com/melonman106/ChatGPT/releases/download/1/eaglercraft-26.2-modded-2026-10-05-1523.html" \
+            -o base-eaglercraft-26.2.html
+          test -s base-eaglercraft-26.2.html
+          echo "Base HTML: $(stat -c%s base-eaglercraft-26.2.html) bytes"
+          echo "778f89bb91cbd3cd3b97341c7a63df5895fab70e1b8461017bffd2efd2f4fbbe  base-eaglercraft-26.2.html" | sha256sum -c -
 
-          curl -fL --retry 4 --retry-all-errors             "https://cdn.modrinth.com/data/Y8uFrUil/versions/olOAyH3N/ukulib-fabric-2.1.1%2B26.2.jar"             -o vbv-build/dependencies/ukulib-fabric-2.1.1+26.2.jar
-
-          curl -fL --retry 4 --retry-all-errors             "https://repo1.maven.org/maven2/net/fabricmc/sponge-mixin/0.17.3%2Bmixin.0.8.7/sponge-mixin-0.17.3%2Bmixin.0.8.7.jar"             -o vbv-build/dependencies/sponge-mixin-0.17.3+mixin.0.8.7.jar
-
-          curl -fL --retry 4 --retry-all-errors             "https://repo.maven.apache.org/maven2/io/github/llamalad7/mixinextras-common/0.5.4/mixinextras-common-0.5.4.jar"             -o vbv-build/dependencies/mixinextras-common-0.5.4.jar
-
-          test -s vbv-build/dependencies/ukulib-fabric-2.1.1+26.2.jar
-          test -s vbv-build/dependencies/sponge-mixin-0.17.3+mixin.0.8.7.jar
-          test -s vbv-build/dependencies/mixinextras-common-0.5.4.jar
-          file vbv-build/dependencies/*.jar
-          sha256sum vbv-build/dependencies/*.jar
-
-      - name: Validate committed Eaglercraft 26.2 u1 build kit
+      - name: Inject only the recovered mod WASM
         run: |
           set -euo pipefail
-          root="$GITHUB_WORKSPACE/Eaglercraft-26.2-u1-Extracted"
-          test -d "$root"
-          test -f "$root/eagler-patcher"
-          test -f "$root/eaglercraft-26.2-java-cli.jar"
-          test -f "$root/source-patch-bundle.zip"
-          test -f "$root/project-skeleton-v5-teavm-runtime-verified.zip"
-          test -f "$root/inputs/resource-overlay-normal.zip"
-          test -d "$root/inputs/resources"
-          test -f "$root/inputs/vineflower-1.12.0.jar"
-          test -f "$root/inputs/sounds.epk"
-          test -f "$root/inputs/music.epk"
-          chmod +x "$root/eagler-patcher"
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("base-eaglercraft-26.2.html")
+          text = p.read_text("utf-8", errors="strict")
+          required = [
+              'id="eag-inline-decoder"',
+              'id="eag-inline-wasm-br"',
+              'id="eag-inline-mesh-wasm-br"',
+              'id="eag-inline-server-wasm-br"',
+              'id="eag-inline-assets"',
+              'id="eag-inline-sounds"',
+          ]
+          for marker in required:
+              if marker not in text:
+                  raise SystemExit(f"Missing required base payload: {marker}")
+          print("Base payloads verified; only eag-inline-wasm-br will be replaced.")
+          PY
 
-      - name: Build native VBV client from committed kit
-        run: |
-          set -euo pipefail
-          root="$GITHUB_WORKSPACE/Eaglercraft-26.2-u1-Extracted"
-          patcher="$root/eagler-patcher"
-          jar="$GITHUB_WORKSPACE/minecraft-26.2-client.jar"
-          bundle="$root/source-patch-bundle.zip"
-          skeleton="$root/project-skeleton-v5-teavm-runtime-verified.zip"
-          overlay="$root/inputs/resource-overlay-normal.zip"
-          external_root="$root/inputs/resources"
-          vineflower="$root/inputs/vineflower-1.12.0.jar"
+          node ViaBackport26.2-ClientSide/patch/inject_recovered_wasm_into_html.js \
+            base-eaglercraft-26.2.html \
+            recovered-wasm/extracted/client.wasm \
+            eaglercraft-26.2-VBV-injected.html
 
-          curl -fL --retry 3             "https://piston-data.mojang.com/v1/objects/2dc72797acbc1b63fc16a11c4ac393605f453754/client.jar"             -o "$jar"
-          echo "40896ee9f1e2bec3c934daac7e93d41e9e3d9c2f8ae0ca366d52ffbfd1afa290  $jar" | sha256sum -c -
-          test "$(stat -c%s "$jar")" -eq 39193383
+          test -s eaglercraft-26.2-VBV-injected.html
+          grep -q 'id="eag-inline-decoder"' eaglercraft-26.2-VBV-injected.html
+          grep -q 'id="eag-inline-wasm-br"' eaglercraft-26.2-VBV-injected.html
+          grep -q 'id="eag-inline-mesh-wasm-br"' eaglercraft-26.2-VBV-injected.html
+          grep -q 'id="eag-inline-server-wasm-br"' eaglercraft-26.2-VBV-injected.html
+          grep -q 'id="eag-inline-assets"' eaglercraft-26.2-VBV-injected.html
+          grep -q 'id="eag-inline-sounds"' eaglercraft-26.2-VBV-injected.html
 
-          bs="$(sha256sum "$bundle" | cut -d' ' -f1)"
-          ss="$(sha256sum "$skeleton" | cut -d' ' -f1)"
-          os="$(sha256sum "$overlay" | cut -d' ' -f1)"
-          test "$ss" = "3656a83ed8187e2d859612c566f3aa73e242bf1e4633990c5bb4929e0a846c94"
+          echo "=== Final injected client ==="
+          stat -c '%n %s bytes' eaglercraft-26.2-VBV-injected.html
+          sha256sum eaglercraft-26.2-VBV-injected.html
 
-          rm -rf vbv-build/project
-          mkdir -p vbv-build
-          "$patcher" create-dev             --jar "$jar"             --output "$GITHUB_WORKSPACE/vbv-build/project"             --vineflower "$vineflower"             --java17 "${JAVA_HOME_17_X64}/bin/java"             --patch-bundle "$bundle"             --expected-bundle-sha256 "$bs"             --project-skeleton "$skeleton"             --expected-skeleton-sha256 "$ss"             --resource-overlay "$overlay"             --expected-resource-overlay-sha256 "$os"             --external-resource-root "$external_root"
-
-          python3 ViaBackport26.2-ClientSide/patch/inject_recovered_wasm_map.py             "$GITHUB_WORKSPACE/vbv-build/project"             "$GITHUB_WORKSPACE/recovered-wasm/extracted/mod-map.md"
-          python3 ViaBackport26.2-ClientSide/patch/apply_vbv_patch.py "$GITHUB_WORKSPACE/vbv-build/project"
-
-          test -s vbv-build/project/game/src/main/java/com/melonman106/vbvclient/VBVArmorHud.java
-          test -s vbv-build/project/game/src/main/java/com/melonman106/vbvclient/VBVArmorHudConfig.java
-          test -s vbv-build/project/game/src/main/java/com/melonman106/vbvclient/VBVArmorHudConfigScreen.java
-          grep -RIl 'VBVArmorHud.render' vbv-build/project/game/src/main/java/net/minecraft/client | head -5
-
-          cd vbv-build/project
-          chmod +x ./gradlew
-          cat > "$GITHUB_WORKSPACE/vbv-build/allow-empty-tests.gradle" <<'EOF'
-          allprojects {
-            tasks.withType(Test).configureEach {
-              failOnNoDiscoveredTests = false
-            }
-          }
-          EOF
-          ./gradlew build --no-daemon --stacktrace --init-script "$GITHUB_WORKSPACE/vbv-build/allow-empty-tests.gradle"
-
-          # Gradle compiles the game, but the u1 WASM-GC client is assembled by
-          # the authenticated standalone linkers. The previous step stopped
-          # immediately after Gradle, so target_teavm_wasm_gc/build/web never
-          # existed. Run the same precise link/deploy pipeline used by the u1
-          # single-HTML packager.
-          test -s wasm-toolchain/link-web-target-standalone.js
-          test -s wasm-toolchain/link-server-standalone.js
-          test -s wasm-toolchain/deploy_wasm_web.sh
-
-          node wasm-toolchain/link-web-target-standalone.js client
-          node wasm-toolchain/link-web-target-standalone.js mesh
-          node wasm-toolchain/link-server-standalone.js
-
-          runtime_js="target_teavm_wasm_gc/build/generated/teavm/wasm-gc/classes.wasm-runtime.js"
-          test -s "$runtime_js"
-          test "$(stat -c%s "$runtime_js")" -eq 13984
-          test "$(sha256sum "$runtime_js" | cut -d' ' -f1)" = "1e80092312d7bfe6efa74f8bb372d5521bc0549dcfbf384f25a145261a80d124"
-
-          # deploy_wasm_web.sh assembles the three standalone WASM images and
-          # the hosted web bundle under target_teavm_wasm_gc/build/web.
-          EAGLER_USE_DEDICATED_SERVER_WASM=1 bash wasm-toolchain/deploy_wasm_web.sh
-
-          mkdir -p "$GITHUB_WORKSPACE/vbv-artifact"
-
-          # The Eaglercraft u1 skeleton has a fixed WASM-GC web output directory.
-          # Do not guess the output from arbitrary Gradle files: use the actual
-          # deployable web bundle and verify every required runtime file.
-          web_dir="$GITHUB_WORKSPACE/vbv-build/project/target_teavm_wasm_gc/build/web"
-          if [ ! -d "$web_dir" ]; then
-            echo "::error::Expected TeaVM web output directory was not created: $web_dir"
-            echo "Searching for actual web/WASM output directories:"
-            find "$GITHUB_WORKSPACE/vbv-build/project" -type d -path '*/build/web' -print | sort || true
-            find "$GITHUB_WORKSPACE/vbv-build/project" -type d -name 'javascript_dist' -print | sort || true
-            find "$GITHUB_WORKSPACE/vbv-build/project" -type f -name '*.wasm' -printf '%p %s bytes\\n' | sort | tail -200 || true
-            find "$GITHUB_WORKSPACE/vbv-build/project" -type f -name 'index.html' -printf '%p %s bytes\\n' | sort | tail -200 || true
-            exit 1
-          fi
-
-          echo "=== TeaVM web output ==="
-          find "$web_dir" -maxdepth 1 -type f -printf '%f %s bytes\\n' | sort
-
-          for required in index.html classes.wasm mesh-worker.wasm server-worker.wasm assets.epk; do
-            if [ ! -s "$web_dir/$required" ]; then
-              echo "::error::TeaVM web output is missing $required"
-              exit 1
-            fi
-          done
-
-          cp -a "$web_dir"/. "$GITHUB_WORKSPACE/vbv-artifact/"
-          test -s "$GITHUB_WORKSPACE/vbv-artifact/index.html"
-          test -s "$GITHUB_WORKSPACE/vbv-artifact/classes.wasm"
-          test -s "$GITHUB_WORKSPACE/vbv-artifact/mesh-worker.wasm"
-          test -s "$GITHUB_WORKSPACE/vbv-artifact/server-worker.wasm"
-          test -s "$GITHUB_WORKSPACE/vbv-artifact/assets.epk"
-
-          mkdir -p "$GITHUB_WORKSPACE/vbv-artifact/dependencies"
-          cp -a "$GITHUB_WORKSPACE/vbv-build/dependencies"/. "$GITHUB_WORKSPACE/vbv-artifact/dependencies/"
-          mkdir -p "$GITHUB_WORKSPACE/vbv-artifact/recovered"
-          cp -f "$GITHUB_WORKSPACE/recovered-wasm/extracted/client.wasm" "$GITHUB_WORKSPACE/vbv-artifact/recovered/legacy-client.wasm"
-          cp -f "$GITHUB_WORKSPACE/recovered-wasm/extracted/mod-map.md" "$GITHUB_WORKSPACE/vbv-artifact/recovered/mod-map.md"
-
-      - name: Verify native Armor HUD and recovered legacy injection
-        run: |
-          set -euo pipefail
-          grep -RIl 'class VBVArmorHud' vbv-build/project/game/src/main/java | head -5
-          grep -RIl 'VBVArmorHud.render' vbv-build/project/game/src/main/java/net/minecraft/client | head -5
-          test -s vbv-artifact/dependencies/ukulib-fabric-2.1.1+26.2.jar
-          test -s vbv-artifact/dependencies/sponge-mixin-0.17.3+mixin.0.8.7.jar
-          test -s vbv-artifact/dependencies/mixinextras-common-0.5.4.jar
-          test -s vbv-artifact/classes.wasm
-
-      - name: Upload compiled native client
+      - name: Save injected client and recovered mod map
         uses: actions/upload-artifact@v4
         with:
-          name: Eaglercraft-26.2-VBV-WASM-GC-${{ github.run_id }}
-          path: vbv-artifact
+          name: Eaglercraft-26.2-VBV-Injected-${{ github.run_id }}
+          path: |
+            eaglercraft-26.2-VBV-injected.html
+            recovered-wasm/extracted/mod-map.md
           if-no-files-found: error
           retention-days: 14
           compression-level: 0
