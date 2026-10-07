@@ -8,19 +8,15 @@ public final class VBVSimpleHud {
     private VBVSimpleHud() {}
 
     public static void render(GuiGraphicsExtractor graphics) {
-        // Equipment HUD has its own toggle; it must not depend on the text HUD master switch.
         if (!VBVSimpleHudConfig.enabled) return;
-
         Minecraft minecraft = Minecraft.getInstance();
         Player player = minecraft.player;
         if (player == null || minecraft.level == null) return;
 
-        int lines = lineCount();
-        if (lines == 0) return; // no empty background box when every line is off
-
         int x = 6;
         int y = 6;
         int line = 11;
+        int lines = lineCount();
         graphics.fill(x - 3, y - 3, x + 190, y + lines * line + 1, 0x66000000);
 
         if (VBVSimpleHudConfig.fps) y = text(graphics, "FPS: " + minecraft.getFps(), x, y, line);
@@ -63,6 +59,6 @@ public final class VBVSimpleHud {
         if (VBVSimpleHudConfig.hunger) count++;
         if (VBVSimpleHudConfig.movement) count++;
         if (VBVSimpleHudConfig.effects) count++;
-        return count;
+        return Math.max(1, count);
     }
 }

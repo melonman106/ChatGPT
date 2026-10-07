@@ -27,7 +27,6 @@ public final class VBVSimpleHudConfigScreen extends Screen {
         addToggle("Hunger", 2, 1, () -> VBVSimpleHudConfig.hunger = !VBVSimpleHudConfig.hunger, () -> VBVSimpleHudConfig.hunger);
         addToggle("Movement", 3, 1, () -> VBVSimpleHudConfig.movement = !VBVSimpleHudConfig.movement, () -> VBVSimpleHudConfig.movement);
         addToggle("Effects", 4, 1, () -> VBVSimpleHudConfig.effects = !VBVSimpleHudConfig.effects, () -> VBVSimpleHudConfig.effects);
-        addToggle("Armor durability numbers", 6, 0, () -> VBVSimpleHudConfig.armorShowNumbers = !VBVSimpleHudConfig.armorShowNumbers, () -> VBVSimpleHudConfig.armorShowNumbers);
 
         addRenderableWidget(Button.builder(Component.literal("Reset defaults"), button -> {
             VBVSimpleHudConfig.reset();
