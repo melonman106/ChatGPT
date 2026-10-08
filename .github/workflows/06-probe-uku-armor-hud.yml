@@ -1,0 +1,135 @@
+name: Probe uku's Armor HUD + UkuLib port (26.2)
+
+# Source-compatibility and dependency check for the native Eagler port.
+# Real Fabric API/Loader/UkuLib jars are compile-time references only.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  FABRIC_API_VERSION_ID: "3kB7XVBv"
+  FABRIC_API_VERSION: "0.152.1+26.2"
+  FABRIC_LOADER_VERSION: "0.19.3"
+  UKULIB_VERSION_ID: "olOAyH3N"
+  UKULIB_VERSION: "2.1.1+26.2-fabric"
+  ARMOR_HUD_REF: "26.2"
+  ARMOR_HUD_VERSION: "0.12.0+mc26.2-fabric"
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            ViaBackport26.2-ClientSide
+            Eaglercraft-26.2-u1-Extracted
+            ModsPack
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: Download pinned Minecraft 26.2 client
+        run: |
+          set -euo pipefail
+          curl -fL --retry 5 --retry-all-errors "https://piston-data.mojang.com/v1/objects/2dc72797acbc1b63fc16a11c4ac393605f453754/client.jar" -o minecraft-26.2-client.jar
+          echo "40896ee9f1e2bec3c934daac7e93d41e9e3d9c2f8ae0ca366d52ffbfd1afa290  minecraft-26.2-client.jar" | sha256sum -c -
+
+      - name: Create patched Eagler u1 Java project
+        run: |
+          set -euo pipefail
+          root="$GITHUB_WORKSPACE/Eaglercraft-26.2-u1-Extracted"
+          chmod +x "$root/eagler-patcher"
+          mkdir -p vbv-build
+          java17="${JAVA_HOME_17_X64:?JAVA_HOME_17_X64 is not set}/bin/java"
+          export EAGLER_PATCHER_JAVA="$java17"
+          "$root/eagler-patcher" create-dev \
+            --jar "$GITHUB_WORKSPACE/minecraft-26.2-client.jar" \
+            --output "$GITHUB_WORKSPACE/vbv-build/project" \
+            --vineflower "$root/inputs/vineflower-1.12.0.jar" \
+            --java17 "$java17" \
+            --patch-bundle "$root/source-patch-bundle.zip" \
+            --expected-bundle-sha256 "fd944e9cabbebbf4bddce8a39e1b233b3c7d0cd4f860f9cae37550a3fcfa8b02" \
+            --project-skeleton "$root/project-skeleton-v5-teavm-runtime-verified.zip" \
+            --expected-skeleton-sha256 "3656a83ed8187e2d859612c566f3aa73e242bf1e4633990c5bb4929e0a846c94" \
+            --resource-overlay "$root/inputs/resource-overlay-normal.zip" \
+            --expected-resource-overlay-sha256 "2ba7e3376891c64f8bf57f3687e05b8dbe1971a75475b6825449e5e5f96d71f3" \
+            --external-resource-root "$root/inputs/resources"
+          python3 ViaBackport26.2-ClientSide/patch/apply_vbv_patch.py "$GITHUB_WORKSPACE/vbv-build/project"
+
+      - name: Clone exact 26.2 Uku sources
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch "$ARMOR_HUD_REF" https://github.com/uku3lig/armor-hud.git official/armor-hud
+          git clone --depth 1 --branch "2.1.1+26.2" https://github.com/uku3lig/ukulib.git official/ukulib
+
+      - name: Download real Fabric API, Fabric Loader, Mixin, MixinExtras and UkuLib
+        run: |
+          set -euo pipefail
+          mkdir -p libs
+          fetch() { curl -fL --retry 5 --retry-all-errors "$1" -o "libs/$2"; test -s "libs/$2"; }
+          fetch "https://api.modrinth.com/maven/maven/modrinth/P7dR8mSH/${FABRIC_API_VERSION_ID}/P7dR8mSH-${FABRIC_API_VERSION_ID}.jar" fabric-api.jar
+          fetch "https://maven.fabricmc.net/net/fabricmc/fabric-loader/${FABRIC_LOADER_VERSION}/fabric-loader-${FABRIC_LOADER_VERSION}.jar" fabric-loader.jar
+          fetch "https://repo1.maven.org/maven2/net/fabricmc/sponge-mixin/0.17.3%2Bmixin.0.8.7/sponge-mixin-0.17.3%2Bmixin.0.8.7.jar" sponge-mixin.jar
+          fetch "https://repo1.maven.org/maven2/io/github/llamalad7/mixinextras-common/0.5.4/mixinextras-common-0.5.4.jar" mixinextras-common.jar
+          fetch "https://api.modrinth.com/maven/maven/modrinth/Y8uFrUil/${UKULIB_VERSION_ID}/Y8uFrUil-${UKULIB_VERSION_ID}.jar" ukulib-fabric.jar
+          fetch "https://repo1.maven.org/maven2/org/jspecify/jspecify/1.0.0/jspecify-1.0.0.jar" jspecify.jar
+          fetch "https://repo1.maven.org/maven2/org/jetbrains/annotations/26.0.2/annotations-26.0.2.jar" jetbrains-annotations.jar
+          ls -lh libs
+
+      - name: Compile upstream Armor HUD common source
+        run: |
+          set +e
+          cd "$GITHUB_WORKSPACE"
+          proj="$GITHUB_WORKSPACE/vbv-build/project"
+          cp_libs="$(find "$GITHUB_WORKSPACE/libs" -name '*.jar' -printf '%p:' | tr -d '\n')"
+          find official/armor-hud/common/src/main/java -name '*.java' > armor-sources.txt
+          mkdir -p armor-javac
+          "$JAVA_HOME_25_X64/bin/javac" --release 25 -proc:none -Xmaxerrs 100000 -d armor-javac \
+            -cp "$proj/game/build/classes/java/main:$cp_libs" \
+            -sourcepath "$proj/game/src/main/java" -implicit:none @armor-sources.txt 2> armor-javac.log
+          rc=$?
+          echo "upstream Armor HUD javac exit: $rc"
+          echo "errors: $(grep -c ' error: ' armor-javac.log || true)"
+          cp armor-javac.log armor-hud-source-compatibility.txt
+          exit 0
+
+      - name: Write port plan
+        run: |
+          {
+            echo "# Uku's Armor HUD / UkuLib Eagler port plan"
+            echo
+            echo "Upstream Armor HUD: $ARMOR_HUD_VERSION"
+            echo "Upstream UkuLib: $UKULIB_VERSION"
+            echo "Fabric API: $FABRIC_API_VERSION"
+            echo "Fabric Loader: $FABRIC_LOADER_VERSION"
+            echo
+            echo "Final Eagler runtime will not load Fabric Loader; these are real compile-time references used to measure the port."
+            echo
+            echo "Current native files: VBVArmorHud.java, VBVArmorHudConfig.java, VBVArmorHudConfigScreen.java"
+            echo
+            echo "Parity targets: HOTBAR/ROUNDED_CORNERS/ROUNDED/NONE styles; empty-slot icons; status-effect/bossbar/subtitle pushing; config persistence; warning texture/animation; armor-break behavior."
+          } > armor-hud-port-plan.md
+          cat armor-hud-port-plan.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload compatibility report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: uku-armor-hud-port-report-${{ github.run_id }}
+          path: |
+            armor-hud-source-compatibility.txt
+            armor-javac.log
+            armor-hud-port-plan.md
+          if-no-files-found: warn
+          retention-days: 30
