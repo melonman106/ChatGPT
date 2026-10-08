@@ -8,6 +8,7 @@ permissions:
 
 env:
   MC_VERSION: "26.2"
+  MC_CLIENT_SHA256: "40896ee9f1e2bec3c934daac7e93d41e9e3d9c9c2f8ae0ca366d52ffbfd1afa290"
   FABRIC_LOADER_VERSION: "0.19.3"
   FABRIC_INSTALLER_VERSION: "1.1.2"
   FABRIC_API_VERSION_ID: "3kB7XVBv"
@@ -16,7 +17,7 @@ env:
 jobs:
   prepare:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
         with:
@@ -38,9 +39,33 @@ jobs:
             "https://maven.fabricmc.net/net/fabricmc/fabric-installer/${FABRIC_INSTALLER_VERSION}/fabric-installer-${FABRIC_INSTALLER_VERSION}.jar" \
             -o fabric-installer.jar
           test -s fabric-installer.jar
+          stat -c 'Fabric installer bytes: %s' fabric-installer.jar
+          sha256sum fabric-installer.jar | tee fabric-installer.sha256
           java -jar fabric-installer.jar help | tee fabric-installer-help.txt
 
-      - name: Install the Fabric 26.2 client profile into a disposable build directory
+      - name: Download and verify the complete Minecraft 26.2 client JAR
+        run: |
+          set -euo pipefail
+          mkdir -p minecraft-input
+          curl -fL --retry 5 --retry-all-errors \
+            "https://piston-meta.mojang.com/v1/packages/40896ee9f1e2bec3c934daac7e93d41e9e3d9c2f8ae0ca366d52ffbfd1afa290/26.2.json" \
+            -o minecraft-input/26.2-version.json
+          CLIENT_URL="$(python3 - <<'PY'
+          import json
+          with open('minecraft-input/26.2-version.json', encoding='utf-8') as f:
+              print(json.load(f)['downloads']['client']['url'])
+          PY
+          )"
+          curl -fL --retry 5 --retry-all-errors "$CLIENT_URL" -o minecraft-input/minecraft-26.2-client.jar
+          test -s minecraft-input/minecraft-26.2-client.jar
+          ACTUAL_SHA="$(sha256sum minecraft-input/minecraft-26.2-client.jar | awk '{print $1}')"
+          test "$ACTUAL_SHA" = "$MC_CLIENT_SHA256"
+          CLIENT_BYTES="$(stat -c '%s' minecraft-input/minecraft-26.2-client.jar)"
+          echo "Minecraft 26.2 client bytes: $CLIENT_BYTES"
+          test "$CLIENT_BYTES" -ge 30000000
+          sha256sum minecraft-input/minecraft-26.2-client.jar | tee minecraft-input/minecraft-26.2-client.sha256
+
+      - name: Install the complete Fabric 26.2 client profile into a disposable build directory
         run: |
           set -euo pipefail
           rm -rf fabric-client
@@ -51,9 +76,32 @@ jobs:
             -loader "$FABRIC_LOADER_VERSION" \
             -noprofile
           test -d fabric-client/versions
-          find fabric-client -maxdepth 5 -type f -print | sort | tee fabric-client-files.txt
+          find fabric-client -type f -print | sort | tee fabric-client-files.txt
 
-      - name: Download the exact Fabric API used by the source probe
+      - name: Verify the installed Fabric client contains the full Minecraft runtime
+        run: |
+          set -euo pipefail
+          CLIENT_JARS=(fabric-client/versions/*/26.2-*.jar fabric-client/versions/*/*.jar)
+          FOUND=0
+          for jar in "${CLIENT_JARS[@]}"; do
+            [ -f "$jar" ] || continue
+            FOUND=1
+            bytes="$(stat -c '%s' "$jar")"
+            echo "$bytes $jar"
+            if [ "$bytes" -ge 30000000 ]; then
+              echo "Complete Minecraft client candidate: $jar"
+              sha256sum "$jar"
+            fi
+          done
+          test "$FOUND" -eq 1
+          FULL_CLIENT_COUNT="$(find fabric-client -type f -size +30M | wc -l)"
+          echo "Files larger than 30 MiB: $FULL_CLIENT_COUNT"
+          test "$FULL_CLIENT_COUNT" -ge 1
+          test -d fabric-client/libraries
+          test -d fabric-client/versions
+          test -d fabric-client/assets
+
+      - name: Verify Fabric API is present and non-truncated
         run: |
           set -euo pipefail
           mkdir -p fabric-libs
@@ -61,28 +109,67 @@ jobs:
             "https://api.modrinth.com/maven/maven/modrinth/P7dR8mSH/${FABRIC_API_VERSION_ID}/P7dR8mSH-${FABRIC_API_VERSION_ID}.jar" \
             -o fabric-libs/fabric-api-${FABRIC_API_VERSION}.jar
           test -s fabric-libs/fabric-api-${FABRIC_API_VERSION}.jar
+          API_BYTES="$(stat -c '%s' fabric-libs/fabric-api-${FABRIC_API_VERSION}.jar)"
+          echo "Fabric API bytes: $API_BYTES"
+          test "$API_BYTES" -ge 2000000
+          sha256sum fabric-libs/fabric-api-${FABRIC_API_VERSION}.jar | tee fabric-libs/fabric-api.sha256
+          unzip -t fabric-libs/fabric-api-${FABRIC_API_VERSION}.jar >/dev/null
 
       - name: Verify the existing vanilla Eagler input remains separate
         run: |
           set -euo pipefail
           test -f Eaglercraft-26.2-u1-Extracted/eagler-patcher
           echo "Eagler u1 patcher remains the production source pipeline."
-          echo "Fabric is being prepared as a compatibility/development input, not injected as a runtime loader."
+          echo "Fabric is compatibility/development input only; Fabric Loader is not injected into Eagler."
 
-      - name: Write compatibility manifest
+      - name: Write complete compatibility manifest and size audit
         run: |
           set -euo pipefail
           mkdir -p fabric-compatibility
+          {
+            echo "=== COMPLETE FABRIC 26.2 INPUT AUDIT ==="
+            echo "Minecraft: $MC_VERSION"
+            echo "Expected Minecraft client SHA256: $MC_CLIENT_SHA256"
+            echo "Actual Minecraft client:"
+            sha256sum minecraft-input/minecraft-26.2-client.jar
+            stat -c 'Minecraft client bytes: %s' minecraft-input/minecraft-26.2-client.jar
+            echo
+            echo "Fabric Installer: $FABRIC_INSTALLER_VERSION"
+            sha256sum fabric-installer.jar
+            stat -c 'Fabric installer bytes: %s' fabric-installer.jar
+            echo
+            echo "Fabric Loader: $FABRIC_LOADER_VERSION"
+            echo "Fabric API: $FABRIC_API_VERSION"
+            sha256sum fabric-libs/fabric-api-${FABRIC_API_VERSION}.jar
+            stat -c 'Fabric API bytes: %s' fabric-libs/fabric-api-${FABRIC_API_VERSION}.jar
+            echo
+            echo "Fabric client total bytes:"
+            find fabric-client -type f -printf '%s\n' | awk '{s+=$1} END {print s}'
+            echo "Fabric client file count: $(find fabric-client -type f | wc -l)"
+            echo
+            echo "Largest Fabric client files:"
+            find fabric-client -type f -printf '%s %p\n' | sort -nr | head -25
+          } | tee fabric-compatibility/size-audit.txt
+
           cat > fabric-compatibility/manifest.json <<EOF
           {
             "minecraft": "${MC_VERSION}",
+            "minecraftClientSha256": "${MC_CLIENT_SHA256}",
             "fabricLoader": "${FABRIC_LOADER_VERSION}",
             "fabricInstaller": "${FABRIC_INSTALLER_VERSION}",
             "fabricApi": "${FABRIC_API_VERSION}",
-            "purpose": "compile-time compatibility and API porting only",
+            "purpose": "complete Fabric reference client plus compile-time compatibility inputs",
             "runtimeLoader": "eagler",
             "fabricLoaderRuntime": false,
             "fabricApiRuntime": false,
+            "integrityChecks": {
+              "minecraftClientSha256Verified": true,
+              "minecraftClientAtLeast30MB": true,
+              "fabricApiAtLeast2MB": true,
+              "fabricClientHasLibraries": true,
+              "fabricClientHasVersions": true,
+              "fabricClientHasAssets": true
+            },
             "plannedPortTargets": [
               "fabric lifecycle/client events",
               "fabric key mappings",
@@ -97,16 +184,19 @@ jobs:
           EOF
           cat fabric-compatibility/manifest.json
 
-      - name: Upload Fabric compatibility inputs
+      - name: Upload complete Fabric compatibility inputs and audit
         uses: actions/upload-artifact@v4
         with:
-          name: fabric-26.2-compatibility-inputs
+          name: fabric-26.2-complete-compatibility-inputs
           path: |
             fabric-installer.jar
+            fabric-installer.sha256
             fabric-installer-help.txt
+            minecraft-input/
             fabric-client/
             fabric-client-files.txt
             fabric-libs/
             fabric-compatibility/manifest.json
+            fabric-compatibility/size-audit.txt
           if-no-files-found: error
           retention-days: 14
