@@ -210,7 +210,15 @@ jobs:
             echo
             echo "Keep this page private. The URL is temporary and expires when the job ends."
           } >> "$GITHUB_STEP_SUMMARY"
-          echo "Desktop is ready. The authenticated URL and instructions are in the workflow run summary."
+          echo
+          echo "============================================================"
+          echo "EAGLERCRAFT VISUAL DESKTOP IS READY"
+          echo "Desktop URL: $URL"
+          echo "Upload URL:  $URL/upload"
+          echo "Username:    eagler"
+          echo "Password:    use the DESKTOP_PASSWORD repository secret"
+          echo "============================================================"
+          echo "Keep this URL private. It expires when this Actions job ends."
 
       - name: Keep desktop running until finished or timeout
         run: |
