@@ -57,7 +57,7 @@ jobs:
           curl --fail --location --retry 3 \
             https://github.com/melonman106/ChatGPT/releases/download/Modded/Eaglercraft-26.2-u1-Setup.jar \
             --output Eaglercraft-26.2-u1-Setup.jar
-          printf '%s:%s\n' eagler "$DESKTOP_PASSWORD" | sudo tee /etc/nginx/eagler.htpasswd >/dev/null
+          printf '%s\n' "$DESKTOP_PASSWORD" | sudo htpasswd -i -c -B /etc/nginx/eagler.htpasswd eagler
           sudo chmod 640 /etc/nginx/eagler.htpasswd
           sudo chown root:www-data /etc/nginx/eagler.htpasswd
 
@@ -231,15 +231,13 @@ jobs:
           mkdir -p "$GITHUB_WORKSPACE/session-output"
           cp -f eagler-session.zip "$GITHUB_WORKSPACE/session-output/" 2>/dev/null || true
           cp -f README-FIRST.txt "$GITHUB_WORKSPACE/session-output/" 2>/dev/null || true
+          cp -a workspace inbox "$GITHUB_WORKSPACE/session-output/" 2>/dev/null || true
 
       - name: Upload Eaglercraft session artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: eaglercraft-visual-session
-          path: |
-            session-output/
-            eagler-visual-session/workspace/
-            eagler-visual-session/inbox/
+          path: session-output/
           if-no-files-found: warn
           retention-days: 7
