@@ -1,0 +1,130 @@
+name: Probe official Litematica port with Fabric API + Placeholder API
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  FABRIC_API_VERSION_ID: "3kB7XVBv"
+  FABRIC_API_VERSION: "0.152.1+26.2"
+  PLACEHOLDER_API_VERSION_ID: "NDqH16LT"
+  PLACEHOLDER_API_VERSION: "3.1.0-beta.1+26.2"
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            ViaBackport26.2-ClientSide
+            Eaglercraft-26.2-u1-Extracted
+            ModsPack
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: Download pinned Minecraft 26.2 client
+        run: |
+          set -euo pipefail
+          curl -fL --retry 3 "https://piston-data.mojang.com/v1/objects/2dc72797acbc1b63fc16a11c4ac393605f453754/client.jar" -o minecraft-26.2-client.jar
+          echo "40896ee9f1e2bec3c934daac7e93d41e9e3d9c2f8ae0ca366d52ffbfd1afa290  minecraft-26.2-client.jar" | sha256sum -c -
+
+      - name: Create the patched Eagler u1 Java project
+        run: |
+          set -euo pipefail
+          root="$GITHUB_WORKSPACE/Eaglercraft-26.2-u1-Extracted"
+          chmod +x "$root/eagler-patcher"
+          mkdir -p vbv-build
+          java17="${JAVA_HOME_17_X64:?JAVA_HOME_17_X64 is not set}/bin/java"
+          export EAGLER_PATCHER_JAVA="$java17"
+          "$root/eagler-patcher" create-dev \
+            --jar "$GITHUB_WORKSPACE/minecraft-26.2-client.jar" \
+            --output "$GITHUB_WORKSPACE/vbv-build/project" \
+            --vineflower "$root/inputs/vineflower-1.12.0.jar" \
+            --java17 "$java17" \
+            --patch-bundle "$root/source-patch-bundle.zip" \
+            --project-skeleton "$root/project-skeleton-v5-teavm-runtime-verified.zip" \
+            --resource-overlay "$root/inputs/resource-overlay-normal.zip" \
+            --external-resource-root "$root/inputs/resources"
+          python3 ViaBackport26.2-ClientSide/patch/apply_vbv_patch.py "$GITHUB_WORKSPACE/vbv-build/project"
+
+      - name: Compile the Eagler game and capture its classpath
+        run: |
+          set -euo pipefail
+          cd vbv-build/project
+          chmod +x ./gradlew
+          export JAVA_HOME="${JAVA_HOME_25_X64:?JAVA_HOME_25_X64 is not set}"
+          export PATH="$JAVA_HOME/bin:$PATH"
+          cat > "$GITHUB_WORKSPACE/printcp.init.gradle" <<'GRADLE'
+          allprojects {
+            plugins.withId('java') {
+              tasks.register('printCp') {
+                doLast { println 'CP=' + project.sourceSets.main.compileClasspath.asPath }
+              }
+            }
+          }
+          ./gradlew :game:compileJava --console=plain --no-daemon || true
+          ./gradlew -q -I "$GITHUB_WORKSPACE/printcp.init.gradle" :game:printCp --console=plain --no-daemon \
+            | grep '^CP=' | tail -1 | cut -c4- > "$GITHUB_WORKSPACE/game-classpath.txt" || true
+
+      - name: Clone official 26.2 sources
+        run: |
+          set -euo pipefail
+          mkdir -p official
+          git clone --depth 1 --branch "26.2-0.28.6" https://github.com/sakura-ryoko/litematica.git official/litematica
+          git clone --depth 1 --branch "26.2-0.29.5" https://github.com/sakura-ryoko/malilib.git official/malilib
+          git clone --depth 1 --branch "26.2" https://github.com/TerraformersMC/ModMenu.git official/modmenu
+
+      - name: Download Fabric API, Text Placeholder API, and compile-only helpers
+        run: |
+          set -euo pipefail
+          mkdir -p libs
+          fetch() { curl -fL --retry 5 --retry-all-errors "$1" -o "libs/$2"; test -s "libs/$2"; }
+          fetch "https://api.modrinth.com/maven/maven/modrinth/P7dR8mSH/${FABRIC_API_VERSION_ID}/P7dR8mSH-${FABRIC_API_VERSION_ID}.jar" fabric-api.jar
+          fetch "https://api.modrinth.com/maven/maven/modrinth/eXts2L7r/${PLACEHOLDER_API_VERSION_ID}/eXts2L7r-${PLACEHOLDER_API_VERSION_ID}.jar" placeholder-api.jar
+          fetch "https://repo1.maven.org/maven2/net/fabricmc/sponge-mixin/0.17.3%2Bmixin.0.8.7/sponge-mixin-0.17.3%2Bmixin.0.8.7.jar" sponge-mixin.jar
+          fetch "https://repo1.maven.org/maven2/io/github/llamalad7/mixinextras-common/0.5.4/mixinextras-common-0.5.4.jar" mixinextras-common.jar
+          fetch "https://maven.fabricmc.net/net/fabricmc/fabric-loader/0.19.3/fabric-loader-0.19.3.jar" fabric-loader.jar
+          fetch "https://repo1.maven.org/maven2/org/jspecify/jspecify/1.0.0/jspecify-1.0.0.jar" jspecify.jar
+          fetch "https://repo1.maven.org/maven2/org/jetbrains/annotations/26.0.2/annotations-26.0.2.jar" jetbrains-annotations.jar
+          echo "Fabric API ${FABRIC_API_VERSION}"
+          echo "Text Placeholder API ${PLACEHOLDER_API_VERSION}"
+          ls -lh libs
+
+      - name: Compile official sources with the real APIs on the classpath
+        run: |
+          set +e
+          proj="$GITHUB_WORKSPACE/vbv-build/project"
+          cp_game="$(cat "$GITHUB_WORKSPACE/game-classpath.txt" 2>/dev/null || true)"
+          cp_libs="$(find "$GITHUB_WORKSPACE/libs" -name '*.jar' -printf '%p:' | tr -d '\n')"
+          classes="$proj/game/build/classes/java/main"
+          if [ -d "$classes" ]; then
+            cp_all="$classes:$cp_game:$cp_libs"
+            extra=()
+          else
+            cp_all="$cp_game:$cp_libs"
+            extra=(-sourcepath "$proj/game/src/main/java" -implicit:none)
+          fi
+          find official/litematica/src/main/java official/malilib/src/main/java official/modmenu/src/main/java -name '*.java' > srcs.txt
+          mkdir -p jout
+          "$JAVA_HOME_25_X64/bin/javac" --release 25 -proc:none -XDshould-stop.ifError=FLOW \
+            -Xmaxerrs 100000 -Xmaxwarns 0 -d jout -cp "$cp_all" "${extra[@]}" @srcs.txt 2> javac.log
+          rc=$?
+          echo "javac exit: $rc"
+          echo "errors: $(grep -c ' error: ' javac.log || true)"
+          echo '=== Top missing packages ==='
+          grep -oE 'package [^ ]+ does not exist' javac.log | sort | uniq -c | sort -nr | head -30 || true
+          echo '=== Top missing symbols ==='
+          grep -A2 'cannot find symbol' javac.log | head -100 || true
+          exit 0
