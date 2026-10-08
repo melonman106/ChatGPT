@@ -1,5 +1,10 @@
 name: Probe official Litematica port with Fabric API + Placeholder API
 
+# SOURCE-COMPATIBILITY CHECK ONLY.
+# This workflow does not build, package, inject, or deploy a client.
+# It creates the patched Eagler u1 Java source tree needed to compile-check
+# the official Litematica / MaLiLib / Mod Menu sources, then stops at javac.
+
 on:
   workflow_dispatch:
 
@@ -11,6 +16,9 @@ env:
   FABRIC_API_VERSION: "0.152.1+26.2"
   PLACEHOLDER_API_VERSION_ID: "NDqH16LT"
   PLACEHOLDER_API_VERSION: "3.1.0-beta.1+26.2"
+  PIN_BUNDLE_SHA256: "fd944e9cabbebbf4bddce8a39e1b233b3c7d0cd4f860f9cae37550a3fcfa8b02"
+  PIN_SKELETON_SHA256: "3656a83ed8187e2d859612c566f3aa73e242bf1e4633990c5bb4929e0a846c94"
+  PIN_OVERLAY_SHA256: "2ba7e3376891c64f8bf57f3687e05b8dbe1971a75475b6825449e5e5f96d71f3"
 
 jobs:
   probe:
@@ -40,7 +48,7 @@ jobs:
           curl -fL --retry 3 "https://piston-data.mojang.com/v1/objects/2dc72797acbc1b63fc16a11c4ac393605f453754/client.jar" -o minecraft-26.2-client.jar
           echo "40896ee9f1e2bec3c934daac7e93d41e9e3d9c2f8ae0ca366d52ffbfd1afa290  minecraft-26.2-client.jar" | sha256sum -c -
 
-      - name: Create the patched Eagler u1 Java project
+      - name: Create the patched Eagler u1 Java project for source checking
         run: |
           set -euo pipefail
           root="$GITHUB_WORKSPACE/Eaglercraft-26.2-u1-Extracted"
@@ -54,8 +62,11 @@ jobs:
             --vineflower "$root/inputs/vineflower-1.12.0.jar" \
             --java17 "$java17" \
             --patch-bundle "$root/source-patch-bundle.zip" \
+            --expected-bundle-sha256 "$PIN_BUNDLE_SHA256" \
             --project-skeleton "$root/project-skeleton-v5-teavm-runtime-verified.zip" \
+            --expected-skeleton-sha256 "$PIN_SKELETON_SHA256" \
             --resource-overlay "$root/inputs/resource-overlay-normal.zip" \
+            --expected-resource-overlay-sha256 "$PIN_OVERLAY_SHA256" \
             --external-resource-root "$root/inputs/resources"
           python3 ViaBackport26.2-ClientSide/patch/apply_vbv_patch.py "$GITHUB_WORKSPACE/vbv-build/project"
 
