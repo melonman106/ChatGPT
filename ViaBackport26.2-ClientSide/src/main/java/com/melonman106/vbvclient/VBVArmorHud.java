@@ -184,7 +184,7 @@ public final class VBVArmorHud {
             int x = rect[0] + (horizontal ? STEP * i : 0);
             int y = rect[1] + (horizontal ? 0 : STEP * i);
 
-            if (VBVArmorHudConfig.style == VBVArmorHudConfig.STYLE_BOX) {
+            if (VBVArmorHudConfig.style != VBVArmorHudConfig.STYLE_NONE) {
                 g.fill(x, y, x + SIZE, y + SIZE, 0x66000000);
                 g.outline(x, y, SIZE, SIZE, 0x99FFFFFF);
             }
