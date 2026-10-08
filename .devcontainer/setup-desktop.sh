@@ -32,4 +32,17 @@ Eaglercraft visual setup desktop
 The Minecraft 26.2 client JAR must be supplied separately if the GUI asks for it. Only use a client JAR you are entitled to access. Do not make port 6080 public.
 EOF
 
-echo "Setup dependencies and downloaded the Setup JAR."
+mkdir -p "$HOME/Desktop"
+cat > "$HOME/Desktop/Launch Eaglercraft Setup.desktop" <<EOF
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Launch Eaglercraft Setup
+Comment=Open the Eaglercraft visual installer
+Exec=java -jar $HOME/eagler-visual-session/Eaglercraft-26.2-u1-Setup.jar
+Terminal=false
+Categories=Development;
+EOF
+chmod +x "$HOME/Desktop/Launch Eaglercraft Setup.desktop"
+
+echo "Setup dependencies, downloaded the Setup JAR, and created a desktop launcher."
