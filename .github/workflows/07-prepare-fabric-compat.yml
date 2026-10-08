@@ -8,7 +8,7 @@ permissions:
 
 env:
   MC_VERSION: "26.2"
-  MC_CLIENT_SHA256: "40896ee9f1e2bec3c934daac7e93d41e9e3d9c9c2f8ae0ca366d52ffbfd1afa290"
+  MC_CLIENT_SHA256: "40896ee9f1e2bec3c934daac7e93d41e9e3d9c2f8ae0ca366d52ffbfd1afa290"
   FABRIC_LOADER_VERSION: "0.19.3"
   FABRIC_INSTALLER_VERSION: "1.1.2"
   FABRIC_API_VERSION_ID: "3kB7XVBv"
@@ -48,7 +48,7 @@ jobs:
           set -euo pipefail
           mkdir -p minecraft-input
           curl -fL --retry 5 --retry-all-errors \
-            "https://piston-meta.mojang.com/v1/packages/40896ee9f1e2bec3c934daac7e93d41e9e3d9c2f8ae0ca366d52ffbfd1afa290/26.2.json" \
+            "https://piston-meta.mojang.com/v1/packages/40896ee9f1e2bec3c934daac7e93d41e9e3d9c2f8ae0ca366d52ffbfd2f4fbbe/26.2.json" \
             -o minecraft-input/26.2-version.json
           CLIENT_URL="$(python3 - <<'PY'
           import json
@@ -81,7 +81,7 @@ jobs:
       - name: Verify the installed Fabric client contains the full Minecraft runtime
         run: |
           set -euo pipefail
-          CLIENT_JARS=(fabric-client/versions/*/26.2-*.jar fabric-client/versions/*/*.jar)
+          CLIENT_JARS=(fabric-client/versions/*/*.jar)
           FOUND=0
           for jar in "${CLIENT_JARS[@]}"; do
             [ -f "$jar" ] || continue
