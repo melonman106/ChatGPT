@@ -1,0 +1,245 @@
+name: Eaglercraft Visual Desktop
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eagler-visual-desktop
+  cancel-in-progress: false
+
+jobs:
+  visual-desktop:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - name: Check desktop password secret
+        env:
+          DESKTOP_PASSWORD: ${{ secrets.DESKTOP_PASSWORD }}
+        run: |
+          if [ -z "$DESKTOP_PASSWORD" ]; then
+            echo "::error::Add a repository Actions secret named DESKTOP_PASSWORD before running this workflow."
+            exit 1
+          fi
+          if [ "${#DESKTOP_PASSWORD}" -lt 12 ]; then
+            echo "::error::DESKTOP_PASSWORD must be at least 12 characters long."
+            exit 1
+          fi
+
+      - name: Check out the patch source
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: U1-Patcher
+          sparse-checkout-cone-mode: true
+
+      - name: Install desktop and web access dependencies
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            openjdk-21-jre xfce4 xfce4-terminal thunar xvfb x11vnc novnc websockify \
+            nginx apache2-utils dbus-x11 xauth fonts-dejavu-core curl zip python3
+          sudo apt-get clean
+          sudo rm -rf /var/lib/apt/lists/*
+          curl --fail --location --retry 3 \
+            https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 \
+            --output /tmp/cloudflared
+          sudo install -m 0755 /tmp/cloudflared /usr/local/bin/cloudflared
+
+      - name: Prepare installer, upload inbox, and authenticated gateway
+        env:
+          DESKTOP_PASSWORD: ${{ secrets.DESKTOP_PASSWORD }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/eagler-visual-session/workspace" "$HOME/eagler-visual-session/inbox" "$HOME/.vnc"
+          cd "$HOME/eagler-visual-session"
+          curl --fail --location --retry 3 \
+            https://github.com/melonman106/ChatGPT/releases/download/Modded/Eaglercraft-26.2-u1-Setup.jar \
+            --output Eaglercraft-26.2-u1-Setup.jar
+          printf '%s:%s\n' eagler "$DESKTOP_PASSWORD" | sudo tee /etc/nginx/eagler.htpasswd >/dev/null
+          sudo chmod 640 /etc/nginx/eagler.htpasswd
+          sudo chown root:www-data /etc/nginx/eagler.htpasswd
+
+          cat > /tmp/eagler-upload-server.py <<'PY'
+          from http.server import BaseHTTPRequestHandler, HTTPServer
+          from email.parser import BytesParser
+          from email.policy import default
+          from pathlib import Path
+          import os, re
+          DEST = Path.home() / "eagler-visual-session" / "inbox"
+          MAX_UPLOAD = 1024 * 1024 * 1024
+          class Handler(BaseHTTPRequestHandler):
+              def do_GET(self):
+                  page = b"""<!doctype html><meta charset=utf-8><title>Eagler file upload</title>
+          <h2>Upload a file to the remote desktop</h2>
+          <p>Choose your Minecraft 26.2 client JAR if the installer asks for it.</p>
+          <form method=post enctype=multipart/form-data>
+          <input type=file name=file required><button>Upload</button></form>"""
+                  self.send_response(200); self.send_header("Content-Type","text/html; charset=utf-8")
+                  self.send_header("Content-Length",str(len(page))); self.end_headers(); self.wfile.write(page)
+              def do_POST(self):
+                  length = int(self.headers.get("Content-Length","0"))
+                  if length <= 0 or length > MAX_UPLOAD:
+                      self.send_error(413, "File is empty or exceeds the 1 GiB upload limit"); return
+                  body = self.rfile.read(length)
+                  mime = BytesParser(policy=default).parsebytes(
+                      ("Content-Type: "+self.headers.get("Content-Type","")+
+                       "\\r\\nMIME-Version: 1.0\\r\\n\\r\\n").encode()+body)
+                  saved = []
+                  for part in mime.iter_parts():
+                      name = part.get_filename()
+                      if not name: continue
+                      safe = re.sub(r"[^A-Za-z0-9._-]+","_",os.path.basename(name))[:180] or "upload.bin"
+                      target = DEST / safe
+                      target.write_bytes(part.get_payload(decode=True) or b"")
+                      saved.append(safe)
+                  msg = ("Uploaded: "+", ".join(saved) if saved else "No file selected").encode()
+                  self.send_response(200); self.send_header("Content-Type","text/plain; charset=utf-8")
+                  self.send_header("Content-Length",str(len(msg))); self.end_headers(); self.wfile.write(msg)
+              def log_message(self, fmt, *args): pass
+          HTTPServer(("127.0.0.1",8090), Handler).serve_forever()
+          PY
+
+          sudo tee /etc/nginx/sites-available/eagler-desktop >/dev/null <<'NGINX'
+          server {
+              listen 127.0.0.1:6081;
+              server_name _;
+              client_max_body_size 1024m;
+              auth_basic "Eaglercraft private desktop";
+              auth_basic_user_file /etc/nginx/eagler.htpasswd;
+              location = /upload { proxy_pass http://127.0.0.1:8090/; }
+              location = /upload/ { proxy_pass http://127.0.0.1:8090/; }
+              location /upload-api/ { proxy_pass http://127.0.0.1:8090/; }
+              location / {
+                  proxy_pass http://127.0.0.1:6080/;
+                  proxy_http_version 1.1;
+                  proxy_set_header Upgrade $http_upgrade;
+                  proxy_set_header Connection "upgrade";
+                  proxy_set_header Host $host;
+                  proxy_read_timeout 3600s;
+              }
+          }
+          NGINX
+          sudo rm -f /etc/nginx/sites-enabled/default
+          sudo ln -sf /etc/nginx/sites-available/eagler-desktop /etc/nginx/sites-enabled/eagler-desktop
+          sudo nginx -t
+          sudo systemctl restart nginx
+
+          cat > "$HOME/eagler-visual-session/README-FIRST.txt" <<'EOF'
+          Eaglercraft visual desktop
+          - Setup JAR: ~/eagler-visual-session/Eaglercraft-26.2-u1-Setup.jar
+          - Patch source: checked-out repository folder U1-Patcher
+          - Upload a local file through the authenticated desktop address plus /upload.
+          - Uploaded files appear in ~/eagler-visual-session/inbox.
+          - Save output under ~/eagler-visual-session/workspace.
+          - Click "Finish and Save Session" on the desktop when you want to end the session and upload an artifact.
+          EOF
+
+          mkdir -p "$HOME/Desktop"
+          cat > "$HOME/Desktop/Launch Eaglercraft Setup.desktop" <<EOF
+          [Desktop Entry]
+          Version=1.0
+          Type=Application
+          Name=Launch Eaglercraft Setup
+          Comment=Open the Eaglercraft visual installer
+          Exec=java -jar $HOME/eagler-visual-session/Eaglercraft-26.2-u1-Setup.jar
+          Terminal=false
+          Categories=Development;
+          EOF
+          chmod +x "$HOME/Desktop/Launch Eaglercraft Setup.desktop"
+
+          cat > "$HOME/Desktop/Finish and Save Session.desktop" <<EOF
+          [Desktop Entry]
+          Version=1.0
+          Type=Application
+          Name=Finish and Save Session
+          Comment=Package output and end the Actions session
+          Exec=bash -lc 'cd "$HOME/eagler-visual-session" && zip -qr eagler-session.zip workspace inbox && touch /tmp/eagler-finish'
+          Terminal=true
+          Categories=Development;
+          EOF
+          chmod +x "$HOME/Desktop/Finish and Save Session.desktop"
+
+      - name: Start virtual desktop and secure access tunnel
+        env:
+          DESKTOP_PASSWORD: ${{ secrets.DESKTOP_PASSWORD }}
+        run: |
+          set -euo pipefail
+          export DISPLAY=:1
+          Xvfb "$DISPLAY" -screen 0 1440x900x24 -ac +extension GLX >/tmp/eagler-xvfb.log 2>&1 &
+          echo $! >/tmp/eagler-xvfb.pid
+          sleep 2
+          dbus-launch --exit-with-session startxfce4 >/tmp/eagler-xfce.log 2>&1 &
+          echo $! >/tmp/eagler-xfce.pid
+          sleep 4
+          x11vnc -display "$DISPLAY" -rfbport 5901 -localhost -nopw -forever -shared >/tmp/eagler-vnc.log 2>&1 &
+          echo $! >/tmp/eagler-vnc.pid
+          sleep 2
+          websockify --web=/usr/share/novnc/ 6080 localhost:5901 >/tmp/eagler-websockify.log 2>&1 &
+          echo $! >/tmp/eagler-websockify.pid
+          python3 /tmp/eagler-upload-server.py >/tmp/eagler-upload.log 2>&1 &
+          echo $! >/tmp/eagler-upload.pid
+          cloudflared tunnel --no-autoupdate --url http://127.0.0.1:6081 >/tmp/eagler-cloudflared.log 2>&1 &
+          echo $! >/tmp/eagler-cloudflared.pid
+          for i in $(seq 1 90); do
+            URL=$(grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' /tmp/eagler-cloudflared.log | head -n1 || true)
+            if [ -n "$URL" ]; then break; fi
+            sleep 2
+          done
+          if [ -z "${URL:-}" ]; then
+            cat /tmp/eagler-cloudflared.log
+            echo "::error::Could not establish the temporary desktop tunnel."
+            exit 1
+          fi
+          echo "::add-mask::$DESKTOP_PASSWORD"
+          {
+            echo "## Eaglercraft visual desktop"
+            echo
+            echo "**Desktop URL:** $URL"
+            echo
+            echo "**Username:** eagler"
+            echo
+            echo "Use the repository Actions secret `DESKTOP_PASSWORD` as the password."
+            echo
+            echo "Upload a local client JAR at **$URL/upload**."
+            echo
+            echo "In the desktop, double-click **Launch Eaglercraft Setup**. Choose the checked-out `U1-Patcher` folder as Patch Source, and save outputs under `~/eagler-visual-session/workspace`."
+            echo
+            echo "When finished, double-click **Finish and Save Session**. The workflow will package your files and publish them as an artifact."
+            echo
+            echo "Keep this page private. The URL is temporary and expires when the job ends."
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "Desktop is ready. The authenticated URL and instructions are in the workflow run summary."
+
+      - name: Keep desktop running until finished or timeout
+        run: |
+          for i in $(seq 1 1980); do
+            if [ -f /tmp/eagler-finish ]; then
+              echo "Finish signal received."
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Desktop session reached its planned time limit; packaging current files."
+
+      - name: Package session files
+        if: always()
+        run: |
+          cd "$HOME/eagler-visual-session"
+          zip -qr eagler-session.zip workspace inbox || true
+          mkdir -p "$GITHUB_WORKSPACE/session-output"
+          cp -f eagler-session.zip "$GITHUB_WORKSPACE/session-output/" 2>/dev/null || true
+          cp -f README-FIRST.txt "$GITHUB_WORKSPACE/session-output/" 2>/dev/null || true
+
+      - name: Upload Eaglercraft session artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eaglercraft-visual-session
+          path: |
+            session-output/
+            eagler-visual-session/workspace/
+            eagler-visual-session/inbox/
+          if-no-files-found: warn
+          retention-days: 7
