@@ -1,0 +1,14 @@
+{
+  "name": "Eaglercraft Visual Setup Desktop",
+  "image": "mcr.microsoft.com/devcontainers/java:1-21-bookworm",
+  "forwardPorts": [6080],
+  "portsAttributes": {
+    "6080": {
+      "label": "Private Eaglercraft desktop",
+      "onAutoForward": "notify",
+      "visibility": "private"
+    }
+  },
+  "postCreateCommand": "bash .devcontainer/setup-desktop.sh",
+  "postStartCommand": "bash .devcontainer/start-desktop.sh"
+}
