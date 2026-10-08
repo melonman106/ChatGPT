@@ -48,8 +48,19 @@ jobs:
           set -euo pipefail
           mkdir -p minecraft-input
           curl -fL --retry 5 --retry-all-errors \
-            "https://piston-meta.mojang.com/v1/packages/40896ee9f1e2bec3c934daac7e93d41e9e3d9c2f8ae0ca366d52ffbfd2f4fbbe/26.2.json" \
-            -o minecraft-input/26.2-version.json
+            "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json" \
+            -o minecraft-input/version-manifest.json
+          VERSION_URL="$(python3 - <<'PY'
+          import json
+          with open('minecraft-input/version-manifest.json', encoding='utf-8') as f:
+              data = json.load(f)
+          matches = [v['url'] for v in data['versions'] if v['id'] == '26.2']
+          if len(matches) != 1:
+              raise SystemExit(f'Expected exactly one Minecraft 26.2 version entry, found {len(matches)}')
+          print(matches[0])
+          PY
+          )"
+          curl -fL --retry 5 --retry-all-errors "$VERSION_URL" -o minecraft-input/26.2-version.json
           CLIENT_URL="$(python3 - <<'PY'
           import json
           with open('minecraft-input/26.2-version.json', encoding='utf-8') as f:
@@ -91,6 +102,8 @@ jobs:
             if [ "$bytes" -ge 30000000 ]; then
               echo "Complete Minecraft client candidate: $jar"
               sha256sum "$jar"
+              INSTALLED_SHA="$(sha256sum "$jar" | awk '{print $1}')"
+              test "$INSTALLED_SHA" = "$MC_CLIENT_SHA256"
             fi
           done
           test "$FOUND" -eq 1
@@ -165,6 +178,7 @@ jobs:
             "integrityChecks": {
               "minecraftClientSha256Verified": true,
               "minecraftClientAtLeast30MB": true,
+              "installedClientSha256Verified": true,
               "fabricApiAtLeast2MB": true,
               "fabricClientHasLibraries": true,
               "fabricClientHasVersions": true,
