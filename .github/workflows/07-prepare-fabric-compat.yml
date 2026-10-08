@@ -1,0 +1,112 @@
+name: Prepare Fabric 26.2 Compatibility Inputs
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  MC_VERSION: "26.2"
+  FABRIC_LOADER_VERSION: "0.19.3"
+  FABRIC_INSTALLER_VERSION: "1.1.2"
+  FABRIC_API_VERSION_ID: "3kB7XVBv"
+  FABRIC_API_VERSION: "0.152.1+26.2"
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            Eaglercraft-26.2-u1-Extracted
+            ViaBackport26.2-ClientSide
+            ModsPack
+            .github
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: Download Fabric Installer 1.1.2
+        run: |
+          set -euo pipefail
+          curl -fL --retry 5 --retry-all-errors \
+            "https://maven.fabricmc.net/net/fabricmc/fabric-installer/${FABRIC_INSTALLER_VERSION}/fabric-installer-${FABRIC_INSTALLER_VERSION}.jar" \
+            -o fabric-installer.jar
+          test -s fabric-installer.jar
+          java -jar fabric-installer.jar help | tee fabric-installer-help.txt
+
+      - name: Install the Fabric 26.2 client profile into a disposable build directory
+        run: |
+          set -euo pipefail
+          rm -rf fabric-client
+          mkdir -p fabric-client
+          java -jar fabric-installer.jar client \
+            -dir "$GITHUB_WORKSPACE/fabric-client" \
+            -mcversion "$MC_VERSION" \
+            -loader "$FABRIC_LOADER_VERSION" \
+            -noprofile
+          test -d fabric-client/versions
+          find fabric-client -maxdepth 5 -type f -print | sort | tee fabric-client-files.txt
+
+      - name: Download the exact Fabric API used by the source probe
+        run: |
+          set -euo pipefail
+          mkdir -p fabric-libs
+          curl -fL --retry 5 --retry-all-errors \
+            "https://api.modrinth.com/maven/maven/modrinth/P7dR8mSH/${FABRIC_API_VERSION_ID}/P7dR8mSH-${FABRIC_API_VERSION_ID}.jar" \
+            -o fabric-libs/fabric-api-${FABRIC_API_VERSION}.jar
+          test -s fabric-libs/fabric-api-${FABRIC_API_VERSION}.jar
+
+      - name: Verify the existing vanilla Eagler input remains separate
+        run: |
+          set -euo pipefail
+          test -f Eaglercraft-26.2-u1-Extracted/eagler-patcher
+          echo "Eagler u1 patcher remains the production source pipeline."
+          echo "Fabric is being prepared as a compatibility/development input, not injected as a runtime loader."
+
+      - name: Write compatibility manifest
+        run: |
+          set -euo pipefail
+          mkdir -p fabric-compatibility
+          cat > fabric-compatibility/manifest.json <<EOF
+          {
+            "minecraft": "${MC_VERSION}",
+            "fabricLoader": "${FABRIC_LOADER_VERSION}",
+            "fabricInstaller": "${FABRIC_INSTALLER_VERSION}",
+            "fabricApi": "${FABRIC_API_VERSION}",
+            "purpose": "compile-time compatibility and API porting only",
+            "runtimeLoader": "eagler",
+            "fabricLoaderRuntime": false,
+            "fabricApiRuntime": false,
+            "plannedPortTargets": [
+              "fabric lifecycle/client events",
+              "fabric key mappings",
+              "fabric screen events",
+              "fabric networking used by ported mods",
+              "fabric loader metadata/version APIs",
+              "fabric environment/entrypoint APIs",
+              "UkuLib APIs required by Armor HUD",
+              "Placeholder API pieces actually used by ported mods"
+            ]
+          }
+          EOF
+          cat fabric-compatibility/manifest.json
+
+      - name: Upload Fabric compatibility inputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: fabric-26.2-compatibility-inputs
+          path: |
+            fabric-installer.jar
+            fabric-installer-help.txt
+            fabric-client/
+            fabric-client-files.txt
+            fabric-libs/
+            fabric-compatibility/manifest.json
+          if-no-files-found: error
+          retention-days: 14
