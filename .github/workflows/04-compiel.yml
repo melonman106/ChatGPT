@@ -147,7 +147,10 @@ jobs:
 
       - name: Compile the official sources against the Eagler project (errors are the data)
         run: |
+          # GitHub runs steps with "bash -e"; javac exits 1 when it finds errors,
+          # which is the data this step exists to collect, so turn -e off here.
           set -uo pipefail
+          set +e
           proj="$GITHUB_WORKSPACE/vbv-build/project"
           cp_game="$(cat "$GITHUB_WORKSPACE/game-classpath.txt" 2>/dev/null || true)"
           cp_libs="$(ls "$GITHUB_WORKSPACE"/libs/*.jar 2>/dev/null | tr '\n' ':')"
@@ -163,8 +166,10 @@ jobs:
           mkdir -p jout
           "$JAVA_HOME_25_X64/bin/javac" --release 25 -proc:none -XDshould-stop.ifError=FLOW \
             -Xmaxerrs 100000 -Xmaxwarns 0 -d jout -cp "$cp_all" "${extra[@]}" @srcs.txt 2> javac.log
-          echo "javac exit: $?"
-          echo "errors: $(grep -c ' error: ' javac.log || true)"
+          rc=$?
+          echo "javac exit: $rc"
+          echo "errors: $(grep -c ' error: ' javac.log)"
+          tail -n 3 javac.log
           exit 0
 
       - name: Build the report
