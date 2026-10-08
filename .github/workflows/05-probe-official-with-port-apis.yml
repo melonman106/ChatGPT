@@ -85,6 +85,7 @@ jobs:
               }
             }
           }
+          GRADLE
           ./gradlew :game:compileJava --console=plain --no-daemon || true
           ./gradlew -q -I "$GITHUB_WORKSPACE/printcp.init.gradle" :game:printCp --console=plain --no-daemon \
             | grep '^CP=' | tail -1 | cut -c4- > "$GITHUB_WORKSPACE/game-classpath.txt" || true
@@ -138,4 +139,14 @@ jobs:
           grep -oE 'package [^ ]+ does not exist' javac.log | sort | uniq -c | sort -nr | head -30 || true
           echo '=== Top missing symbols ==='
           grep -A2 'cannot find symbol' javac.log | head -100 || true
+          cp javac.log "$GITHUB_WORKSPACE/official-source-compatibility.txt"
           exit 0
+
+      - name: Upload full source compatibility report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: official-source-compatibility-report
+          path: official-source-compatibility.txt
+          if-no-files-found: warn
+          retention-days: 14
