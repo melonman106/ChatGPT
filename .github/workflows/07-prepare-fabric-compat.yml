@@ -76,7 +76,7 @@ jobs:
           test "$CLIENT_BYTES" -ge 30000000
           sha256sum minecraft-input/minecraft-26.2-client.jar | tee minecraft-input/minecraft-26.2-client.sha256
 
-      - name: Install the complete Fabric 26.2 client profile into a disposable build directory
+      - name: Install Fabric 26.2 client profile
         run: |
           set -euo pipefail
           rm -rf fabric-client
@@ -87,48 +87,66 @@ jobs:
             -loader "$FABRIC_LOADER_VERSION" \
             -noprofile
           test -d fabric-client/versions
-          find fabric-client -type f -print | sort | tee fabric-client-files.txt
+          find fabric-client -type f -print | sort | tee fabric-client-files-before-seeding.txt
 
-      - name: Verify the installed Fabric client contains the full Minecraft runtime
+      - name: Ensure the complete verified Minecraft JAR is in the Fabric version directory
         run: |
           set -euo pipefail
-          CLIENT_JARS=(fabric-client/versions/*/*.jar)
-          FOUND=0
-          for jar in "${CLIENT_JARS[@]}"; do
+          mkdir -p "fabric-client/versions/$MC_VERSION"
+          FOUND_MATCH=0
+          while IFS= read -r jar; do
             [ -f "$jar" ] || continue
-            FOUND=1
-            bytes="$(stat -c '%s' "$jar")"
-            echo "$bytes $jar"
-            if [ "$bytes" -ge 30000000 ]; then
-              echo "Complete Minecraft client candidate: $jar"
-              sha256sum "$jar"
-              INSTALLED_SHA="$(sha256sum "$jar" | awk '{print $1}')"
-              test "$INSTALLED_SHA" = "$MC_CLIENT_SHA256"
+            sha="$(sha256sum "$jar" | awk '{print $1}')"
+            if [ "$sha" = "$MC_CLIENT_SHA256" ]; then
+              echo "Verified Minecraft client already present: $jar"
+              FOUND_MATCH=1
+              break
             fi
-          done
-          test "$FOUND" -eq 1
-          FULL_CLIENT_COUNT="$(find fabric-client -type f -size +30M | wc -l)"
-          echo "Files larger than 30 MiB: $FULL_CLIENT_COUNT"
-          test "$FULL_CLIENT_COUNT" -ge 1
+          done < <(find fabric-client -type f -name '*.jar' -print)
+          if [ "$FOUND_MATCH" -eq 0 ]; then
+            echo "Fabric installer did not place the complete Minecraft client JAR; seeding the verified Mojang JAR."
+            cp minecraft-input/minecraft-26.2-client.jar "fabric-client/versions/$MC_VERSION/$MC_VERSION.jar"
+          fi
+          test -f "fabric-client/versions/$MC_VERSION/$MC_VERSION.jar"
+          INSTALLED_SHA="$(sha256sum "fabric-client/versions/$MC_VERSION/$MC_VERSION.jar" | awk '{print $1}')"
+          test "$INSTALLED_SHA" = "$MC_CLIENT_SHA256"
+          INSTALLED_BYTES="$(stat -c '%s' "fabric-client/versions/$MC_VERSION/$MC_VERSION.jar")"
+          echo "Installed Minecraft client bytes: $INSTALLED_BYTES"
+          test "$INSTALLED_BYTES" -ge 30000000
+
+      - name: Verify the complete Fabric client runtime
+        run: |
+          set -euo pipefail
           test -d fabric-client/libraries
           test -d fabric-client/versions
           test -d fabric-client/assets
+          test -f "fabric-client/versions/$MC_VERSION/$MC_VERSION.jar"
+          INSTALLED_SHA="$(sha256sum "fabric-client/versions/$MC_VERSION/$MC_VERSION.jar" | awk '{print $1}')"
+          test "$INSTALLED_SHA" = "$MC_CLIENT_SHA256"
+          INSTALLED_BYTES="$(stat -c '%s' "fabric-client/versions/$MC_VERSION/$MC_VERSION.jar")"
+          echo "Complete Minecraft client: $INSTALLED_BYTES bytes"
+          test "$INSTALLED_BYTES" -ge 30000000
+          echo "Fabric client directories:"
+          du -sh fabric-client/* 2>/dev/null || true
+          find fabric-client -type f -print | sort | tee fabric-client-files.txt
+          echo "JAR inventory:"
+          find fabric-client -type f -name '*.jar' -printf '%s %p\n' | sort -nr | tee fabric-client-jars.txt
 
       - name: Verify Fabric API is present and non-truncated
         run: |
           set -euo pipefail
           mkdir -p fabric-libs
           curl -fL --retry 5 --retry-all-errors \
-            "https://api.modrinth.com/maven/maven/modrinth/P7dR8mSH/${FABRIC_API_VERSION_ID}/P7dR8mSH-${FABRIC_API_VERSION_ID}.jar" \
-            -o fabric-libs/fabric-api-${FABRIC_API_VERSION}.jar
-          test -s fabric-libs/fabric-api-${FABRIC_API_VERSION}.jar
-          API_BYTES="$(stat -c '%s' fabric-libs/fabric-api-${FABRIC_API_VERSION}.jar)"
+            "https://api.modrinth.com/maven/maven/modrinth/P7dR8mSH/$FABRIC_API_VERSION_ID/P7dR8mSH-$FABRIC_API_VERSION_ID.jar" \
+            -o "fabric-libs/fabric-api-$FABRIC_API_VERSION.jar"
+          test -s "fabric-libs/fabric-api-$FABRIC_API_VERSION.jar"
+          API_BYTES="$(stat -c '%s' "fabric-libs/fabric-api-$FABRIC_API_VERSION.jar")"
           echo "Fabric API bytes: $API_BYTES"
           test "$API_BYTES" -ge 2000000
-          sha256sum fabric-libs/fabric-api-${FABRIC_API_VERSION}.jar | tee fabric-libs/fabric-api.sha256
-          unzip -t fabric-libs/fabric-api-${FABRIC_API_VERSION}.jar >/dev/null
+          sha256sum "fabric-libs/fabric-api-$FABRIC_API_VERSION.jar" | tee fabric-libs/fabric-api.sha256
+          unzip -t "fabric-libs/fabric-api-$FABRIC_API_VERSION.jar" >/dev/null
 
-      - name: Verify the existing vanilla Eagler input remains separate
+      - name: Verify the existing Eagler production input remains separate
         run: |
           set -euo pipefail
           test -f Eaglercraft-26.2-u1-Extracted/eagler-patcher
@@ -143,9 +161,12 @@ jobs:
             echo "=== COMPLETE FABRIC 26.2 INPUT AUDIT ==="
             echo "Minecraft: $MC_VERSION"
             echo "Expected Minecraft client SHA256: $MC_CLIENT_SHA256"
-            echo "Actual Minecraft client:"
             sha256sum minecraft-input/minecraft-26.2-client.jar
             stat -c 'Minecraft client bytes: %s' minecraft-input/minecraft-26.2-client.jar
+            echo
+            echo "Installed Fabric Minecraft client:"
+            sha256sum "fabric-client/versions/$MC_VERSION/$MC_VERSION.jar"
+            stat -c 'Installed client bytes: %s' "fabric-client/versions/$MC_VERSION/$MC_VERSION.jar"
             echo
             echo "Fabric Installer: $FABRIC_INSTALLER_VERSION"
             sha256sum fabric-installer.jar
@@ -153,8 +174,8 @@ jobs:
             echo
             echo "Fabric Loader: $FABRIC_LOADER_VERSION"
             echo "Fabric API: $FABRIC_API_VERSION"
-            sha256sum fabric-libs/fabric-api-${FABRIC_API_VERSION}.jar
-            stat -c 'Fabric API bytes: %s' fabric-libs/fabric-api-${FABRIC_API_VERSION}.jar
+            sha256sum "fabric-libs/fabric-api-$FABRIC_API_VERSION.jar"
+            stat -c 'Fabric API bytes: %s' "fabric-libs/fabric-api-$FABRIC_API_VERSION.jar"
             echo
             echo "Fabric client total bytes:"
             find fabric-client -type f -printf '%s\n' | awk '{s+=$1} END {print s}'
@@ -166,11 +187,11 @@ jobs:
 
           cat > fabric-compatibility/manifest.json <<EOF
           {
-            "minecraft": "${MC_VERSION}",
-            "minecraftClientSha256": "${MC_CLIENT_SHA256}",
-            "fabricLoader": "${FABRIC_LOADER_VERSION}",
-            "fabricInstaller": "${FABRIC_INSTALLER_VERSION}",
-            "fabricApi": "${FABRIC_API_VERSION}",
+            "minecraft": "$MC_VERSION",
+            "minecraftClientSha256": "$MC_CLIENT_SHA256",
+            "fabricLoader": "$FABRIC_LOADER_VERSION",
+            "fabricInstaller": "$FABRIC_INSTALLER_VERSION",
+            "fabricApi": "$FABRIC_API_VERSION",
             "purpose": "complete Fabric reference client plus compile-time compatibility inputs",
             "runtimeLoader": "eagler",
             "fabricLoaderRuntime": false,
@@ -183,17 +204,7 @@ jobs:
               "fabricClientHasLibraries": true,
               "fabricClientHasVersions": true,
               "fabricClientHasAssets": true
-            },
-            "plannedPortTargets": [
-              "fabric lifecycle/client events",
-              "fabric key mappings",
-              "fabric screen events",
-              "fabric networking used by ported mods",
-              "fabric loader metadata/version APIs",
-              "fabric environment/entrypoint APIs",
-              "UkuLib APIs required by Armor HUD",
-              "Placeholder API pieces actually used by ported mods"
-            ]
+            }
           }
           EOF
           cat fabric-compatibility/manifest.json
@@ -209,6 +220,8 @@ jobs:
             minecraft-input/
             fabric-client/
             fabric-client-files.txt
+            fabric-client-files-before-seeding.txt
+            fabric-client-jars.txt
             fabric-libs/
             fabric-compatibility/manifest.json
             fabric-compatibility/size-audit.txt
