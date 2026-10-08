@@ -1,0 +1,389 @@
+name: Probe official Litematica / MaLiLib / Mod Menu port (26.2)
+
+# Does NOT build or change the client. It answers one question with real data:
+# how far are the official sources from compiling inside the Eagler u1 project?
+#
+# It builds the same patched Java project as 02-compile-eagler-vbv.yml, clones the
+# official sources at pinned 26.2 refs, compiles them against the project's own
+# classes with plain javac, and writes a report:
+#   1. which packages/classes are missing (jars to add, shims to write)
+#   2. whether each Mixin target class and injected method still exists in the
+#      Eagler-patched game source (TeaVM cannot run Mixin, so injections must be
+#      woven at build time or rewritten as source patches)
+#   3. which Fabric / Quilt APIs need a shim
+# The report is shown in the run summary and uploaded as an artifact.
+
+on:
+  workflow_dispatch:
+    inputs:
+      litematica_ref:
+        description: "sakura-ryoko/litematica tag or branch"
+        required: true
+        default: "26.2-0.28.6"
+        type: string
+      malilib_ref:
+        description: "sakura-ryoko/malilib tag or branch"
+        required: true
+        default: "26.2-0.29.5"
+        type: string
+      modmenu_ref:
+        description: "TerraformersMC/ModMenu tag or branch"
+        required: true
+        default: "26.2"
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  MC_CLIENT_URL: "https://piston-data.mojang.com/v1/objects/2dc72797acbc1b63fc16a11c4ac393605f453754/client.jar"
+  MC_CLIENT_SHA256: "40896ee9f1e2bec3c934daac7e93d41e9e3d9c2f8ae0ca366d52ffbfd1afa290"
+  PIN_BUNDLE_SHA256: "fd944e9cabbebbf4bddce8a39e1b233b3c7d0cd4f860f9cae37550a3fcfa8b02"
+  PIN_SKELETON_SHA256: "3656a83ed8187e2d859612c566f3aa73e242bf1e4633990c5bb4929e0a846c94"
+  PIN_OVERLAY_SHA256: "2ba7e3376891c64f8bf57f3687e05b8dbe1971a75475b6825449e5e5f96d71f3"
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout (only what the probe needs)
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            ViaBackport26.2-ClientSide
+            Eaglercraft-26.2-u1-Extracted
+            ModsPack
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Java 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: Download pinned Minecraft 26.2 client JAR
+        run: |
+          set -euo pipefail
+          curl -fL --retry 3 "$MC_CLIENT_URL" -o "$GITHUB_WORKSPACE/minecraft-26.2-client.jar"
+          echo "$MC_CLIENT_SHA256  $GITHUB_WORKSPACE/minecraft-26.2-client.jar" | sha256sum -c -
+
+      - name: Create the patched Java project (same as workflow 02)
+        run: |
+          set -euo pipefail
+          root="$GITHUB_WORKSPACE/Eaglercraft-26.2-u1-Extracted"
+          chmod +x "$root/eagler-patcher"
+          test "$(sha256sum "$root/source-patch-bundle.zip" | cut -d' ' -f1)" = "$PIN_BUNDLE_SHA256"
+          test "$(sha256sum "$root/project-skeleton-v5-teavm-runtime-verified.zip" | cut -d' ' -f1)" = "$PIN_SKELETON_SHA256"
+          test "$(sha256sum "$root/inputs/resource-overlay-normal.zip" | cut -d' ' -f1)" = "$PIN_OVERLAY_SHA256"
+          java17="${JAVA_HOME_17_X64:?JAVA_HOME_17_X64 is not set}/bin/java"
+          export EAGLER_PATCHER_JAVA="$java17"
+          mkdir -p vbv-build
+          "$root/eagler-patcher" create-dev \
+            --jar "$GITHUB_WORKSPACE/minecraft-26.2-client.jar" \
+            --output "$GITHUB_WORKSPACE/vbv-build/project" \
+            --vineflower "$root/inputs/vineflower-1.12.0.jar" \
+            --java17 "$java17" \
+            --patch-bundle "$root/source-patch-bundle.zip" \
+            --expected-bundle-sha256 "$PIN_BUNDLE_SHA256" \
+            --project-skeleton "$root/project-skeleton-v5-teavm-runtime-verified.zip" \
+            --expected-skeleton-sha256 "$PIN_SKELETON_SHA256" \
+            --resource-overlay "$root/inputs/resource-overlay-normal.zip" \
+            --expected-resource-overlay-sha256 "$PIN_OVERLAY_SHA256" \
+            --external-resource-root "$root/inputs/resources"
+          python3 ViaBackport26.2-ClientSide/patch/apply_vbv_patch.py "$GITHUB_WORKSPACE/vbv-build/project"
+
+      - name: Compile the game classes and get the project's compile classpath
+        run: |
+          set -euo pipefail
+          cd vbv-build/project
+          chmod +x ./gradlew
+          export JAVA_HOME="${JAVA_HOME_25_X64:?JAVA_HOME_25_X64 is not set}"
+          export PATH="$JAVA_HOME/bin:$PATH"
+          cat > "$GITHUB_WORKSPACE/printcp.init.gradle" <<'GRADLE'
+          allprojects {
+            plugins.withId('java') {
+              tasks.register('printCp') {
+                doLast { println 'CP=' + project.sourceSets.main.compileClasspath.asPath }
+              }
+            }
+          }
+          GRADLE
+          ./gradlew :game:compileJava --console=plain --no-daemon || echo "::warning::game compileJava failed; the probe falls back to -sourcepath"
+          ./gradlew -q -I "$GITHUB_WORKSPACE/printcp.init.gradle" :game:printCp --console=plain --no-daemon \
+            | grep '^CP=' | tail -1 | cut -c4- > "$GITHUB_WORKSPACE/game-classpath.txt" || true
+          echo "classpath entries: $(tr ':' '\n' < "$GITHUB_WORKSPACE/game-classpath.txt" | grep -c .)"
+          ls -d game/build/classes/java/main 2>/dev/null || echo "no compiled game classes found"
+
+      - name: Clone the official sources
+        run: |
+          set -euo pipefail
+          mkdir -p official
+          git clone --depth 1 --branch "${{ inputs.litematica_ref }}" https://github.com/sakura-ryoko/litematica.git official/litematica
+          git clone --depth 1 --branch "${{ inputs.malilib_ref }}"    https://github.com/sakura-ryoko/malilib.git    official/malilib
+          git clone --depth 1 --branch "${{ inputs.modmenu_ref }}"    https://github.com/TerraformersMC/ModMenu.git  official/modmenu
+          for d in litematica malilib modmenu; do
+            echo "$d: $(git -C official/$d rev-parse --short HEAD), $(find official/$d/src/main -name '*.java' | wc -l) java files"
+          done
+
+      - name: Download compile-only helper jars (Mixin, MixinExtras, Fabric Loader, annotations)
+        run: |
+          set -uo pipefail
+          mkdir -p libs
+          fetch() {
+            if curl -fL --retry 3 --retry-all-errors "$1" -o "libs/$2" && test -s "libs/$2"; then echo "ok: $2"; else echo "::warning::could not download $2"; rm -f "libs/$2"; fi
+          }
+          fetch "https://repo1.maven.org/maven2/net/fabricmc/sponge-mixin/0.17.3%2Bmixin.0.8.7/sponge-mixin-0.17.3%2Bmixin.0.8.7.jar" sponge-mixin.jar
+          fetch "https://repo1.maven.org/maven2/io/github/llamalad7/mixinextras-common/0.5.4/mixinextras-common-0.5.4.jar" mixinextras-common.jar
+          fetch "https://maven.fabricmc.net/net/fabricmc/fabric-loader/0.19.3/fabric-loader-0.19.3.jar" fabric-loader.jar
+          fetch "https://repo1.maven.org/maven2/org/jspecify/jspecify/1.0.0/jspecify-1.0.0.jar" jspecify.jar
+          fetch "https://repo1.maven.org/maven2/org/jetbrains/annotations/26.0.2/annotations-26.0.2.jar" jetbrains-annotations.jar
+          ls -l libs
+
+      - name: Compile the official sources against the Eagler project (errors are the data)
+        run: |
+          set -uo pipefail
+          proj="$GITHUB_WORKSPACE/vbv-build/project"
+          cp_game="$(cat "$GITHUB_WORKSPACE/game-classpath.txt" 2>/dev/null || true)"
+          cp_libs="$(ls "$GITHUB_WORKSPACE"/libs/*.jar 2>/dev/null | tr '\n' ':')"
+          classes="$proj/game/build/classes/java/main"
+          extra=()
+          if [ -d "$classes" ]; then
+            cp_all="$classes:$cp_game:$cp_libs"
+          else
+            cp_all="$cp_game:$cp_libs"
+            extra=(-sourcepath "$proj/game/src/main/java" -implicit:none)
+          fi
+          find official/litematica/src/main/java official/malilib/src/main/java official/modmenu/src/main/java -name '*.java' > srcs.txt
+          mkdir -p jout
+          "$JAVA_HOME_25_X64/bin/javac" --release 25 -proc:none -XDshould-stop.ifError=FLOW \
+            -Xmaxerrs 100000 -Xmaxwarns 0 -d jout -cp "$cp_all" "${extra[@]}" @srcs.txt 2> javac.log
+          echo "javac exit: $?"
+          echo "errors: $(grep -c ' error: ' javac.log || true)"
+          exit 0
+
+      - name: Build the report
+        run: |
+          set -euo pipefail
+          cat > probe.py <<'PY'
+          #!/usr/bin/env python3
+          """Port-feasibility report for the official Litematica / MaLiLib / Mod Menu sources.
+
+          Usage: probe.py GAME_SRC JAVAC_LOG OUT_MD name=repo_dir [name=repo_dir ...]
+          """
+          import collections
+          import pathlib
+          import re
+          import sys
+
+          game_src = pathlib.Path(sys.argv[1])
+          javac_log = pathlib.Path(sys.argv[2])
+          out_md = pathlib.Path(sys.argv[3])
+          repos = {}
+          for arg in sys.argv[4:]:
+              name, _, path = arg.partition("=")
+              repos[name] = pathlib.Path(path)
+
+          lines = []
+          def emit(s=""):
+              lines.append(s)
+
+          def table(rows, header):
+              emit("| " + " | ".join(header) + " |")
+              emit("|" + "---|" * len(header))
+              for r in rows:
+                  emit("| " + " | ".join(str(c) for c in r) + " |")
+              emit()
+
+          # ----------------------------------------------------------------- javac log
+          def mod_of(path):
+              for name in repos:
+                  if f"/{name}/" in path.replace("\\", "/"):
+                      return name
+              return "other"
+
+          err_re = re.compile(r"^(.*?\.java):(\d+): error: (.*)$")
+          per_mod = collections.Counter()
+          missing_pkgs = collections.Counter()
+          missing_syms = collections.Counter()
+          other_msgs = collections.Counter()
+          log_lines = javac_log.read_text(errors="replace").splitlines() if javac_log.exists() else []
+          i = 0
+          while i < len(log_lines):
+              m = err_re.match(log_lines[i])
+              if not m:
+                  i += 1
+                  continue
+              path, msg = m.group(1), m.group(3)
+              per_mod[mod_of(path)] += 1
+              pm = re.match(r"package (\S+) does not exist", msg)
+              if pm:
+                  missing_pkgs[pm.group(1)] += 1
+              elif msg.startswith("cannot find symbol"):
+                  sym = ""
+                  for j in range(i + 1, min(i + 6, len(log_lines))):
+                      sm = re.match(r"\s+symbol:\s+(.*)", log_lines[j])
+                      if sm:
+                          sym = sm.group(1).strip()
+                          break
+                  missing_syms[sym] += 1
+              else:
+                  other_msgs[re.sub(r"[`'\"].*?[`'\"]", "...", msg)[:90]] += 1
+              i += 1
+
+          emit("# Official-source port probe (Minecraft 26.2 / Eagler u1)")
+          emit()
+          emit("## 1. Plain javac compile against the patched Eagler project")
+          emit()
+          if not per_mod:
+              emit("javac reported **no errors** (or produced no log).")
+              emit()
+          else:
+              table(sorted(per_mod.items()), ["source", "errors"])
+              emit("Top missing packages (third-party libraries or Fabric APIs that need a jar or a shim):")
+              emit()
+              table(missing_pkgs.most_common(25), ["package", "errors"])
+              emit("Top missing symbols (classes/methods that do not exist in the Eagler game source):")
+              emit()
+              table(missing_syms.most_common(30), ["symbol", "errors"])
+              emit("Other error kinds:")
+              emit()
+              table(other_msgs.most_common(15), ["message", "count"])
+
+          # ------------------------------------------------------------- mixin targets
+          def balanced(text, start):
+              """Return text of the parenthesised group beginning at text[start] == '('."""
+              depth = 0
+              in_str = False
+              for k in range(start, len(text)):
+                  c = text[k]
+                  if in_str:
+                      if c == "\\":
+                          continue
+                      if c == '"':
+                          in_str = False
+                  elif c == '"':
+                      in_str = True
+                  elif c == "(":
+                      depth += 1
+                  elif c == ")":
+                      depth -= 1
+                      if depth == 0:
+                          return text[start + 1:k]
+              return ""
+
+          def resolve_fqn(simple, imports, pkg, wildcards=()):
+              head = simple.split(".")[0]
+              if head in imports:
+                  return imports[head] + simple[len(head):]
+              if "." in simple and simple[0].islower():
+                  return simple
+              for wp in wildcards:
+                  if find_game_file(wp + "." + simple):
+                      return wp + "." + simple
+              return (pkg + "." if pkg else "") + simple
+
+          def find_game_file(fqn):
+              parts = fqn.replace("$", ".").split(".")
+              while parts:
+                  cand = game_src.joinpath(*parts).with_suffix(".java")
+                  if cand.is_file():
+                      return cand
+                  parts.pop()
+              return None
+
+          emit("## 2. Do the Mixin targets still exist in the Eagler game source?")
+          emit()
+          emit("Eagler is compiled by TeaVM, which cannot run Mixin at runtime, so every injection has to be")
+          emit("woven in at build time or re-written as a source patch. Targets/methods that are missing here")
+          emit("cannot be woven without manual work.")
+          emit()
+
+          summary_rows = []
+          missing_method_rows = []
+          missing_target_rows = []
+          for name, root in repos.items():
+              src = root / "src" / "main" / "java"
+              mixin_classes = targets_ok = targets_bad = meth_ok = meth_bad = 0
+              for jf in sorted(src.rglob("*.java")):
+                  text = jf.read_text(errors="replace")
+                  idx = text.find("@Mixin")
+                  if idx < 0:
+                      continue
+                  mixin_classes += 1
+                  pkg_m = re.search(r"^package\s+([\w.]+);", text, re.M)
+                  pkg = pkg_m.group(1) if pkg_m else ""
+                  imports = {}
+                  for im in re.finditer(r"^import\s+(?!static)([\w.]+)\.(\w+);", text, re.M):
+                      imports[im.group(2)] = im.group(1) + "." + im.group(2)
+                  wildcards = re.findall(r"^import\s+(?!static)([\w.]+)\.\*;", text, re.M)
+                  paren = text.find("(", idx)
+                  ann = balanced(text, paren) if paren >= 0 and text[idx + 6:paren].strip() == "" else ""
+                  targets = [resolve_fqn(t, imports, pkg, wildcards) for t in re.findall(r"([\w.$]+)\.class", ann)]
+                  targets += [t.replace("/", ".") for t in re.findall(r'"([\w./$]+)"', ann)]
+                  target_files = []
+                  for t in targets:
+                      f = find_game_file(t)
+                      if f:
+                          targets_ok += 1
+                          target_files.append(f)
+                      else:
+                          targets_bad += 1
+                          missing_target_rows.append((name, jf.name, t))
+                  target_text = "\n".join(f.read_text(errors="replace") for f in target_files)
+                  for mm in re.finditer(r"\bmethod\s*=\s*(\{[^}]*\}|\"[^\"]*\")", text):
+                      for lit in re.findall(r'"([^"]*)"', mm.group(1)):
+                          meth = lit.split(";")[-1] if lit.startswith("L") and ";" in lit else lit
+                          meth = meth.split("(")[0].strip()
+                          if not meth or meth.startswith("<") or meth == "*":
+                              continue
+                          if not target_files:
+                              meth_bad += 1
+                              continue
+                          if re.search(r"\b" + re.escape(meth) + r"\s*\(", target_text):
+                              meth_ok += 1
+                          else:
+                              meth_bad += 1
+                              missing_method_rows.append((name, jf.name, meth))
+              summary_rows.append((name, mixin_classes, targets_ok, targets_bad, meth_ok, meth_bad))
+
+          table(summary_rows, ["mod", "mixin classes", "targets found", "targets missing", "injection methods found", "injection methods missing"])
+          if missing_target_rows:
+              emit("Mixin targets not present in the game source (first 40):")
+              emit()
+              table(missing_target_rows[:40], ["mod", "mixin", "target"])
+          if missing_method_rows:
+              emit("Injection methods not found in their target (first 40; likely renamed/removed by the Eagler patches):")
+              emit()
+              table(missing_method_rows[:40], ["mod", "mixin", "method"])
+
+          # --------------------------------------------------------- Fabric/Quilt usage
+          emit("## 3. Fabric / Quilt API usage that needs a shim (no Fabric Loader exists in Eagler)")
+          emit()
+          usage = collections.defaultdict(set)
+          for name, root in repos.items():
+              for jf in (root / "src" / "main" / "java").rglob("*.java"):
+                  for im in re.finditer(r"^import\s+(?:static\s+)?((?:net\.fabricmc|org\.quiltmc)[\w.]*);", jf.read_text(errors="replace"), re.M):
+                      usage[(name, im.group(1))].add(jf.name)
+          table(sorted((n, c, len(f)) for (n, c), f in usage.items()), ["mod", "imported", "files"])
+
+          out_md.write_text("\n".join(lines), encoding="utf-8")
+          print(f"wrote {out_md} ({len(lines)} lines)")
+          PY
+          python3 probe.py "$GITHUB_WORKSPACE/vbv-build/project/game/src/main/java" javac.log probe-report.md \
+            litematica=official/litematica malilib=official/malilib modmenu=official/modmenu
+          cat probe-report.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload report
+        uses: actions/upload-artifact@v4
+        with:
+          name: official-mods-probe-${{ github.run_id }}
+          path: |
+            probe-report.md
+            javac.log
+          retention-days: 30
