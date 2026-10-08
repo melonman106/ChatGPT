@@ -85,7 +85,7 @@ jobs:
                   body = self.rfile.read(length)
                   mime = BytesParser(policy=default).parsebytes(
                       ("Content-Type: "+self.headers.get("Content-Type","")+
-                       "\\r\\nMIME-Version: 1.0\\r\\n\\r\\n").encode()+body)
+                       "\r\nMIME-Version: 1.0\r\n\r\n").encode()+body)
                   saved = []
                   for part in mime.iter_parts():
                       name = part.get_filename()
