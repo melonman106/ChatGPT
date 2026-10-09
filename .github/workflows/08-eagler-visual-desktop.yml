@@ -315,13 +315,13 @@ jobs:
           chmod +x "$HOME/.vnc/xstartup"
           sudo ip netns del eagler-kasm >/dev/null 2>&1 || true
           sudo ip netns add eagler-kasm
-          sudo ip link add eagler-kasm-host type veth peer name eagler-kasm-peer
-          sudo ip link set eagler-kasm-peer netns eagler-kasm
-          sudo ip addr add 10.200.0.1/24 dev eagler-kasm-host
-          sudo ip link set eagler-kasm-host up
+          sudo ip link add ekhost type veth peer name ekpeer
+          sudo ip link set ekpeer netns eagler-kasm
+          sudo ip addr add 10.200.0.1/24 dev ekhost
+          sudo ip link set ekhost up
           sudo ip netns exec eagler-kasm ip link set lo up
-          sudo ip netns exec eagler-kasm ip addr add 10.200.0.2/24 dev eagler-kasm-peer
-          sudo ip netns exec eagler-kasm ip link set eagler-kasm-peer up
+          sudo ip netns exec eagler-kasm ip addr add 10.200.0.2/24 dev ekpeer
+          sudo ip netns exec eagler-kasm ip link set ekpeer up
           rm -f /tmp/.X2-lock /tmp/.X11-unix/X2 "$HOME/.vnc/"*":2.pid" "$HOME/.vnc/"*":2.pid.lock"
           echo "Starting KasmVNC inside isolated network namespace eagler-kasm."
           sg ssl-cert -c 'ip netns exec eagler-kasm vncserver :2 -geometry 1280x720 -depth 24 -localhost no -rfbport -1 -websocketPort 8444 -httpd /usr/share/kasmvnc/www -sslOnly -interface 10.200.0.2 -select-de manual'
