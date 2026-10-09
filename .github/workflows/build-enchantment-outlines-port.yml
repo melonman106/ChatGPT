@@ -1,0 +1,58 @@
+name: Build Enchantment Outlines Eaglercraft port
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "Enchantment Outlines.zip"
+      - ".github/workflows/build-enchantment-outlines-port.yml"
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, pathlib, shutil, zipfile
+          src = pathlib.Path("Enchantment Outlines.zip")
+          root = pathlib.Path("build/port")
+          if root.exists(): shutil.rmtree(root)
+          root.mkdir(parents=True)
+          with zipfile.ZipFile(src) as z:
+              for info in z.infolist():
+                  n = info.filename
+                  if info.is_dir() or n.startswith("__MACOSX/") or n.endswith(".DS_Store") or n.startswith("26-3/"):
+                      continue
+                  if n.startswith(("1-21-1/","1-21-5/","1-21-6/","1-21-9/")):
+                      continue
+                  out = n[len("26-1/"):] if n.startswith("26-1/") else n
+                  if out == "pack.mcmeta": continue
+                  p = root / out
+                  p.parent.mkdir(parents=True, exist_ok=True)
+                  p.write_bytes(z.read(info))
+          meta = {"pack":{"pack_format":15,"supported_formats":[15,128],"min_format":15,"max_format":128,"description":"Enchantment Outlines - Eaglercraft 26.2 best-effort port"}}
+          (root/"pack.mcmeta").write_text(json.dumps(meta,indent=2)+"\n")
+          (root/"PORTING-NOTES.txt").write_text(
+            "Best-effort Eaglercraft 26.2 port. Common assets are retained and the nearest available 26-1 shader/model overlay is promoted to the pack root. The 26-3 overlay is excluded.\n\n"
+            "Eaglercraft may not support Minecraft core-shader overrides, modern item-definition JSON, or composite models. If unsupported, the enchanted-only outline effect requires a client renderer/shader patch; this ZIP alone cannot force that feature.\n")
+          out = pathlib.Path("build/Eaglercraft-26.2-Enchantment-Outlines.zip")
+          with zipfile.ZipFile(out,"w",zipfile.ZIP_DEFLATED,compresslevel=9) as z:
+              for p in sorted(root.rglob("*")):
+                  if p.is_file(): z.write(p,p.relative_to(root).as_posix())
+          with zipfile.ZipFile(out) as z:
+              assert z.testzip() is None
+              print("ZIP valid; files:",len(z.namelist()),"bytes:",out.stat().st_size)
+              print("Item shaders:",[n for n in z.namelist() if n.endswith("shaders/core/item.vsh") or n.endswith("shaders/core/item.fsh")])
+              print("Outline PNGs:",sum("/outline/" in n.lower() and n.lower().endswith(".png") for n in z.namelist()))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Eaglercraft-26.2-Enchantment-Outlines
+          path: build/Eaglercraft-26.2-Enchantment-Outlines.zip
+          if-no-files-found: error
+          retention-days: 30
