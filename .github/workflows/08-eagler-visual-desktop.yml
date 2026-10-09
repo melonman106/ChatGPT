@@ -82,7 +82,15 @@ jobs:
           DESKTOP_PASSWORD: ${{ secrets.DESKTOP_PASSWORD }}
         run: |
           set -euo pipefail
-          mkdir -p "$HOME/eagler-visual-session/workspace" "$HOME/eagler-visual-session/inbox" "$HOME/.vnc" "$HOME/Desktop"
+          mkdir -p "$HOME/eagler-visual-session/workspace" "$HOME/eagler-visual-session/inbox" "$HOME/.vnc" "$HOME/Desktop" "$HOME/.config"
+          # This is a disposable CI desktop with no pre-provisioned wallet keys.
+          # Disable KWallet so KDE apps do not prompt for an unusable encryption key.
+          cat > "$HOME/.config/kwalletrc" <<'KWALLET'
+          [Wallet]
+          Enabled=false
+          First Use=false
+          Launch Manager=false
+          KWALLET
           cat > "$HOME/Desktop/Discord.desktop" <<EOF
           [Desktop Entry]
           Version=1.0
@@ -293,11 +301,34 @@ jobs:
             exit 1
           fi
 
-          # Apply the wallpaper after Plasma creates its desktop session.
-          plasma-apply-wallpaperimage "$WALLPAPER" || {
-            echo "KDE wallpaper helper failed; keeping the wallpaper available at $WALLPAPER"
+          # Apply the repository's Rimuru.jpg through Plasma's own D-Bus scripting API.
+          # plasma-apply-wallpaperimage can return successfully without changing the Plasma 6 desktop.
+          WALLPAPER_URI="file://$WALLPAPER"
+          cat > /tmp/eagler-set-wallpaper.js <<EOF
+          var allDesktops = desktops();
+          for (var i = 0; i < allDesktops.length; i++) {
+              var d = allDesktops[i];
+              d.wallpaperPlugin = "org.kde.image";
+              d.currentConfigGroup = ["Wallpaper", "org.kde.image", "General"];
+              d.writeConfig("Image", "$WALLPAPER_URI");
           }
-          echo "KDE Plasma started. Wallpaper file: $WALLPAPER"
+          EOF
+          WALLPAPER_SET=false
+          for i in $(seq 1 15); do
+            if gdbus call --session --dest org.kde.plasmashell --object-path /PlasmaShell \
+              --method org.kde.PlasmaShell.evaluateScript "$(cat /tmp/eagler-set-wallpaper.js)" \
+              >/tmp/eagler-wallpaper-result.log 2>&1; then
+              WALLPAPER_SET=true
+              break
+            fi
+            sleep 2
+          done
+          if [ "$WALLPAPER_SET" != true ]; then
+            cat /tmp/eagler-wallpaper-result.log
+            echo "::error::Could not set the KDE Plasma wallpaper using its D-Bus API."
+            exit 1
+          fi
+          echo "KDE Plasma wallpaper configured to $WALLPAPER"
           test -s "$WALLPAPER"
 
           x11vnc -display "$DISPLAY" -rfbport 5901 -localhost -nopw -forever -shared >/tmp/eagler-vnc.log 2>&1 &
