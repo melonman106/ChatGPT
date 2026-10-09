@@ -243,6 +243,9 @@ jobs:
               height: 720
             allow_resize: true
             pixel_depth: 24
+          pointer:
+            enabled: true
+            game_mode: true
           network:
             protocol: http
             interface: 127.0.0.1
@@ -271,7 +274,7 @@ jobs:
                 time_threshold: 2
             video_streaming_mode:
               codec: auto
-              quality: 23
+              quality: 28
               gop: 12
           command_line:
             prompt: false
