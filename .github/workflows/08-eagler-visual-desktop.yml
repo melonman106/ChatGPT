@@ -429,12 +429,13 @@ jobs:
           XSTART
           chmod +x "$HOME/.vnc/xstartup"
           vncserver -kill :1 >/dev/null 2>&1 || true
-          # Clear stale display lock/socket files left by an earlier failed KasmVNC launch.
-          rm -f /tmp/.X1-lock /tmp/.X11-unix/X1 "$HOME/.vnc/"*":1.pid" "$HOME/.vnc/"*":1.pid.lock"
-          # Ensure the KasmVNC ports are free before starting the new server.
-          sudo fuser -k 5901/tcp 8444/tcp >/dev/null 2>&1 || true
-          # Refresh the supplementary ssl-cert group and start KasmVNC.
-          sg ssl-cert -c 'vncserver :1 -geometry 1280x720 -depth 24 -localhost yes'
+          vncserver -kill :2 >/dev/null 2>&1 || true
+          # Use a fresh display number to avoid collisions with sockets left by KasmVNC startup helpers.
+          rm -f /tmp/.X2-lock /tmp/.X11-unix/X2 "$HOME/.vnc/"*":2.pid" "$HOME/.vnc/"*":2.pid.lock"
+          # Ensure the selected display's standard VNC port and KasmVNC web port are free.
+          sudo fuser -k 5902/tcp 8444/tcp >/dev/null 2>&1 || true
+          # Refresh the supplementary ssl-cert group and start KasmVNC on display :2.
+          sg ssl-cert -c 'vncserver :2 -geometry 1280x720 -depth 24 -localhost yes'
           for i in $(seq 1 45); do
             if curl --insecure --silent --output /dev/null https://127.0.0.1:8444/; then break; fi
             sleep 2
