@@ -6,6 +6,7 @@ on:
     paths:
       - "Enchantment Outlines.zip"
       - ".github/workflows/inspect-enchantment-outlines.yml"
+      - "porting/README.md"
 
 permissions:
   contents: read
