@@ -48,7 +48,8 @@ jobs:
           sudo apt-get update
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
             openjdk-21-jre xfce4 xfce4-terminal thunar xvfb x11vnc novnc websockify \
-            nginx apache2-utils dbus-x11 xauth fonts-dejavu-core curl zip python3 git ffmpeg xz-utils gnupg
+            nginx apache2-utils dbus-x11 xauth fonts-dejavu-core curl zip python3 git ffmpeg xz-utils gnupg \\
+            mesa-utils libgl1-mesa-dri libglx-mesa0 libegl1 mesa-vulkan-drivers
           curl --fail --location --retry 3 "https://discord.com/api/download?platform=linux&format=deb" --output /tmp/discord.deb
           sudo apt-get install -y /tmp/discord.deb
           ffmpeg -version | head -n 1
@@ -261,6 +262,10 @@ jobs:
           export LANG=C.UTF-8
           export LC_ALL=C.UTF-8
           export DISPLAY=:1
+          # Prefer Mesa CPU rendering so Chromium can create a WebGL context in this virtual display.
+          export LIBGL_ALWAYS_SOFTWARE=1
+          export MESA_LOADER_DRIVER_OVERRIDE=llvmpipe
+          export GALLIUM_DRIVER=llvmpipe
           Xvfb "$DISPLAY" -screen 0 1517x852x24 -ac +extension GLX >/tmp/eagler-xvfb.log 2>&1 &
           echo $! >/tmp/eagler-xvfb.pid
           sleep 2
