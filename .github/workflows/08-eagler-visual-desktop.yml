@@ -57,6 +57,10 @@ jobs:
           # Preconfigure Flathub as a system remote with administrator privileges so KDE Discover
           # does not fail with: "Flatpak system operation ConfigureRemote not allowed for user".
           sudo flatpak remote-add --system --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+          # Install Sober in the runner user\x27s Flatpak installation.
+          flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+          flatpak install --user --noninteractive -y flathub org.vinegarhq.Sober
+          flatpak update --user --noninteractive -y
           curl --fail --location --retry 3 "https://discord.com/api/download?platform=linux&format=deb" --output /tmp/discord.deb
           sudo apt-get install -y /tmp/discord.deb
           curl --fail --location --retry 3 \
@@ -71,16 +75,24 @@ jobs:
             --output /tmp/cloudflared
           sudo install -m 0755 /tmp/cloudflared /usr/local/bin/cloudflared
 
-      - name: Restore Discord login profile
+      - name: Restore Discord and Sober profiles
         env:
-          DISCORD_PROFILE_PASSPHRASE: ${{ secrets.DISCORD_PROFILE_PASSPHRASE }}
+          DISCORD_PROFILE_PASSPHRASE: \${{ secrets.DISCORD_PROFILE_PASSPHRASE }}
         run: |
           set -euo pipefail
-          PROFILE_ARCHIVE="${{ runner.temp }}/discord-profile.tar.gpg"
+          PROFILE_ARCHIVE="\${{ runner.temp }}/discord-profile.tar.gpg"
           if [ -f "$PROFILE_ARCHIVE" ]; then
             gpg --batch --yes --pinentry-mode loopback --passphrase "$DISCORD_PROFILE_PASSPHRASE" \
               --decrypt "$PROFILE_ARCHIVE" | tar -xzf - -C "$HOME"
           fi
+          # Preserve saved settings but force OpenGL and Mesa software rendering
+          # as a best-effort workaround for the virtual GPU in this runner.
+          SOBER_CONFIG="$HOME/.var/app/org.vinegarhq.Sober/config/sober/config.json"
+          mkdir -p "$(dirname "$SOBER_CONFIG")"
+          if [ ! -s "$SOBER_CONFIG" ]; then printf "{}\n" > "$SOBER_CONFIG"; fi
+          jq '.use_opengl = true' "$SOBER_CONFIG" > "$SOBER_CONFIG.tmp"
+          mv "$SOBER_CONFIG.tmp" "$SOBER_CONFIG"
+          flatpak override --user --env=LIBGL_ALWAYS_SOFTWARE=1 org.vinegarhq.Sober
 
       - name: Prepare installer, upload inbox, and authenticated gateway
         env:
@@ -193,6 +205,9 @@ jobs:
           Patch source: checked-out repository folder U1-Patcher
           Upload files at the authenticated desktop URL plus /upload.
           Uploaded files appear in ~/eagler-visual-session/inbox.
+          Sober (Roblox) is installed from Flathub; its settings and app data are
+          encrypted and cached for the next run using the existing profile passphrase.
+          OpenGL/software rendering is enabled as a best-effort virtual-GPU workaround.
           Save output under ~/eagler-visual-session/workspace.
           Click Finish and Save Session to end the session.
           EOF
@@ -217,6 +232,17 @@ jobs:
           Categories=Network;InstantMessaging;
           EOF
           chmod +x "$HOME/Desktop/Discord.desktop"
+          cat > "$HOME/Desktop/Sober.desktop" <<EOF
+          [Desktop Entry]
+          Version=1.0
+          Type=Application
+          Name=Sober (Roblox)
+          Comment=Launch Sober with software OpenGL fallback
+          Exec=env LIBGL_ALWAYS_SOFTWARE=1 flatpak run org.vinegarhq.Sober
+          Terminal=false
+          Categories=Game;
+          EOF
+          chmod +x "$HOME/Desktop/Sober.desktop"
           cat > "$HOME/Desktop/Finish and Save Session.desktop" <<EOF
           [Desktop Entry]
           Version=1.0
@@ -381,20 +407,26 @@ jobs:
           done
           echo "Desktop session reached its planned time limit; packaging current files."
 
-      - name: Encrypt Discord profile for next session
+      - name: Encrypt Discord and Sober profiles for next session
         if: always()
         env:
-          DISCORD_PROFILE_PASSPHRASE: ${{ secrets.DISCORD_PROFILE_PASSPHRASE }}
+          DISCORD_PROFILE_PASSPHRASE: \${{ secrets.DISCORD_PROFILE_PASSPHRASE }}
         run: |
           set -euo pipefail
-          if [ -n "$DISCORD_PROFILE_PASSPHRASE" ] && [ -d "$HOME/.config/discord" ]; then
+          if [ -n "$DISCORD_PROFILE_PASSPHRASE" ]; then
             pkill -TERM -x Discord 2>/dev/null || true
             pkill -TERM -x discord 2>/dev/null || true
+            pkill -TERM -x sober 2>/dev/null || true
             sleep 3
-            tar -czf - -C "$HOME" .config/discord |
-              gpg --batch --yes --symmetric --cipher-algo AES256 --pinentry-mode loopback \
-                --passphrase "$DISCORD_PROFILE_PASSPHRASE" \
-                --output "${{ runner.temp }}/discord-profile.tar.gpg"
+            PROFILE_PATHS=()
+            [ -d "$HOME/.config/discord" ] && PROFILE_PATHS+=(.config/discord)
+            [ -d "$HOME/.var/app/org.vinegarhq.Sober" ] && PROFILE_PATHS+=(.var/app/org.vinegarhq.Sober)
+            if [ "\${#PROFILE_PATHS[@]}" -gt 0 ]; then
+              tar -czf - -C "$HOME" "\${PROFILE_PATHS[@]}" |
+                gpg --batch --yes --symmetric --cipher-algo AES256 --pinentry-mode loopback \
+                  --passphrase "$DISCORD_PROFILE_PASSPHRASE" \
+                  --output "\${{ runner.temp }}/discord-profile.tar.gpg"
+            fi
           fi
 
       - name: Save encrypted Discord profile
