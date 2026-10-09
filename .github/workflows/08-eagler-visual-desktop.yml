@@ -77,10 +77,10 @@ jobs:
 
       - name: Restore Discord and Sober profiles
         env:
-          DISCORD_PROFILE_PASSPHRASE: \${{ secrets.DISCORD_PROFILE_PASSPHRASE }}
+          DISCORD_PROFILE_PASSPHRASE: ${{ secrets.DISCORD_PROFILE_PASSPHRASE }}
         run: |
           set -euo pipefail
-          PROFILE_ARCHIVE="\${{ runner.temp }}/discord-profile.tar.gpg"
+          PROFILE_ARCHIVE="${{ runner.temp }}/discord-profile.tar.gpg"
           if [ -f "$PROFILE_ARCHIVE" ]; then
             gpg --batch --yes --pinentry-mode loopback --passphrase "$DISCORD_PROFILE_PASSPHRASE" \
               --decrypt "$PROFILE_ARCHIVE" | tar -xzf - -C "$HOME"
@@ -410,7 +410,7 @@ jobs:
       - name: Encrypt Discord and Sober profiles for next session
         if: always()
         env:
-          DISCORD_PROFILE_PASSPHRASE: \${{ secrets.DISCORD_PROFILE_PASSPHRASE }}
+          DISCORD_PROFILE_PASSPHRASE: ${{ secrets.DISCORD_PROFILE_PASSPHRASE }}
         run: |
           set -euo pipefail
           if [ -n "$DISCORD_PROFILE_PASSPHRASE" ]; then
@@ -421,11 +421,11 @@ jobs:
             PROFILE_PATHS=()
             [ -d "$HOME/.config/discord" ] && PROFILE_PATHS+=(.config/discord)
             [ -d "$HOME/.var/app/org.vinegarhq.Sober" ] && PROFILE_PATHS+=(.var/app/org.vinegarhq.Sober)
-            if [ "\${#PROFILE_PATHS[@]}" -gt 0 ]; then
-              tar -czf - -C "$HOME" "\${PROFILE_PATHS[@]}" |
+            if [ "${#PROFILE_PATHS[@]}" -gt 0 ]; then
+              tar -czf - -C "$HOME" "${PROFILE_PATHS[@]}" |
                 gpg --batch --yes --symmetric --cipher-algo AES256 --pinentry-mode loopback \
                   --passphrase "$DISCORD_PROFILE_PASSPHRASE" \
-                  --output "\${{ runner.temp }}/discord-profile.tar.gpg"
+                  --output "${{ runner.temp }}/discord-profile.tar.gpg"
             fi
           fi
 
