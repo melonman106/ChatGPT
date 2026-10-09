@@ -171,6 +171,17 @@ jobs:
           sudo ln -sf /etc/nginx/sites-available/eagler-desktop /etc/nginx/sites-enabled/eagler-desktop
           sudo nginx -t
           sudo systemctl restart nginx
+          for i in $(seq 1 15); do
+            if curl --silent --show-error --fail --output /dev/null http://127.0.0.1:6081/; then
+              break
+            fi
+            sleep 2
+          done
+          curl --fail --silent --show-error --output /dev/null http://127.0.0.1:6081/ || {
+            sudo nginx -T
+            echo "::error::The authenticated desktop gateway failed its local health check."
+            exit 1
+          }
 
           cat > "$HOME/eagler-visual-session/README-FIRST.txt" <<'EOF'
           Eaglercraft visual desktop
@@ -275,15 +286,15 @@ jobs:
           {
             echo "## Eaglercraft visual desktop"
             echo
-            echo "**Desktop URL:** $URL/?locale=en"
+            echo "**Desktop URL:** $URL/?autoconnect=true&resize=scale&path=websockify"
             echo
             echo "**Username:** eagler"
             echo
-            echo "Use the repository Actions secret `DESKTOP_PASSWORD` as the password."
+            echo "Use the repository Actions secret DESKTOP_PASSWORD as the password."
             echo
             echo "Upload a local client JAR at **$URL/upload**."
             echo
-            echo "In the desktop, double-click **Launch Eaglercraft Setup**. Choose the checked-out `U1-Patcher` folder as Patch Source, and save outputs under `~/eagler-visual-session/workspace`."
+            echo "In the desktop, double-click Launch Eaglercraft Setup. Choose the checked-out U1-Patcher folder as Patch Source, and save outputs under ~/eagler-visual-session/workspace."
             echo
             echo "Double-click **Open GitHub Folder** to clone/open melonman106/ChatGPT in the file manager. This is a local checkout; pushing changes requires GitHub write authentication."
             echo
@@ -294,7 +305,7 @@ jobs:
           echo
           echo "============================================================"
           echo "EAGLERCRAFT VISUAL DESKTOP IS READY"
-          echo "Desktop URL: $URL/?locale=en"
+          echo "Desktop URL: $URL/?autoconnect=true&resize=scale&path=websockify"
           echo "Upload URL:  $URL/upload"
           echo "Username:    eagler"
           echo "Password:    use the DESKTOP_PASSWORD repository secret"
