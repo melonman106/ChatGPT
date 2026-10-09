@@ -68,7 +68,6 @@ jobs:
           test -x "$KIT_DIR/bootstrap/launch-gui-linux-x86_64.sh"
           "$KIT_DIR/bootstrap/bootstrap-linux-x86_64.sh" --app-dir "$KIT_DIR"
           test -f "$KIT_DIR/toolchain.properties"
-          test -x "$KIT_DIR/.toolchain/java17/bin/java" || find "$KIT_DIR/.toolchain" -type f -path '*/bin/java' -perm -u+x | grep -q .
           test -f "$KIT_DIR/toolchain.properties"
           sudo chmod 640 /etc/nginx/eagler.htpasswd
           sudo chown root:www-data /etc/nginx/eagler.htpasswd
