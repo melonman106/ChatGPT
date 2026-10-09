@@ -253,7 +253,10 @@ jobs:
             use_ipv4: true
             use_ipv6: false
             udp:
-              public_ip: 127.0.0.1
+              public_ip: auto
+              port: auto
+              stun_server: auto
+              payload_size: 1200
             ssl:
               require_ssl: true
           encoding:
