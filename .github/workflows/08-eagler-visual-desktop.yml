@@ -62,6 +62,14 @@ jobs:
             https://github.com/melonman106/ChatGPT/releases/download/Modded/Eaglercraft-26.2-u1-Setup.jar \
             --output Eaglercraft-26.2-u1-Setup.jar
           printf '%s\n' "$DESKTOP_PASSWORD" | sudo htpasswd -i -c -B /etc/nginx/eagler.htpasswd eagler
+          KIT_DIR="$HOME/eagler-visual-session/eaglercraft-26.2-patcher"
+          java -jar "$HOME/eagler-visual-session/Eaglercraft-26.2-u1-Setup.jar" --install-dir "$KIT_DIR"
+          test -x "$KIT_DIR/bootstrap/bootstrap-linux-x86_64.sh"
+          test -x "$KIT_DIR/bootstrap/launch-gui-linux-x86_64.sh"
+          "$KIT_DIR/bootstrap/bootstrap-linux-x86_64.sh" --app-dir "$KIT_DIR"
+          test -f "$KIT_DIR/toolchain.properties"
+          test -x "$KIT_DIR/.toolchain/java17/bin/java" || find "$KIT_DIR/.toolchain" -type f -path '*/bin/java' -perm -u+x | grep -q .
+          test -f "$KIT_DIR/toolchain.properties"
           sudo chmod 640 /etc/nginx/eagler.htpasswd
           sudo chown root:www-data /etc/nginx/eagler.htpasswd
 
@@ -136,6 +144,8 @@ jobs:
           - In Eaglercraft Setup, use Install build tools to install the patcher-managed Java 17, Java 25, and Node.js 24 toolchain under .toolchain.
           - For Get game audio, select /usr/bin/ffmpeg as the FFmpeg executable.
           - Setup JAR: ~/eagler-visual-session/Eaglercraft-26.2-u1-Setup.jar
+          - Installed complete patcher kit: ~/eagler-visual-session/eaglercraft-26.2-patcher
+          - Java 17, Java 25, Node.js 24 and npm are bootstrapped automatically before the desktop opens.
           - Patch source: checked-out repository folder U1-Patcher
           - Upload a local file through the authenticated desktop address plus /upload.
           - Uploaded files appear in ~/eagler-visual-session/inbox.
@@ -150,7 +160,7 @@ jobs:
           Type=Application
           Name=Launch Eaglercraft Setup
           Comment=Open the Eaglercraft visual installer
-          Exec=java -jar $HOME/eagler-visual-session/Eaglercraft-26.2-u1-Setup.jar
+          Exec=$HOME/eagler-visual-session/eaglercraft-26.2-patcher/bootstrap/launch-gui-linux-x86_64.sh --app-dir $HOME/eagler-visual-session/eaglercraft-26.2-patcher
           Terminal=false
           Categories=Development;
           EOF
