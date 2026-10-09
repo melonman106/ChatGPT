@@ -257,7 +257,7 @@ jobs:
           export LANG=C.UTF-8
           export LC_ALL=C.UTF-8
           export DISPLAY=:1
-          Xvfb "$DISPLAY" -screen 0 1280x720x24 -ac +extension GLX >/tmp/eagler-xvfb.log 2>&1 &
+          Xvfb "$DISPLAY" -screen 0 1517x852x24 -ac +extension GLX >/tmp/eagler-xvfb.log 2>&1 &
           echo $! >/tmp/eagler-xvfb.pid
           sleep 2
           dbus-launch --exit-with-session startxfce4 >/tmp/eagler-xfce.log 2>&1 &
