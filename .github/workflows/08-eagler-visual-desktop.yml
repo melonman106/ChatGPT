@@ -25,7 +25,7 @@ jobs:
             exit 1
           fi
           if [ -z "$DISCORD_PROFILE_PASSPHRASE" ] || [ "${#DISCORD_PROFILE_PASSPHRASE}" -lt 20 ]; then
-            echo "::error::Add DISCORD_PROFILE_PASSPHRASE as a repository Actions secret with at least 20 characters. It encrypts your saved Discord login profile."
+            echo "::error::Add DISCORD_PROFILE_PASSPHRASE as a repository Actions secret with at least 20 characters."
             exit 1
           fi
 
@@ -50,18 +50,12 @@ jobs:
             openjdk-21-jre plasma-desktop plasma-workspace systemsettings kwin-x11 dolphin dolphin-plugins kio-extras konsole kate ark \
             breeze breeze-gtk-theme breeze-icon-theme oxygen-icon-theme hicolor-icon-theme kde-config-gtk-style kde-spectacle plasma-systemmonitor plasma-nm plasma-pa kscreen \
             xdg-utils desktop-file-utils shared-mime-info gvfs gvfs-backends policykit-1 polkit-kde-agent-1 \
-            nginx apache2-utils dbus-x11 xauth fonts-dejavu-core curl zip python3 git ffmpeg xz-utils gnupg \
+            nginx apache2-utils dbus-x11 xauth fonts-dejavu-core curl zip python3 git ffmpeg xz-utils gnupg openssl \
             mesa-utils mesa-utils-extra libgl1-mesa-dri libglx-mesa0 libegl1 mesa-vulkan-drivers flatpak \
-            kdesdk-thumbnailers filelight fonts-noto-color-emoji fonts-hack \
-            build-essential cmake ninja-build jq ripgrep tree okular gwenview kcalc xclip htop unzip p7zip-full
+            kdesdk-thumbnailers filelight fonts-noto-color-emoji fonts-hack build-essential cmake ninja-build jq ripgrep tree \
+            okular gwenview kcalc xclip htop unzip p7zip-full
           curl --fail --location --retry 3 "https://discord.com/api/download?platform=linux&format=deb" --output /tmp/discord.deb
           sudo apt-get install -y /tmp/discord.deb
-          ffmpeg -version | head -n 1
-          java -version
-          git --version
-          node --version 2>/dev/null || true
-          sudo apt-get clean
-          sudo rm -rf /var/lib/apt/lists/*
           curl --fail --location --retry 3 \
             https://github.com/kasmtech/KasmVNC/releases/download/v1.5.0/kasmvncserver_noble_1.5.0_amd64.deb \
             --output /tmp/kasmvncserver.deb
@@ -83,9 +77,6 @@ jobs:
           if [ -f "$PROFILE_ARCHIVE" ]; then
             gpg --batch --yes --pinentry-mode loopback --passphrase "$DISCORD_PROFILE_PASSPHRASE" \
               --decrypt "$PROFILE_ARCHIVE" | tar -xzf - -C "$HOME"
-            echo "Restored encrypted Discord profile."
-          else
-            echo "No saved Discord profile found; Discord will start with a fresh profile."
           fi
 
       - name: Prepare installer, upload inbox, and authenticated gateway
@@ -94,43 +85,24 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$HOME/eagler-visual-session/workspace" "$HOME/eagler-visual-session/inbox" "$HOME/.vnc" "$HOME/Desktop" "$HOME/.config"
-          # This is a disposable CI desktop with no pre-provisioned wallet keys.
-          # Disable KWallet so KDE apps do not prompt for an unusable encryption key.
-          cat > "$HOME/.config/kwalletrc" <<'KWALLET'
+          cat > "$HOME/.config/kwalletrc" <<'EOF'
           [Wallet]
           Enabled=false
           First Use=false
           Launch Manager=false
-          KWALLET
-          # This is an unattended virtual desktop, not an interactive Linux login.
-          # Disable KDE screen locking so noVNC opens directly onto the desktop.
-          cat > "$HOME/.config/kscreenlockerrc" <<'LOCKER'
+          EOF
+          cat > "$HOME/.config/kscreenlockerrc" <<'EOF'
           [Daemon]
           Autolock=false
           LockOnResume=false
           LockOnStartup=false
-          LOCKER
-          cat > "$HOME/.config/powerdevilrc" <<'POWER'
+          EOF
+          cat > "$HOME/.config/powerdevilrc" <<'EOF'
           [AC][DPMSControl]
           idleTime=0
           [AC][SuspendAndShutdown]
           AutoSuspendAction=0
-          POWER
-          cat > "$HOME/.config/ksmserverrc" <<'KSM'
-          [General]
-          loginMode=restorePreviousLogout
-          KSM
-          cat > "$HOME/Desktop/Discord.desktop" <<EOF
-          [Desktop Entry]
-          Version=1.0
-          Type=Application
-          Name=Discord
-          Comment=Open Discord with the saved local profile
-          Exec=discord
-          Terminal=false
-          Categories=Network;InstantMessaging;
           EOF
-          chmod +x "$HOME/Desktop/Discord.desktop"
           cd "$HOME/eagler-visual-session"
           curl --fail --location --retry 3 \
             https://github.com/melonman106/ChatGPT/releases/download/Modded/Eaglercraft-26.2-u1-Setup.jar \
@@ -155,32 +127,23 @@ jobs:
           MAX_UPLOAD = 1024 * 1024 * 1024
           class Handler(BaseHTTPRequestHandler):
               def do_GET(self):
-                  page = b"""<!doctype html><meta charset=utf-8><title>Eagler file upload</title>
-          <h2>Upload a file to the remote desktop</h2>
-          <p>Choose your Minecraft 26.2 client JAR if the installer asks for it.</p>
-          <form method=post enctype=multipart/form-data>
-          <input type=file name=file required><button>Upload</button></form>"""
-                  self.send_response(200); self.send_header("Content-Type","text/html; charset=utf-8")
-                  self.send_header("Content-Length",str(len(page))); self.end_headers(); self.wfile.write(page)
+                  page = b"""<!doctype html><meta charset=utf-8><title>Eagler file upload</title><h2>Upload a file to the remote desktop</h2><form method=post enctype=multipart/form-data><input type=file name=file required><button>Upload</button></form>"""
+                  self.send_response(200); self.send_header("Content-Type","text/html; charset=utf-8"); self.send_header("Content-Length",str(len(page))); self.end_headers(); self.wfile.write(page)
               def do_POST(self):
                   length = int(self.headers.get("Content-Length","0"))
                   if length <= 0 or length > MAX_UPLOAD:
-                      self.send_error(413, "File is empty or exceeds the 1 GiB upload limit"); return
+                      self.send_error(413); return
                   body = self.rfile.read(length)
-                  mime = BytesParser(policy=default).parsebytes(
-                      ("Content-Type: "+self.headers.get("Content-Type","")+
-                       "\r\nMIME-Version: 1.0\r\n\r\n").encode()+body)
+                  mime = BytesParser(policy=default).parsebytes(("Content-Type: "+self.headers.get("Content-Type","")+"\r\nMIME-Version: 1.0\r\n\r\n").encode()+body)
                   saved = []
                   for part in mime.iter_parts():
                       name = part.get_filename()
                       if not name: continue
                       safe = re.sub(r"[^A-Za-z0-9._-]+","_",os.path.basename(name))[:180] or "upload.bin"
-                      target = DEST / safe
-                      target.write_bytes(part.get_payload(decode=True) or b"")
+                      (DEST / safe).write_bytes(part.get_payload(decode=True) or b"")
                       saved.append(safe)
                   msg = ("Uploaded: "+", ".join(saved) if saved else "No file selected").encode()
-                  self.send_response(200); self.send_header("Content-Type","text/plain; charset=utf-8")
-                  self.send_header("Content-Length",str(len(msg))); self.end_headers(); self.wfile.write(msg)
+                  self.send_response(200); self.send_header("Content-Type","text/plain; charset=utf-8"); self.send_header("Content-Length",str(len(msg))); self.end_headers(); self.wfile.write(msg)
               def log_message(self, fmt, *args): pass
           HTTPServer(("127.0.0.1",8090), Handler).serve_forever()
           PY
@@ -196,16 +159,16 @@ jobs:
               location = /upload/ { proxy_pass http://127.0.0.1:8090/; }
               location /upload-api/ { proxy_pass http://127.0.0.1:8090/; }
               location / {
-              proxy_pass https://127.0.0.1:8444/;
-              proxy_http_version 1.1;
-              proxy_set_header Upgrade $http_upgrade;
-              proxy_set_header Connection "upgrade";
-              proxy_set_header Host $host;
-              proxy_set_header X-Forwarded-Proto https;
-              proxy_ssl_verify off;
-              proxy_buffering off;
-              proxy_read_timeout 3600s;
-              proxy_send_timeout 3600s;
+                  proxy_pass https://127.0.0.1:8444/;
+                  proxy_http_version 1.1;
+                  proxy_set_header Upgrade $http_upgrade;
+                  proxy_set_header Connection "upgrade";
+                  proxy_set_header Host $host;
+                  proxy_set_header X-Forwarded-Proto https;
+                  proxy_ssl_verify off;
+                  proxy_buffering off;
+                  proxy_read_timeout 3600s;
+                  proxy_send_timeout 3600s;
               }
           }
           NGINX
@@ -213,82 +176,49 @@ jobs:
           sudo ln -sf /etc/nginx/sites-available/eagler-desktop /etc/nginx/sites-enabled/eagler-desktop
           sudo nginx -t
           sudo systemctl restart nginx
-          # The gateway deliberately requires Basic Auth, so HTTP 401 is a healthy response here.
           STATUS=""
           for i in $(seq 1 15); do
-            STATUS=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' http://127.0.0.1:6081/ || true)
-            if [ "$STATUS" = "401" ] || [ "$STATUS" = "200" ]; then
-              break
-            fi
+            STATUS=$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:6081/ || true)
+            if [ "$STATUS" = "401" ] || [ "$STATUS" = "200" ]; then break; fi
             sleep 2
           done
-          if [ "$STATUS" != "401" ] && [ "$STATUS" != "200" ]; then
-            sudo nginx -T
-            echo "::error::The authenticated desktop gateway failed its local health check (HTTP status: ${STATUS:-no response})."
-            exit 1
-          fi
-          echo "Authenticated desktop gateway is responding (HTTP $STATUS)."
+          if [ "$STATUS" != "401" ] && [ "$STATUS" != "200" ]; then exit 1; fi
 
           cat > "$HOME/eagler-visual-session/README-FIRST.txt" <<'EOF'
           Eaglercraft visual desktop
-          - Installed system tools: Java 21 runtime, FFmpeg, Git, Python 3, Node if supplied by runner, and KDE Plasma/Dolphin/noVNC desktop.
-          - In Eaglercraft Setup, use Install build tools to install the patcher-managed Java 17, Java 25, and Node.js 24 toolchain under .toolchain.
-          - For Get game audio, select /usr/bin/ffmpeg as the FFmpeg executable.
-          - Setup JAR: ~/eagler-visual-session/Eaglercraft-26.2-u1-Setup.jar
-          - Installed complete patcher kit: ~/eagler-visual-session/eaglercraft-26.2-patcher
-          - Java 17, Java 25, Node.js 24 and npm are bootstrapped automatically before the desktop opens.
-          - Patch source: checked-out repository folder U1-Patcher
-          - Upload a local file through the authenticated desktop address plus /upload.
-          - Uploaded files appear in ~/eagler-visual-session/inbox.
-          - Save output under ~/eagler-visual-session/workspace.
-          - Click "Finish and Save Session" on the desktop when you want to end the session and upload an artifact.
+          Setup JAR: ~/eagler-visual-session/Eaglercraft-26.2-u1-Setup.jar
+          Patch source: checked-out repository folder U1-Patcher
+          Upload files at the authenticated desktop URL plus /upload.
+          Uploaded files appear in ~/eagler-visual-session/inbox.
+          Save output under ~/eagler-visual-session/workspace.
+          Click Finish and Save Session to end the session.
           EOF
 
-          mkdir -p "$HOME/Desktop"
           cat > "$HOME/Desktop/Launch Eaglercraft Setup.desktop" <<EOF
           [Desktop Entry]
           Version=1.0
           Type=Application
           Name=Launch Eaglercraft Setup
-          Comment=Open the Eaglercraft visual installer
           Exec=$HOME/eagler-visual-session/eaglercraft-26.2-patcher/bootstrap/launch-gui-linux-x86_64.sh --app-dir $HOME/eagler-visual-session/eaglercraft-26.2-patcher
           Terminal=false
           Categories=Development;
           EOF
           chmod +x "$HOME/Desktop/Launch Eaglercraft Setup.desktop"
-
-          cat > "$HOME/eagler-visual-session/open-github-folder.sh" <<'EOF'
-          #!/usr/bin/env bash
-          set -euo pipefail
-          DEST="$HOME/eagler-visual-session/github/ChatGPT"
-          mkdir -p "$(dirname "$DEST")"
-          if [ -d "$DEST/.git" ]; then
-            git -C "$DEST" pull --ff-only
-          else
-            git clone --depth 1 https://github.com/melonman106/ChatGPT.git "$DEST"
-          fi
-          dolphin "$DEST"
-          EOF
-          chmod +x "$HOME/eagler-visual-session/open-github-folder.sh"
-
-          cat > "$HOME/Desktop/Open GitHub Folder.desktop" <<EOF
+          cat > "$HOME/Desktop/Discord.desktop" <<EOF
           [Desktop Entry]
           Version=1.0
           Type=Application
-          Name=Open GitHub Folder
-          Comment=Open a local checkout of melonman106/ChatGPT
-          Exec=$HOME/eagler-visual-session/open-github-folder.sh
-          Terminal=true
-          Categories=Development;
+          Name=Discord
+          Exec=discord
+          Terminal=false
+          Categories=Network;InstantMessaging;
           EOF
-          chmod +x "$HOME/Desktop/Open GitHub Folder.desktop"
-
+          chmod +x "$HOME/Desktop/Discord.desktop"
           cat > "$HOME/Desktop/Finish and Save Session.desktop" <<EOF
           [Desktop Entry]
           Version=1.0
           Type=Application
           Name=Finish and Save Session
-          Comment=Package output and end the Actions session
           Exec=bash -lc 'cd "$HOME/eagler-visual-session" && zip -qr eagler-session.zip workspace inbox && touch /tmp/eagler-finish'
           Terminal=true
           Categories=Development;
@@ -303,7 +233,6 @@ jobs:
           export LANG=C.UTF-8
           export LC_ALL=C.UTF-8
           mkdir -p "$HOME/.vnc" "$HOME/.config" "$HOME/Desktop"
-          # KasmVNC provides its own X server and browser-native client; no Xvfb/x11vnc/noVNC bridge.
           sudo tee /etc/kasmvnc/kasmvnc.yaml >/dev/null <<'KASMVNC'
           desktop:
             resolution:
@@ -339,77 +268,32 @@ jobs:
           command_line:
             prompt: false
           KASMVNC
-          # KasmVNC's default TLS configuration expects Ubuntu's snake-oil certificate paths.
-          # Provision a short-lived self-signed pair because hosted runners may not have them.
           sudo install -d -m 0755 /etc/ssl/certs /etc/ssl/private
           if [ ! -s /etc/ssl/certs/ssl-cert-snakeoil.pem ] || [ ! -s /etc/ssl/private/ssl-cert-snakeoil.key ]; then
-            sudo openssl req -x509 -nodes -newkey rsa:2048 -days 2 \\
-              -keyout /etc/ssl/private/ssl-cert-snakeoil.key \\
-              -out /etc/ssl/certs/ssl-cert-snakeoil.pem \\
+            sudo openssl req -x509 -nodes -newkey rsa:2048 -days 2 \
+              -keyout /etc/ssl/private/ssl-cert-snakeoil.key \
+              -out /etc/ssl/certs/ssl-cert-snakeoil.pem \
               -subj "/CN=localhost"
           fi
-          # KasmVNC drops privileges to the desktop user, so grant access through ssl-cert.
           sudo getent group ssl-cert >/dev/null || sudo groupadd --system ssl-cert
           sudo chown root:ssl-cert /etc/ssl/private/ssl-cert-snakeoil.key
           sudo chmod 640 /etc/ssl/private/ssl-cert-snakeoil.key
           sudo chmod 644 /etc/ssl/certs/ssl-cert-snakeoil.pem
           sudo usermod -aG ssl-cert "$USER"
-          # Create the browser-side KasmVNC account; Nginx also protects the public URL.
           printf '%s\n%s\n' "$DESKTOP_PASSWORD" "$DESKTOP_PASSWORD" | vncpasswd -u eagler -w -r
-          cat > "$HOME/.config/kwalletrc" <<'KWALLET'
-          [Wallet]
-          Enabled=false
-          First Use=false
-          Launch Manager=false
-          KWALLET
-          cat > "$HOME/.config/kscreenlockerrc" <<'LOCKER'
-          [Daemon]
-          Autolock=false
-          LockOnResume=false
-          LockOnStartup=false
-          LOCKER
-          cat > "$HOME/.config/powerdevilrc" <<'POWER'
-          [AC][DPMSControl]
-          idleTime=0
-          [AC][SuspendAndShutdown]
-          AutoSuspendAction=0
-          POWER
-          cat > "$HOME/.config/ksmserverrc" <<'KSM'
-          [General]
-          loginMode=restorePreviousLogout
-          KSM
-          cat > "$HOME/.config/kdeglobals" <<'KDEGLOBALS'
-          [General]
-          ColorScheme=BreezeDark
-          [KDE]
-          LookAndFeelPackage=org.kde.breezedark.desktop
-          contrast=4
-          [Icons]
-          Theme=breeze-dark
-          KDEGLOBALS
-          mkdir -p "$HOME/.config/gtk-3.0" "$HOME/.config/gtk-4.0"
-          printf '[Settings]\ngtk-application-prefer-dark-theme=1\n' > "$HOME/.config/gtk-3.0/settings.ini"
-          printf '[Settings]\ngtk-application-prefer-dark-theme=1\n' > "$HOME/.config/gtk-4.0/settings.ini"
-          WALLPAPER="$HOME/eagler-visual-session/Rimuru.jpg"
-          curl --fail --location --retry 3 \
-            "https://raw.githubusercontent.com/melonman106/ChatGPT/main/Rimuru.jpg" \
-            --output "$WALLPAPER"
-          test -s "$WALLPAPER"
           cat > "$HOME/.vnc/xstartup" <<'XSTART'
           #!/usr/bin/env bash
           set -e
-          export XDG_SESSION_TYPE=x11
+          unset SESSION_MANAGER
+          unset DBUS_SESSION_BUS_ADDRESS
           export XDG_CURRENT_DESKTOP=KDE
           export KDE_FULL_SESSION=true
-          export QT_QPA_PLATFORM=xcb
-          eval "$(dbus-launch --sh-syntax)"
           startplasma-x11 >/tmp/eagler-plasma.log 2>&1 &
           for i in $(seq 1 45); do
             if pgrep -u "$USER" -x plasmashell >/dev/null 2>&1; then break; fi
             sleep 2
           done
           if ! pgrep -u "$USER" -x plasmashell >/dev/null 2>&1; then cat /tmp/eagler-plasma.log; exit 1; fi
-          # Disable KWin compositing to reduce llvmpipe CPU use and improve input-to-frame latency.
           qdbus6 org.kde.KWin /Compositor suspend >/dev/null 2>&1 || true
           WALLPAPER="$HOME/eagler-visual-session/Rimuru.jpg"
           WALLPAPER_URI="file://$WALLPAPER"
@@ -423,25 +307,25 @@ jobs:
           }
           EOF
           gdbus call --session --dest org.kde.plasmashell --object-path /PlasmaShell \
-            --method org.kde.PlasmaShell.evaluateScript "$(cat /tmp/eagler-set-wallpaper.js)" \
-            >/tmp/eagler-wallpaper-result.log 2>&1 || true
+            --method org.kde.PlasmaShell.evaluateScript "$(cat /tmp/eagler-set-wallpaper.js)" >/tmp/eagler-wallpaper-result.log 2>&1 || true
           wait
           XSTART
           chmod +x "$HOME/.vnc/xstartup"
           vncserver -kill :1 >/dev/null 2>&1 || true
           vncserver -kill :2 >/dev/null 2>&1 || true
-          # Use a fresh display number to avoid collisions with sockets left by KasmVNC startup helpers.
           rm -f /tmp/.X2-lock /tmp/.X11-unix/X2 "$HOME/.vnc/"*":2.pid" "$HOME/.vnc/"*":2.pid.lock"
-          # Ensure the selected display's standard VNC port and KasmVNC web port are free.
           sudo fuser -k 5902/tcp 8444/tcp >/dev/null 2>&1 || true
-          # Refresh the supplementary ssl-cert group and start KasmVNC on display :2.
-          sg ssl-cert -c 'vncserver :2 -geometry 1280x720 -depth 24 -localhost yes'
+          echo "Existing listeners before KasmVNC:"
+          ss -ltnp 2>/dev/null | grep -E ':(5902|8444)\b' || true
+          echo "Starting KasmVNC with raw RFB TCP disabled; WebSocket remains on 8444."
+          sg ssl-cert -c 'vncserver :2 -geometry 1280x720 -depth 24 -localhost yes -rfbport -1 -websocketPort 8444 -httpd /usr/share/kasmvnc/www -sslOnly -interface 127.0.0.1 -select-de manual'
           for i in $(seq 1 45); do
             if curl --insecure --silent --output /dev/null https://127.0.0.1:8444/; then break; fi
             sleep 2
           done
           if ! curl --insecure --silent --output /dev/null https://127.0.0.1:8444/; then
             cat "$HOME"/.vnc/*.log 2>/dev/null || true
+            ss -ltnp 2>/dev/null || true
             echo "::error::KasmVNC did not start its browser client on port 8444."
             exit 1
           fi
@@ -455,7 +339,7 @@ jobs:
             if [ -n "$URL" ]; then break; fi
             sleep 2
           done
-          if [ -z "$URL" ]; then cat /tmp/eagler-cloudflared.log; echo "::error::Could not establish the temporary desktop tunnel."; exit 1; fi
+          if [ -z "$URL" ]; then cat /tmp/eagler-cloudflared.log; exit 1; fi
           echo "::add-mask::$DESKTOP_PASSWORD"
           {
             echo "## Eaglercraft visual desktop (KasmVNC)"
@@ -502,16 +386,6 @@ jobs:
               gpg --batch --yes --symmetric --cipher-algo AES256 --pinentry-mode loopback \
                 --passphrase "$DISCORD_PROFILE_PASSPHRASE" \
                 --output "${{ runner.temp }}/discord-profile.tar.gpg"
-            echo "Encrypted Discord profile ready for cache save."
-          elif [ ! -f "${{ runner.temp }}/discord-profile.tar.gpg" ] && [ -n "$DISCORD_PROFILE_PASSPHRASE" ]; then
-            mkdir -p "$RUNNER_TEMP/empty-profile/.config/discord"
-            tar -czf - -C "$RUNNER_TEMP/empty-profile" .config/discord |
-              gpg --batch --yes --symmetric --cipher-algo AES256 --pinentry-mode loopback \
-                --passphrase "$DISCORD_PROFILE_PASSPHRASE" \
-                --output "${{ runner.temp }}/discord-profile.tar.gpg"
-            echo "Created an empty encrypted Discord profile baseline."
-          else
-            echo "No new Discord profile to save; preserving any restored encrypted profile."
           fi
 
       - name: Save encrypted Discord profile
