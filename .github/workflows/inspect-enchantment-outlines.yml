@@ -18,54 +18,47 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Inspect ZIP and print port-relevant files
+      - name: Inspect the relevant 26.x implementation
         shell: bash
         run: |
           set -euo pipefail
-          ZIP="Enchantment Outlines.zip"
-          test -f "$ZIP" || { echo "::error::Missing $ZIP in repository root"; exit 1; }
           python3 - <<'PY'
-          import json, pathlib, zipfile
-          zpath = pathlib.Path("Enchantment Outlines.zip")
-          with zipfile.ZipFile(zpath) as z:
-              entries = [i for i in z.infolist() if not i.is_dir()]
-              print("=== PACK ZIP INVENTORY ===")
-              print(f"zip_bytes={zpath.stat().st_size} files={len(entries)}")
-              for i in entries:
-                  print(f"{i.file_size:>9} bytes  {i.filename}")
-              print("\n=== PACK METADATA ===")
-              for i in entries:
-                  name = i.filename.lower()
-                  if pathlib.PurePosixPath(name).name in ("pack.mcmeta", "manifest.json", "sounds.json"):
-                      try:
-                          data = z.read(i)
-                          print(f"\n--- {i.filename} ---")
-                          print(data[:30000].decode("utf-8", "replace"))
-                      except Exception as e:
-                          print(f"[read error: {e}]")
-              print("\n=== SHADERS / RENDER CONFIG / TEXT ASSETS ===")
-              selected = []
-              extensions = {".vsh", ".fsh", ".glsl", ".json", ".properties", ".txt", ".mcmeta", ".lang", ".cfg"}
-              keywords = ("shader", "glint", "enchant", "rendertype", "item", "core", "program", "uniform")
-              for i in entries:
-                  p = pathlib.PurePosixPath(i.filename)
-                  low = i.filename.lower()
-                  if p.suffix.lower() in extensions and ("/shaders/" in "/" + low or any(k in low for k in keywords) or p.name.lower() in ("pack.mcmeta", "shaders.properties")):
-                      selected.append(i)
-              # Prioritize shader and glint-related files; keep log readable.
-              selected.sort(key=lambda i: (0 if any(k in i.filename.lower() for k in ("glint", "enchant")) else 1, i.filename.lower()))
-              total = 0
-              max_total = 180000
-              for i in selected:
-                  raw = z.read(i)
-                  if len(raw) > 24000:
-                      print(f"\n--- {i.filename} [omitted: {len(raw)} bytes exceeds 24000] ---")
+          import pathlib, zipfile
+          p = pathlib.Path("Enchantment Outlines.zip")
+          with zipfile.ZipFile(p) as z:
+              entries = [x for x in z.infolist() if not x.is_dir() and not x.filename.startswith("__MACOSX/")]
+              print(f"ZIP bytes={p.stat().st_size}; entries={len(entries)}")
+              print("\n=== RELEVANT PATHS ===")
+              for x in entries:
+                  n=x.filename.lower()
+                  if (n.startswith("26-3/") or n.startswith("26-1/") or
+                      n in ("pack.mcmeta",) or
+                      ("/shaders/" in n and n.endswith((".vsh",".fsh",".json"))) or
+                      ("assets/minecraft/items/" in n and n.endswith(".json"))):
+                      print(f"{x.file_size:>7} {x.filename}")
+              wanted = [
+                  "pack.mcmeta",
+                  "26-3/assets/minecraft/shaders/core/item.vsh",
+                  "26-3/assets/minecraft/shaders/core/item.fsh",
+                  "26-1/assets/minecraft/shaders/core/item.vsh",
+                  "26-1/assets/minecraft/shaders/core/item.fsh",
+                  "assets/minecraft/shaders/core/rendertype_entity_translucent_cull.vsh",
+                  "assets/minecraft/shaders/core/rendertype_entity_translucent_cull.fsh",
+              ]
+              print("\n=== PACK METADATA AND SHADER SOURCES ===")
+              for name in wanted:
+                  try:
+                      data=z.read(name)
+                  except KeyError:
+                      print(f"\n--- {name}: NOT PRESENT ---")
                       continue
-                  if total + len(raw) > max_total:
-                      print("\n[Remaining text omitted: inspection log size cap reached]")
-                      break
-                  print(f"\n--- {i.filename} ({len(raw)} bytes) ---")
-                  print(raw.decode("utf-8", "replace"))
-                  total += len(raw)
-              print(f"\n=== INSPECTION SUMMARY ===\ntext_files_selected={len(selected)} text_bytes_printed={total}")
+                  print(f"\n--- {name} ({len(data)} bytes) ---")
+                  print(data.decode("utf-8","replace"))
+              print("\n=== ITEM DEFINITION EXAMPLES ===")
+              for name in ("assets/minecraft/items/enchanted_book.json",
+                           "assets/minecraft/items/enchanted_golden_apple.json"):
+                  try: data=z.read(name)
+                  except KeyError: continue
+                  print(f"\n--- {name} ---")
+                  print(data.decode("utf-8","replace"))
           PY
