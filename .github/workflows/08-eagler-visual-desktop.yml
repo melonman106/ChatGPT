@@ -15,16 +15,17 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 350
     steps:
-      - name: Check desktop password secret
+      - name: Check desktop and Discord profile secrets
         env:
           DESKTOP_PASSWORD: ${{ secrets.DESKTOP_PASSWORD }}
+          DISCORD_PROFILE_PASSPHRASE: ${{ secrets.DISCORD_PROFILE_PASSPHRASE }}
         run: |
-          if [ -z "$DESKTOP_PASSWORD" ]; then
-            echo "::error::Add a repository Actions secret named DESKTOP_PASSWORD before running this workflow."
+          if [ -z "$DESKTOP_PASSWORD" ] || [ "${#DESKTOP_PASSWORD}" -lt 12 ]; then
+            echo "::error::Add DESKTOP_PASSWORD as a repository Actions secret with at least 12 characters."
             exit 1
           fi
-          if [ "${#DESKTOP_PASSWORD}" -lt 12 ]; then
-            echo "::error::DESKTOP_PASSWORD must be at least 12 characters long."
+          if [ -z "$DISCORD_PROFILE_PASSPHRASE" ] || [ "${#DISCORD_PROFILE_PASSPHRASE}" -lt 20 ]; then
+            echo "::error::Add DISCORD_PROFILE_PASSPHRASE as a repository Actions secret with at least 20 characters. It encrypts your saved Discord login profile."
             exit 1
           fi
 
@@ -34,12 +35,22 @@ jobs:
           sparse-checkout: U1-Patcher
           sparse-checkout-cone-mode: true
 
+      - name: Restore encrypted Discord profile
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/discord-profile.tar.gpg
+          key: discord-profile-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            discord-profile-
+
       - name: Install desktop and web access dependencies
         run: |
           sudo apt-get update
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
             openjdk-21-jre xfce4 xfce4-terminal thunar xvfb x11vnc novnc websockify \
-            nginx apache2-utils dbus-x11 xauth fonts-dejavu-core curl zip python3 git ffmpeg xz-utils
+            nginx apache2-utils dbus-x11 xauth fonts-dejavu-core curl zip python3 git ffmpeg xz-utils gnupg
+          curl --fail --location --retry 3 "https://discord.com/api/download?platform=linux&format=deb" --output /tmp/discord.deb
+          sudo apt-get install -y /tmp/discord.deb
           ffmpeg -version | head -n 1
           java -version
           git --version
@@ -51,12 +62,37 @@ jobs:
             --output /tmp/cloudflared
           sudo install -m 0755 /tmp/cloudflared /usr/local/bin/cloudflared
 
+      - name: Restore Discord login profile
+        env:
+          DISCORD_PROFILE_PASSPHRASE: ${{ secrets.DISCORD_PROFILE_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          PROFILE_ARCHIVE="${{ runner.temp }}/discord-profile.tar.gpg"
+          if [ -f "$PROFILE_ARCHIVE" ]; then
+            gpg --batch --yes --pinentry-mode loopback --passphrase "$DISCORD_PROFILE_PASSPHRASE" \
+              --decrypt "$PROFILE_ARCHIVE" | tar -xzf - -C "$HOME"
+            echo "Restored encrypted Discord profile."
+          else
+            echo "No saved Discord profile found; Discord will start with a fresh profile."
+          fi
+
       - name: Prepare installer, upload inbox, and authenticated gateway
         env:
           DESKTOP_PASSWORD: ${{ secrets.DESKTOP_PASSWORD }}
         run: |
           set -euo pipefail
-          mkdir -p "$HOME/eagler-visual-session/workspace" "$HOME/eagler-visual-session/inbox" "$HOME/.vnc"
+          mkdir -p "$HOME/eagler-visual-session/workspace" "$HOME/eagler-visual-session/inbox" "$HOME/.vnc" "$HOME/Desktop"
+          cat > "$HOME/Desktop/Discord.desktop" <<EOF
+          [Desktop Entry]
+          Version=1.0
+          Type=Application
+          Name=Discord
+          Comment=Open Discord with the saved local profile
+          Exec=discord
+          Terminal=false
+          Categories=Network;InstantMessaging;
+          EOF
+          chmod +x "$HOME/Desktop/Discord.desktop"
           cd "$HOME/eagler-visual-session"
           curl --fail --location --retry 3 \
             https://github.com/melonman106/ChatGPT/releases/download/Modded/Eaglercraft-26.2-u1-Setup.jar \
@@ -275,6 +311,29 @@ jobs:
             sleep 10
           done
           echo "Desktop session reached its planned time limit; packaging current files."
+
+      - name: Encrypt Discord profile for next session
+        if: always()
+        env:
+          DISCORD_PROFILE_PASSPHRASE: ${{ secrets.DISCORD_PROFILE_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          if [ -n "$DISCORD_PROFILE_PASSPHRASE" ] && [ -d "$HOME/.config/discord" ]; then
+            tar -czf - -C "$HOME" .config/discord |
+              gpg --batch --yes --symmetric --cipher-algo AES256 --pinentry-mode loopback \
+                --passphrase "$DISCORD_PROFILE_PASSPHRASE" \
+                --output "${{ runner.temp }}/discord-profile.tar.gpg"
+            echo "Encrypted Discord profile ready for cache save."
+          else
+            echo "Discord profile directory not found; no profile backup created."
+          fi
+
+      - name: Save encrypted Discord profile
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/discord-profile.tar.gpg
+          key: discord-profile-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Package session files
         if: always()
