@@ -207,6 +207,8 @@ jobs:
           DESKTOP_PASSWORD: ${{ secrets.DESKTOP_PASSWORD }}
         run: |
           set -euo pipefail
+          export LANG=C.UTF-8
+          export LC_ALL=C.UTF-8
           export DISPLAY=:1
           Xvfb "$DISPLAY" -screen 0 1280x720x24 -ac +extension GLX >/tmp/eagler-xvfb.log 2>&1 &
           echo $! >/tmp/eagler-xvfb.pid
@@ -237,7 +239,7 @@ jobs:
           {
             echo "## Eaglercraft visual desktop"
             echo
-            echo "**Desktop URL:** $URL"
+            echo "**Desktop URL:** $URL/?locale=en"
             echo
             echo "**Username:** eagler"
             echo
@@ -256,7 +258,7 @@ jobs:
           echo
           echo "============================================================"
           echo "EAGLERCRAFT VISUAL DESKTOP IS READY"
-          echo "Desktop URL: $URL"
+          echo "Desktop URL: $URL/?locale=en"
           echo "Upload URL:  $URL/upload"
           echo "Username:    eagler"
           echo "Password:    use the DESKTOP_PASSWORD repository secret"
