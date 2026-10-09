@@ -206,6 +206,7 @@ jobs:
               proxy_buffering off;
               proxy_read_timeout 3600s;
               proxy_send_timeout 3600s;
+              }
           }
           NGINX
           sudo rm -f /etc/nginx/sites-enabled/default
