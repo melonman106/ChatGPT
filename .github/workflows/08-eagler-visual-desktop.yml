@@ -280,48 +280,35 @@ jobs:
             --output "$WALLPAPER"
           test -s "$WALLPAPER"
 
-          # Install WhiteSur GTK theme for this user. This desktop is XFCE, not GNOME Shell,
-          # so GNOME Shell dock/GDM gsettings do not apply here.
+          # Install WhiteSur GTK theme, as requested, while keeping XFCE for reliability.
+          # GNOME Shell dock and GDM settings cannot control this XFCE session.
           mkdir -p "$HOME/.config/autostart"
           if [ ! -d "$HOME/WhiteSur-gtk-theme/.git" ]; then
             git clone --depth 1 https://github.com/vinceliuice/WhiteSur-gtk-theme.git "$HOME/WhiteSur-gtk-theme"
-          else
-            git -C "$HOME/WhiteSur-gtk-theme" pull --ff-only
           fi
           (
             cd "$HOME/WhiteSur-gtk-theme"
             ./install.sh -c Dark
           )
           xfconf-query -c xsettings -p /Net/ThemeName --create -t string -s "WhiteSur-Dark" || true
-          xfconf-query -c xfwm4 -p /general/theme --create -t string -s "WhiteSur-dark" || \
-            xfconf-query -c xfwm4 -p /general/theme --create -t string -s "WhiteSur-Dark" || true
+          xfconf-query -c xfwm4 -p /general/theme --create -t string -s "WhiteSur-dark" || true
+          xfconf-query -c xfwm4 -p /general/button_layout --create -t string -s "O|HMC" || true
 
-          # Configure the wallpaper on common Xvfb monitor/workspace keys, then restart xfdesktop
-          # so it reloads the settings. This avoids relying on keys that may not exist at startup.
-          for monitor in monitor0 screen0; do
-            for workspace in workspace0 workspace1 workspace2 workspace3; do
-              base="/backdrop/screen0/$monitor/$workspace"
-              xfconf-query -c xfce4-desktop -p "$base/last-image" --create -t string -s "$WALLPAPER" || true
-              xfconf-query -c xfce4-desktop -p "$base/image-style" --create -t int -s 5 || true
-            done
-          done
-          while IFS= read -r key; do
-            case "$key" in
-              */last-image)
-                xfconf-query -c xfce4-desktop -p "$key" --create -t string -s "$WALLPAPER" || true
-                style_key="${key%/last-image}/image-style"
-                xfconf-query -c xfce4-desktop -p "$style_key" --create -t int -s 5 || true
-                ;;
-            esac
-          done < <(xfconf-query -c xfce4-desktop -l 2>/dev/null || true)
-          xfdesktop --reload || true
-
-          # Keep the XFCE panel at the top. GNOME Shell's Dash-to-Dock settings are not available in XFCE.
-          xfconf-query -c xfce4-panel -p /panels/panel-1/position --create -t string -s "p=6;x=0;y=0" || true
-          xfconf-query -c xfce4-panel -p /panels/panel-1/size --create -t uint -s 30 || true
+          # Place the XFCE panel at the bottom, matching the requested bottom dock position.
+          xfconf-query -c xfce4-panel -p /panels/panel-1/position --create -t string -s "p=10;x=0;y=0" || true
+          xfconf-query -c xfce4-panel -p /panels/panel-1/size --create -t uint -s 38 || true
           xfconf-query -c xfce4-panel -p /panels/panel-1/length --create -t uint -s 100 || true
           xfconf-query -c xfce4-panel -p /panels/panel-1/length-adjust --create -t bool -s false || true
-          xfconf-query -c xfce4-panel -p /panels/panel-1/autohide-behavior --create -t uint -s 0 || true
+
+          # Set the actual active XFCE wallpaper path, then restart xfdesktop to apply it.
+          xfconf-query -c xfce4-desktop -p /backdrop/screen0/monitor0/workspace0/last-image --create -t string -s "$WALLPAPER"
+          xfconf-query -c xfce4-desktop -p /backdrop/screen0/monitor0/workspace0/image-style --create -t int -s 5
+          xfdesktop --quit || true
+          sleep 2
+          xfdesktop >/tmp/eagler-xfdesktop.log 2>&1 &
+          sleep 3
+          echo "Wallpaper configured as: $(xfconf-query -c xfce4-desktop -p /backdrop/screen0/monitor0/workspace0/last-image)"
+          test -s "$WALLPAPER"
 
           x11vnc -display "$DISPLAY" -rfbport 5901 -localhost -nopw -forever -shared >/tmp/eagler-vnc.log 2>&1 &
           echo $! >/tmp/eagler-vnc.pid
