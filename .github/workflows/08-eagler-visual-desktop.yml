@@ -291,7 +291,10 @@ jobs:
           export XDG_CURRENT_DESKTOP=KDE
           export KDE_FULL_SESSION=true
           export QT_QPA_PLATFORM=xcb
-          dbus-launch --exit-with-session startplasma-x11 >/tmp/eagler-plasma.log 2>&1 &
+          # Export the session-bus address into this workflow shell as well as Plasma.
+          # Starting dbus-launch only as a child process leaves gdbus unable to find PlasmaShell.
+          eval "$(dbus-launch --sh-syntax)"
+          startplasma-x11 >/tmp/eagler-plasma.log 2>&1 &
           echo $! >/tmp/eagler-plasma.pid
           for i in $(seq 1 30); do
             if pgrep -x plasmashell >/dev/null 2>&1; then break; fi
