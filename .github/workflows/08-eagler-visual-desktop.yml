@@ -53,7 +53,7 @@ jobs:
             nginx apache2-utils dbus-x11 xauth fonts-dejavu-core curl zip python3 git ffmpeg xz-utils gnupg openssl \
             mesa-utils mesa-utils-extra libgl1-mesa-dri libglx-mesa0 libegl1 mesa-vulkan-drivers flatpak \
             kdesdk-thumbnailers filelight fonts-noto-color-emoji fonts-hack build-essential cmake ninja-build jq ripgrep tree \
-            okular gwenview kcalc xclip htop unzip p7zip-full
+            okular gwenview kcalc xclip htop unzip p7zip-full iproute2
           curl --fail --location --retry 3 "https://discord.com/api/download?platform=linux&format=deb" --output /tmp/discord.deb
           sudo apt-get install -y /tmp/discord.deb
           curl --fail --location --retry 3 \
@@ -159,7 +159,7 @@ jobs:
               location = /upload/ { proxy_pass http://127.0.0.1:8090/; }
               location /upload-api/ { proxy_pass http://127.0.0.1:8090/; }
               location / {
-                  proxy_pass https://127.0.0.1:8444/;
+                  proxy_pass https://10.200.0.2:8444/;
                   proxy_http_version 1.1;
                   proxy_set_header Upgrade $http_upgrade;
                   proxy_set_header Connection "upgrade";
@@ -242,8 +242,10 @@ jobs:
             pixel_depth: 24
           network:
             protocol: http
-            interface: 127.0.0.1
+            interface: 10.200.0.2
             websocket_port: 8444
+            use_ipv4: true
+            use_ipv6: false
             udp:
               public_ip: 127.0.0.1
             ssl:
@@ -311,21 +313,26 @@ jobs:
           wait
           XSTART
           chmod +x "$HOME/.vnc/xstartup"
-          vncserver -kill :1 >/dev/null 2>&1 || true
-          vncserver -kill :2 >/dev/null 2>&1 || true
+          sudo ip netns del eagler-kasm >/dev/null 2>&1 || true
+          sudo ip netns add eagler-kasm
+          sudo ip link add eagler-kasm-host type veth peer name eagler-kasm-peer
+          sudo ip link set eagler-kasm-peer netns eagler-kasm
+          sudo ip addr add 10.200.0.1/24 dev eagler-kasm-host
+          sudo ip link set eagler-kasm-host up
+          sudo ip netns exec eagler-kasm ip link set lo up
+          sudo ip netns exec eagler-kasm ip addr add 10.200.0.2/24 dev eagler-kasm-peer
+          sudo ip netns exec eagler-kasm ip link set eagler-kasm-peer up
           rm -f /tmp/.X2-lock /tmp/.X11-unix/X2 "$HOME/.vnc/"*":2.pid" "$HOME/.vnc/"*":2.pid.lock"
-          sudo fuser -k 5902/tcp 8444/tcp >/dev/null 2>&1 || true
-          echo "Existing listeners before KasmVNC:"
-          ss -ltnp 2>/dev/null | grep -E ':(5902|8444)\b' || true
-          echo "Starting KasmVNC with raw RFB TCP disabled; WebSocket remains on 8444."
-          sg ssl-cert -c 'vncserver :2 -geometry 1280x720 -depth 24 -localhost yes -rfbport -1 -websocketPort 8444 -httpd /usr/share/kasmvnc/www -sslOnly -interface 127.0.0.1 -select-de manual'
+          echo "Starting KasmVNC inside isolated network namespace eagler-kasm."
+          sg ssl-cert -c 'ip netns exec eagler-kasm vncserver :2 -geometry 1280x720 -depth 24 -localhost no -rfbport -1 -websocketPort 8444 -httpd /usr/share/kasmvnc/www -sslOnly -interface 10.200.0.2 -select-de manual'
           for i in $(seq 1 45); do
-            if curl --insecure --silent --output /dev/null https://127.0.0.1:8444/; then break; fi
+            if curl --insecure --silent --output /dev/null https://10.200.0.2:8444/; then break; fi
             sleep 2
           done
-          if ! curl --insecure --silent --output /dev/null https://127.0.0.1:8444/; then
-            cat "$HOME"/.vnc/*.log 2>/dev/null || true
+          if ! curl --insecure --silent --output /dev/null https://10.200.0.2:8444/; then
+            sudo ip netns exec eagler-kasm cat "$HOME"/.vnc/*.log 2>/dev/null || true
             ss -ltnp 2>/dev/null || true
+            sudo ip netns exec eagler-kasm ss -ltnp 2>/dev/null || true
             echo "::error::KasmVNC did not start its browser client on port 8444."
             exit 1
           fi
