@@ -47,7 +47,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-            openjdk-21-jre plasma-desktop plasma-workspace dolphin konsole breeze xvfb x11vnc novnc websockify \
+            openjdk-21-jre plasma-desktop plasma-workspace kwin-x11 dolphin konsole breeze breeze-gtk-theme xvfb x11vnc novnc websockify \
             nginx apache2-utils dbus-x11 xauth fonts-dejavu-core curl zip python3 git ffmpeg xz-utils gnupg \
             mesa-utils libgl1-mesa-dri libglx-mesa0 libegl1 mesa-vulkan-drivers flatpak
           curl --fail --location --retry 3 "https://discord.com/api/download?platform=linux&format=deb" --output /tmp/discord.deb
@@ -300,6 +300,28 @@ jobs:
             echo "::error::KDE Plasma did not start on the virtual display."
             exit 1
           fi
+
+          # Ensure KWin is running: it draws the title bars and close/minimize/maximize buttons.
+          # Some minimal Plasma installs start the shell but omit the X11 window manager.
+          for i in $(seq 1 20); do
+            if pgrep -x kwin_x11 >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          if ! pgrep -x kwin_x11 >/dev/null 2>&1; then
+            kwin_x11 --replace >/tmp/eagler-kwin.log 2>&1 &
+            echo $! >/tmp/eagler-kwin.pid
+            for i in $(seq 1 15); do
+              if pgrep -x kwin_x11 >/dev/null 2>&1; then break; fi
+              sleep 1
+            done
+          fi
+          if ! pgrep -x kwin_x11 >/dev/null 2>&1; then
+            cat /tmp/eagler-plasma.log
+            cat /tmp/eagler-kwin.log 2>/dev/null || true
+            echo "::error::KWin did not start; application window title bars and close buttons may be missing."
+            exit 1
+          fi
+          echo "KWin is running; application window decorations are enabled."
 
           # Apply the repository's Rimuru.jpg through Plasma's own D-Bus scripting API.
           # plasma-apply-wallpaperimage can return successfully without changing the Plasma 6 desktop.
