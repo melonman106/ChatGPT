@@ -171,17 +171,21 @@ jobs:
           sudo ln -sf /etc/nginx/sites-available/eagler-desktop /etc/nginx/sites-enabled/eagler-desktop
           sudo nginx -t
           sudo systemctl restart nginx
+          # The gateway deliberately requires Basic Auth, so HTTP 401 is a healthy response here.
+          STATUS=""
           for i in $(seq 1 15); do
-            if curl --silent --show-error --fail --output /dev/null http://127.0.0.1:6081/; then
+            STATUS=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' http://127.0.0.1:6081/ || true)
+            if [ "$STATUS" = "401" ] || [ "$STATUS" = "200" ]; then
               break
             fi
             sleep 2
           done
-          curl --fail --silent --show-error --output /dev/null http://127.0.0.1:6081/ || {
+          if [ "$STATUS" != "401" ] && [ "$STATUS" != "200" ]; then
             sudo nginx -T
-            echo "::error::The authenticated desktop gateway failed its local health check."
+            echo "::error::The authenticated desktop gateway failed its local health check (HTTP status: ${STATUS:-no response})."
             exit 1
-          }
+          fi
+          echo "Authenticated desktop gateway is responding (HTTP $STATUS)."
 
           cat > "$HOME/eagler-visual-session/README-FIRST.txt" <<'EOF'
           Eaglercraft visual desktop
