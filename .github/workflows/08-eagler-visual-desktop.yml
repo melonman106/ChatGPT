@@ -54,6 +54,9 @@ jobs:
             mesa-utils mesa-utils-extra libgl1-mesa-dri libglx-mesa0 libegl1 mesa-vulkan-drivers flatpak \
             kdesdk-thumbnailers filelight fonts-noto-color-emoji fonts-hack build-essential cmake ninja-build jq ripgrep tree \
             okular gwenview kcalc xclip htop unzip p7zip-full iproute2
+          # Preconfigure Flathub as a system remote with administrator privileges so KDE Discover
+          # does not fail with: "Flatpak system operation ConfigureRemote not allowed for user".
+          sudo flatpak remote-add --system --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
           curl --fail --location --retry 3 "https://discord.com/api/download?platform=linux&format=deb" --output /tmp/discord.deb
           sudo apt-get install -y /tmp/discord.deb
           curl --fail --location --retry 3 \
