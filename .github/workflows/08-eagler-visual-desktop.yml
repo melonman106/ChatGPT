@@ -348,8 +348,12 @@ jobs:
               -out /etc/ssl/certs/ssl-cert-snakeoil.pem \\
               -subj "/CN=localhost"
           fi
-          sudo chmod 600 /etc/ssl/private/ssl-cert-snakeoil.key
+          # KasmVNC drops privileges to the desktop user, so grant access through ssl-cert.
+          sudo getent group ssl-cert >/dev/null || sudo groupadd --system ssl-cert
+          sudo chown root:ssl-cert /etc/ssl/private/ssl-cert-snakeoil.key
+          sudo chmod 640 /etc/ssl/private/ssl-cert-snakeoil.key
           sudo chmod 644 /etc/ssl/certs/ssl-cert-snakeoil.pem
+          sudo usermod -aG ssl-cert "$USER"
           # Create the browser-side KasmVNC account; Nginx also protects the public URL.
           printf '%s\n%s\n' "$DESKTOP_PASSWORD" "$DESKTOP_PASSWORD" | vncpasswd -u eagler -w -r
           cat > "$HOME/.config/kwalletrc" <<'KWALLET'
@@ -425,7 +429,8 @@ jobs:
           XSTART
           chmod +x "$HOME/.vnc/xstartup"
           vncserver -kill :1 >/dev/null 2>&1 || true
-          vncserver :1 -geometry 1280x720 -depth 24 -localhost yes
+          # Refresh the supplementary ssl-cert group for KasmVNC without restarting the runner session.
+          sg ssl-cert -c 'vncserver :1 -geometry 1280x720 -depth 24 -localhost yes'
           for i in $(seq 1 45); do
             if curl --insecure --silent --output /dev/null https://127.0.0.1:8444/; then break; fi
             sleep 2
