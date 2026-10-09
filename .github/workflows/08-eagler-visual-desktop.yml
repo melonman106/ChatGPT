@@ -65,6 +65,7 @@ jobs:
           curl --fail --location --retry 3 \
             https://github.com/kasmtech/KasmVNC/releases/download/v1.5.0/kasmvncserver_noble_1.5.0_amd64.deb \
             --output /tmp/kasmvncserver.deb
+          sudo apt-get update
           sudo apt-get install -y /tmp/kasmvncserver.deb
           command -v vncserver
           command -v vncpasswd
@@ -295,7 +296,7 @@ jobs:
 
       - name: Start KasmVNC desktop and secure access tunnel
         env:
-          DESKTOP_PASSWORD: \${{ secrets.DESKTOP_PASSWORD }}
+          DESKTOP_PASSWORD: ${{ secrets.DESKTOP_PASSWORD }}
         run: |
           set -euo pipefail
           export LANG=C.UTF-8
