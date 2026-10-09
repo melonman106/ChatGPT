@@ -339,6 +339,17 @@ jobs:
           command_line:
             prompt: false
           KASMVNC
+          # KasmVNC's default TLS configuration expects Ubuntu's snake-oil certificate paths.
+          # Provision a short-lived self-signed pair because hosted runners may not have them.
+          sudo install -d -m 0755 /etc/ssl/certs /etc/ssl/private
+          if [ ! -s /etc/ssl/certs/ssl-cert-snakeoil.pem ] || [ ! -s /etc/ssl/private/ssl-cert-snakeoil.key ]; then
+            sudo openssl req -x509 -nodes -newkey rsa:2048 -days 2 \\
+              -keyout /etc/ssl/private/ssl-cert-snakeoil.key \\
+              -out /etc/ssl/certs/ssl-cert-snakeoil.pem \\
+              -subj "/CN=localhost"
+          fi
+          sudo chmod 600 /etc/ssl/private/ssl-cert-snakeoil.key
+          sudo chmod 644 /etc/ssl/certs/ssl-cert-snakeoil.pem
           # Create the browser-side KasmVNC account; Nginx also protects the public URL.
           printf '%s\n%s\n' "$DESKTOP_PASSWORD" "$DESKTOP_PASSWORD" | vncpasswd -u eagler -w -r
           cat > "$HOME/.config/kwalletrc" <<'KWALLET'
