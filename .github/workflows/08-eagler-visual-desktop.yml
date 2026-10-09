@@ -39,7 +39,11 @@ jobs:
           sudo apt-get update
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
             openjdk-21-jre xfce4 xfce4-terminal thunar xvfb x11vnc novnc websockify \
-            nginx apache2-utils dbus-x11 xauth fonts-dejavu-core curl zip python3 git
+            nginx apache2-utils dbus-x11 xauth fonts-dejavu-core curl zip python3 git ffmpeg xz-utils
+          ffmpeg -version | head -n 1
+          java -version
+          git --version
+          node --version 2>/dev/null || true
           sudo apt-get clean
           sudo rm -rf /var/lib/apt/lists/*
           curl --fail --location --retry 3 \
@@ -128,6 +132,9 @@ jobs:
 
           cat > "$HOME/eagler-visual-session/README-FIRST.txt" <<'EOF'
           Eaglercraft visual desktop
+          - Installed system tools: Java 21 runtime, FFmpeg, Git, Python 3, Node if supplied by runner, and XFCE/noVNC desktop.
+          - In Eaglercraft Setup, use Install build tools to install the patcher-managed Java 17, Java 25, and Node.js 24 toolchain under .toolchain.
+          - For Get game audio, select /usr/bin/ffmpeg as the FFmpeg executable.
           - Setup JAR: ~/eagler-visual-session/Eaglercraft-26.2-u1-Setup.jar
           - Patch source: checked-out repository folder U1-Patcher
           - Upload a local file through the authenticated desktop address plus /upload.
