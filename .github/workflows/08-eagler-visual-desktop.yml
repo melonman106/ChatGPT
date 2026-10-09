@@ -190,7 +190,7 @@ jobs:
 
           cat > "$HOME/eagler-visual-session/README-FIRST.txt" <<'EOF'
           Eaglercraft visual desktop
-          - Installed system tools: Java 21 runtime, FFmpeg, Git, Python 3, Node if supplied by runner, and XFCE/noVNC desktop.
+          - Installed system tools: Java 21 runtime, FFmpeg, Git, Python 3, Node if supplied by runner, and KDE Plasma/Dolphin/noVNC desktop.
           - In Eaglercraft Setup, use Install build tools to install the patcher-managed Java 17, Java 25, and Node.js 24 toolchain under .toolchain.
           - For Get game audio, select /usr/bin/ffmpeg as the FFmpeg executable.
           - Setup JAR: ~/eagler-visual-session/Eaglercraft-26.2-u1-Setup.jar
@@ -269,45 +269,35 @@ jobs:
           Xvfb "$DISPLAY" -screen 0 1517x852x24 -ac +extension GLX >/tmp/eagler-xvfb.log 2>&1 &
           echo $! >/tmp/eagler-xvfb.pid
           sleep 2
-          dbus-launch --exit-with-session startxfce4 >/tmp/eagler-xfce.log 2>&1 &
-          echo $! >/tmp/eagler-xfce.pid
-          sleep 4
-
-          # Download the repository wallpaper. Use the raw file URL, then configure XFCE after its desktop channel exists.
+          # Download wallpaper before starting KDE Plasma.
           WALLPAPER="$HOME/eagler-visual-session/Rimuru.jpg"
           curl --fail --location --retry 3 \
             "https://raw.githubusercontent.com/melonman106/ChatGPT/main/Rimuru.jpg" \
             --output "$WALLPAPER"
           test -s "$WALLPAPER"
 
-          # Install WhiteSur GTK theme, as requested, while keeping XFCE for reliability.
-          # GNOME Shell dock and GDM settings cannot control this XFCE session.
-          mkdir -p "$HOME/.config/autostart"
-          if [ ! -d "$HOME/WhiteSur-gtk-theme/.git" ]; then
-            git clone --depth 1 https://github.com/vinceliuice/WhiteSur-gtk-theme.git "$HOME/WhiteSur-gtk-theme"
+          # Start KDE Plasma on X11. The runner uses Mesa software rendering.
+          export XDG_SESSION_TYPE=x11
+          export XDG_CURRENT_DESKTOP=KDE
+          export KDE_FULL_SESSION=true
+          export QT_QPA_PLATFORM=xcb
+          dbus-launch --exit-with-session startplasma-x11 >/tmp/eagler-plasma.log 2>&1 &
+          echo $! >/tmp/eagler-plasma.pid
+          for i in $(seq 1 30); do
+            if pgrep -x plasmashell >/dev/null 2>&1; then break; fi
+            sleep 2
+          done
+          if ! pgrep -x plasmashell >/dev/null 2>&1; then
+            cat /tmp/eagler-plasma.log
+            echo "::error::KDE Plasma did not start on the virtual display."
+            exit 1
           fi
-          (
-            cd "$HOME/WhiteSur-gtk-theme"
-            ./install.sh -c Dark
-          )
-          xfconf-query -c xsettings -p /Net/ThemeName --create -t string -s "WhiteSur-Dark" || true
-          xfconf-query -c xfwm4 -p /general/theme --create -t string -s "WhiteSur-dark" || true
-          xfconf-query -c xfwm4 -p /general/button_layout --create -t string -s "O|HMC" || true
 
-          # Place the XFCE panel at the bottom, matching the requested bottom dock position.
-          xfconf-query -c xfce4-panel -p /panels/panel-1/position --create -t string -s "p=10;x=0;y=0" || true
-          xfconf-query -c xfce4-panel -p /panels/panel-1/size --create -t uint -s 38 || true
-          xfconf-query -c xfce4-panel -p /panels/panel-1/length --create -t uint -s 100 || true
-          xfconf-query -c xfce4-panel -p /panels/panel-1/length-adjust --create -t bool -s false || true
-
-          # Set the actual active XFCE wallpaper path, then restart xfdesktop to apply it.
-          xfconf-query -c xfce4-desktop -p /backdrop/screen0/monitor0/workspace0/last-image --create -t string -s "$WALLPAPER"
-          xfconf-query -c xfce4-desktop -p /backdrop/screen0/monitor0/workspace0/image-style --create -t int -s 5
-          xfdesktop --quit || true
-          sleep 2
-          xfdesktop >/tmp/eagler-xfdesktop.log 2>&1 &
-          sleep 3
-          echo "Wallpaper configured as: $(xfconf-query -c xfce4-desktop -p /backdrop/screen0/monitor0/workspace0/last-image)"
+          # Apply the wallpaper after Plasma creates its desktop session.
+          plasma-apply-wallpaperimage "$WALLPAPER" || {
+            echo "KDE wallpaper helper failed; keeping the wallpaper available at $WALLPAPER"
+          }
+          echo "KDE Plasma started. Wallpaper file: $WALLPAPER"
           test -s "$WALLPAPER"
 
           x11vnc -display "$DISPLAY" -rfbport 5901 -localhost -nopw -forever -shared >/tmp/eagler-vnc.log 2>&1 &
