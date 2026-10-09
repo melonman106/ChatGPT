@@ -51,7 +51,9 @@ jobs:
             breeze breeze-gtk-theme breeze-icon-theme oxygen-icon-theme hicolor-icon-theme kde-config-gtk-style kde-spectacle plasma-systemmonitor plasma-nm plasma-pa kscreen \
             xdg-utils desktop-file-utils shared-mime-info gvfs gvfs-backends policykit-1 polkit-kde-agent-1 \
             xvfb x11vnc novnc websockify nginx apache2-utils dbus-x11 xauth fonts-dejavu-core curl zip python3 git ffmpeg xz-utils gnupg \
-            mesa-utils libgl1-mesa-dri libglx-mesa0 libegl1 mesa-vulkan-drivers flatpak
+            mesa-utils mesa-utils-extra libgl1-mesa-dri libglx-mesa0 libegl1 mesa-vulkan-drivers flatpak \
+            kdeplasma-addons kdesdk-thumbnailers filelight fonts-noto-color-emoji fonts-hack \
+            build-essential cmake ninja-build jq ripgrep tree okular gwenview kcalc xclip htop unzip p7zip-full
           curl --fail --location --retry 3 "https://discord.com/api/download?platform=linux&format=deb" --output /tmp/discord.deb
           sudo apt-get install -y /tmp/discord.deb
           ffmpeg -version | head -n 1
