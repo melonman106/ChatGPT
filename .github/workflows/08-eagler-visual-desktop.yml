@@ -49,7 +49,7 @@ jobs:
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
             openjdk-21-jre xfce4 xfce4-terminal thunar xvfb x11vnc novnc websockify \
             nginx apache2-utils dbus-x11 xauth fonts-dejavu-core curl zip python3 git ffmpeg xz-utils gnupg \
-            mesa-utils libgl1-mesa-dri libglx-mesa0 libegl1 mesa-vulkan-drivers plank arc-theme papirus-icon-theme
+            mesa-utils libgl1-mesa-dri libglx-mesa0 libegl1 mesa-vulkan-drivers gnome-tweaks flatpak
           curl --fail --location --retry 3 "https://discord.com/api/download?platform=linux&format=deb" --output /tmp/discord.deb
           sudo apt-get install -y /tmp/discord.deb
           ffmpeg -version | head -n 1
@@ -273,75 +273,55 @@ jobs:
           echo $! >/tmp/eagler-xfce.pid
           sleep 4
 
-          # Download the repository wallpaper and apply it to every XFCE desktop workspace.
+          # Download the repository wallpaper. Use the raw file URL, then configure XFCE after its desktop channel exists.
           WALLPAPER="$HOME/eagler-visual-session/Rimuru.jpg"
           curl --fail --location --retry 3 \
             "https://raw.githubusercontent.com/melonman106/ChatGPT/main/Rimuru.jpg" \
             --output "$WALLPAPER"
           test -s "$WALLPAPER"
 
-          # Apply a macOS-inspired XFCE theme: slim top panel, dark theme, Papirus icons, and Plank dock.
-          mkdir -p "$HOME/.config/xfce4/xfconf/xfce-perchannel-xml" "$HOME/.config/autostart" "$HOME/.config/plank/dock1/launchers"
-          xfconf-query -c xsettings -p /Net/ThemeName --create -t string -s "Arc-Dark" || true
-          xfconf-query -c xsettings -p /Net/IconThemeName --create -t string -s "Papirus-Dark" || true
-          xfconf-query -c xfwm4 -p /general/theme --create -t string -s "Arc-Dark" || true
-          # XFCE monitor IDs vary under Xvfb, so set all existing wallpaper properties.
-          BACKDROP_KEYS=$(xfconf-query -c xfce4-desktop -l 2>/dev/null | grep '/last-image' || true)
-          if [ -n "$BACKDROP_KEYS" ]; then
-            while IFS= read -r key; do
-              [ -n "$key" ] || continue
-              xfconf-query -c xfce4-desktop -p "$key" --create -t string -s "$WALLPAPER" || true
-              style_key="${key%/last-image}/image-style"
-              xfconf-query -c xfce4-desktop -p "$style_key" --create -t int -s 5 || true
-            done <<< "$BACKDROP_KEYS"
+          # Install WhiteSur GTK theme for this user. This desktop is XFCE, not GNOME Shell,
+          # so GNOME Shell dock/GDM gsettings do not apply here.
+          mkdir -p "$HOME/.config/autostart"
+          if [ ! -d "$HOME/WhiteSur-gtk-theme/.git" ]; then
+            git clone --depth 1 https://github.com/vinceliuice/WhiteSur-gtk-theme.git "$HOME/WhiteSur-gtk-theme"
           else
-            xfconf-query -c xfce4-desktop -p /backdrop/screen0/monitor0/workspace0/last-image --create -t string -s "$WALLPAPER" || true
-            xfconf-query -c xfce4-desktop -p /backdrop/screen0/monitor0/workspace0/image-style --create -t int -s 5 || true
+            git -C "$HOME/WhiteSur-gtk-theme" pull --ff-only
           fi
+          (
+            cd "$HOME/WhiteSur-gtk-theme"
+            ./install.sh -c Dark
+          )
+          xfconf-query -c xsettings -p /Net/ThemeName --create -t string -s "WhiteSur-Dark" || true
+          xfconf-query -c xfwm4 -p /general/theme --create -t string -s "WhiteSur-dark" || \
+            xfconf-query -c xfwm4 -p /general/theme --create -t string -s "WhiteSur-Dark" || true
+
+          # Configure the wallpaper on common Xvfb monitor/workspace keys, then restart xfdesktop
+          # so it reloads the settings. This avoids relying on keys that may not exist at startup.
+          for monitor in monitor0 screen0; do
+            for workspace in workspace0 workspace1 workspace2 workspace3; do
+              base="/backdrop/screen0/$monitor/$workspace"
+              xfconf-query -c xfce4-desktop -p "$base/last-image" --create -t string -s "$WALLPAPER" || true
+              xfconf-query -c xfce4-desktop -p "$base/image-style" --create -t int -s 5 || true
+            done
+          done
+          while IFS= read -r key; do
+            case "$key" in
+              */last-image)
+                xfconf-query -c xfce4-desktop -p "$key" --create -t string -s "$WALLPAPER" || true
+                style_key="${key%/last-image}/image-style"
+                xfconf-query -c xfce4-desktop -p "$style_key" --create -t int -s 5 || true
+                ;;
+            esac
+          done < <(xfconf-query -c xfce4-desktop -l 2>/dev/null || true)
+          xfdesktop --reload || true
+
+          # Keep the XFCE panel at the top. GNOME Shell's Dash-to-Dock settings are not available in XFCE.
           xfconf-query -c xfce4-panel -p /panels/panel-1/position --create -t string -s "p=6;x=0;y=0" || true
           xfconf-query -c xfce4-panel -p /panels/panel-1/size --create -t uint -s 30 || true
           xfconf-query -c xfce4-panel -p /panels/panel-1/length --create -t uint -s 100 || true
           xfconf-query -c xfce4-panel -p /panels/panel-1/length-adjust --create -t bool -s false || true
           xfconf-query -c xfce4-panel -p /panels/panel-1/autohide-behavior --create -t uint -s 0 || true
-
-          # Pin the key session apps in Plank. These are local launchers, not changes to app settings.
-          for app in thunar discord; do
-            if [ -f "$HOME/Desktop/Launch Eaglercraft Setup.desktop" ] && [ "$app" = "thunar" ]; then
-              cp "$HOME/Desktop/Launch Eaglercraft Setup.desktop" "$HOME/.config/plank/dock1/launchers/Eaglercraft Setup.dockitem"
-            fi
-            if [ "$app" = "thunar" ]; then
-              cat > "$HOME/.config/plank/dock1/launchers/Files.dockitem" <<'DOCK'
-          [PlankDockItemPreferences]
-          Launcher=file:///usr/share/applications/thunar.desktop
-          DOCK
-            elif [ "$app" = "discord" ] && [ -f /usr/share/applications/discord.desktop ]; then
-              cat > "$HOME/.config/plank/dock1/launchers/Discord.dockitem" <<'DOCK'
-          [PlankDockItemPreferences]
-          Launcher=file:///usr/share/applications/discord.desktop
-          DOCK
-            fi
-          done
-          cat > "$HOME/.config/plank/dock1/launchers/Terminal.dockitem" <<'DOCK'
-          [PlankDockItemPreferences]
-          Launcher=file:///usr/share/applications/xfce4-terminal.desktop
-          DOCK
-          cat > "$HOME/.config/plank/dock1/launchers/Eaglercraft-Setup.dockitem" <<'DOCK'
-          [PlankDockItemPreferences]
-          Launcher=file:///home/runner/eagler-visual-session/eaglercraft-26.2-patcher/bootstrap/launch-gui-linux-x86_64.sh
-          DOCK
-          cat > "$HOME/.config/autostart/plank.desktop" <<'DESKTOP'
-          [Desktop Entry]
-          Type=Application
-          Name=Plank Dock
-          Comment=macOS-inspired application dock
-          Exec=plank
-          Terminal=false
-          X-GNOME-Autostart-enabled=true
-          DESKTOP
-          # Start Plank now as well; the autostart entry recreates it on each workflow session.
-          plank >/tmp/eagler-plank.log 2>&1 &
-          echo $! >/tmp/eagler-plank.pid
-          sleep 2
 
           x11vnc -display "$DISPLAY" -rfbport 5901 -localhost -nopw -forever -shared >/tmp/eagler-vnc.log 2>&1 &
           echo $! >/tmp/eagler-vnc.pid
