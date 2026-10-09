@@ -95,6 +95,24 @@ jobs:
           First Use=false
           Launch Manager=false
           KWALLET
+          # This is an unattended virtual desktop, not an interactive Linux login.
+          # Disable KDE screen locking so noVNC opens directly onto the desktop.
+          cat > "$HOME/.config/kscreenlockerrc" <<'LOCKER'
+          [Daemon]
+          Autolock=false
+          LockOnResume=false
+          LockOnStartup=false
+          LOCKER
+          cat > "$HOME/.config/powerdevilrc" <<'POWER'
+          [AC][DPMSControl]
+          idleTime=0
+          [AC][SuspendAndShutdown]
+          AutoSuspendAction=0
+          POWER
+          cat > "$HOME/.config/ksmserverrc" <<'KSM'
+          [General]
+          loginMode=restorePreviousLogout
+          KSM
           cat > "$HOME/Desktop/Discord.desktop" <<EOF
           [Desktop Entry]
           Version=1.0
