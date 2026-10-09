@@ -1,0 +1,71 @@
+name: Inspect Enchantment Outlines Pack
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "Enchantment Outlines.zip"
+      - ".github/workflows/inspect-enchantment-outlines.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  inspect-pack:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Inspect ZIP and print port-relevant files
+        shell: bash
+        run: |
+          set -euo pipefail
+          ZIP="Enchantment Outlines.zip"
+          test -f "$ZIP" || { echo "::error::Missing $ZIP in repository root"; exit 1; }
+          python3 - <<'PY'
+          import json, pathlib, zipfile
+          zpath = pathlib.Path("Enchantment Outlines.zip")
+          with zipfile.ZipFile(zpath) as z:
+              entries = [i for i in z.infolist() if not i.is_dir()]
+              print("=== PACK ZIP INVENTORY ===")
+              print(f"zip_bytes={zpath.stat().st_size} files={len(entries)}")
+              for i in entries:
+                  print(f"{i.file_size:>9} bytes  {i.filename}")
+              print("\n=== PACK METADATA ===")
+              for i in entries:
+                  name = i.filename.lower()
+                  if pathlib.PurePosixPath(name).name in ("pack.mcmeta", "manifest.json", "sounds.json"):
+                      try:
+                          data = z.read(i)
+                          print(f"\n--- {i.filename} ---")
+                          print(data[:30000].decode("utf-8", "replace"))
+                      except Exception as e:
+                          print(f"[read error: {e}]")
+              print("\n=== SHADERS / RENDER CONFIG / TEXT ASSETS ===")
+              selected = []
+              extensions = {".vsh", ".fsh", ".glsl", ".json", ".properties", ".txt", ".mcmeta", ".lang", ".cfg"}
+              keywords = ("shader", "glint", "enchant", "rendertype", "item", "core", "program", "uniform")
+              for i in entries:
+                  p = pathlib.PurePosixPath(i.filename)
+                  low = i.filename.lower()
+                  if p.suffix.lower() in extensions and ("/shaders/" in "/" + low or any(k in low for k in keywords) or p.name.lower() in ("pack.mcmeta", "shaders.properties")):
+                      selected.append(i)
+              # Prioritize shader and glint-related files; keep log readable.
+              selected.sort(key=lambda i: (0 if any(k in i.filename.lower() for k in ("glint", "enchant")) else 1, i.filename.lower()))
+              total = 0
+              max_total = 180000
+              for i in selected:
+                  raw = z.read(i)
+                  if len(raw) > 24000:
+                      print(f"\n--- {i.filename} [omitted: {len(raw)} bytes exceeds 24000] ---")
+                      continue
+                  if total + len(raw) > max_total:
+                      print("\n[Remaining text omitted: inspection log size cap reached]")
+                      break
+                  print(f"\n--- {i.filename} ({len(raw)} bytes) ---")
+                  print(raw.decode("utf-8", "replace"))
+                  total += len(raw)
+              print(f"\n=== INSPECTION SUMMARY ===\ntext_files_selected={len(selected)} text_bytes_printed={total}")
+          PY
