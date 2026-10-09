@@ -47,9 +47,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-            openjdk-21-jre xfce4 xfce4-terminal thunar xvfb x11vnc novnc websockify \
+            openjdk-21-jre plasma-desktop plasma-workspace dolphin konsole breeze xvfb x11vnc novnc websockify \
             nginx apache2-utils dbus-x11 xauth fonts-dejavu-core curl zip python3 git ffmpeg xz-utils gnupg \
-            mesa-utils libgl1-mesa-dri libglx-mesa0 libegl1 mesa-vulkan-drivers gnome-tweaks flatpak
+            mesa-utils libgl1-mesa-dri libglx-mesa0 libegl1 mesa-vulkan-drivers flatpak
           curl --fail --location --retry 3 "https://discord.com/api/download?platform=linux&format=deb" --output /tmp/discord.deb
           sudo apt-get install -y /tmp/discord.deb
           ffmpeg -version | head -n 1
@@ -226,7 +226,7 @@ jobs:
           else
             git clone --depth 1 https://github.com/melonman106/ChatGPT.git "$DEST"
           fi
-          thunar "$DEST"
+          dolphin "$DEST"
           EOF
           chmod +x "$HOME/eagler-visual-session/open-github-folder.sh"
 
