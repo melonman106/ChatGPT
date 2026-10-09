@@ -39,7 +39,7 @@ jobs:
           sudo apt-get update
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
             openjdk-21-jre xfce4 xfce4-terminal thunar xvfb x11vnc novnc websockify \
-            nginx apache2-utils dbus-x11 xauth fonts-dejavu-core curl zip python3
+            nginx apache2-utils dbus-x11 xauth fonts-dejavu-core curl zip python3 git
           sudo apt-get clean
           sudo rm -rf /var/lib/apt/lists/*
           curl --fail --location --retry 3 \
@@ -149,6 +149,32 @@ jobs:
           EOF
           chmod +x "$HOME/Desktop/Launch Eaglercraft Setup.desktop"
 
+          cat > "$HOME/eagler-visual-session/open-github-folder.sh" <<'EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          DEST="$HOME/eagler-visual-session/github/ChatGPT"
+          mkdir -p "$(dirname "$DEST")"
+          if [ -d "$DEST/.git" ]; then
+            git -C "$DEST" pull --ff-only
+          else
+            git clone --depth 1 https://github.com/melonman106/ChatGPT.git "$DEST"
+          fi
+          thunar "$DEST"
+          EOF
+          chmod +x "$HOME/eagler-visual-session/open-github-folder.sh"
+
+          cat > "$HOME/Desktop/Open GitHub Folder.desktop" <<EOF
+          [Desktop Entry]
+          Version=1.0
+          Type=Application
+          Name=Open GitHub Folder
+          Comment=Open a local checkout of melonman106/ChatGPT
+          Exec=$HOME/eagler-visual-session/open-github-folder.sh
+          Terminal=true
+          Categories=Development;
+          EOF
+          chmod +x "$HOME/Desktop/Open GitHub Folder.desktop"
+
           cat > "$HOME/Desktop/Finish and Save Session.desktop" <<EOF
           [Desktop Entry]
           Version=1.0
@@ -167,7 +193,7 @@ jobs:
         run: |
           set -euo pipefail
           export DISPLAY=:1
-          Xvfb "$DISPLAY" -screen 0 1440x900x24 -ac +extension GLX >/tmp/eagler-xvfb.log 2>&1 &
+          Xvfb "$DISPLAY" -screen 0 1280x720x24 -ac +extension GLX >/tmp/eagler-xvfb.log 2>&1 &
           echo $! >/tmp/eagler-xvfb.pid
           sleep 2
           dbus-launch --exit-with-session startxfce4 >/tmp/eagler-xfce.log 2>&1 &
@@ -205,6 +231,8 @@ jobs:
             echo "Upload a local client JAR at **$URL/upload**."
             echo
             echo "In the desktop, double-click **Launch Eaglercraft Setup**. Choose the checked-out `U1-Patcher` folder as Patch Source, and save outputs under `~/eagler-visual-session/workspace`."
+            echo
+            echo "Double-click **Open GitHub Folder** to clone/open melonman106/ChatGPT in the file manager. This is a local checkout; pushing changes requires GitHub write authentication."
             echo
             echo "When finished, double-click **Finish and Save Session**. The workflow will package your files and publish them as an artifact."
             echo
