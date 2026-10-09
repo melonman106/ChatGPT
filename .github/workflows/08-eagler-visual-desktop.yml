@@ -254,22 +254,22 @@ jobs:
             ssl:
               require_ssl: true
           encoding:
-            max_frame_rate: 30
+            max_frame_rate: 45
             rect_encoding_mode:
-              min_quality: 6
-              max_quality: 8
-              consider_lossless_quality: 9
+              min_quality: 4
+              max_quality: 7
+              consider_lossless_quality: 8
               rectangle_compress_threads: auto
             video_encoding_mode:
               enter_video_encoding_mode:
-                time_threshold: 2
-                area_threshold: 35%
+                time_threshold: 1
+                area_threshold: 25%
               exit_video_encoding_mode:
                 time_threshold: 2
             video_streaming_mode:
               codec: auto
-              quality: 17
-              gop: 24
+              quality: 23
+              gop: 15
           command_line:
             prompt: false
           KASMVNC
