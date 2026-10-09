@@ -319,13 +319,23 @@ jobs:
         run: |
           set -euo pipefail
           if [ -n "$DISCORD_PROFILE_PASSPHRASE" ] && [ -d "$HOME/.config/discord" ]; then
+            pkill -TERM -x Discord 2>/dev/null || true
+            pkill -TERM -x discord 2>/dev/null || true
+            sleep 3
             tar -czf - -C "$HOME" .config/discord |
               gpg --batch --yes --symmetric --cipher-algo AES256 --pinentry-mode loopback \
                 --passphrase "$DISCORD_PROFILE_PASSPHRASE" \
                 --output "${{ runner.temp }}/discord-profile.tar.gpg"
             echo "Encrypted Discord profile ready for cache save."
+          elif [ ! -f "${{ runner.temp }}/discord-profile.tar.gpg" ] && [ -n "$DISCORD_PROFILE_PASSPHRASE" ]; then
+            mkdir -p "$RUNNER_TEMP/empty-profile/.config/discord"
+            tar -czf - -C "$RUNNER_TEMP/empty-profile" .config/discord |
+              gpg --batch --yes --symmetric --cipher-algo AES256 --pinentry-mode loopback \
+                --passphrase "$DISCORD_PROFILE_PASSPHRASE" \
+                --output "${{ runner.temp }}/discord-profile.tar.gpg"
+            echo "Created an empty encrypted Discord profile baseline."
           else
-            echo "Discord profile directory not found; no profile backup created."
+            echo "No new Discord profile to save; preserving any restored encrypted profile."
           fi
 
       - name: Save encrypted Discord profile
