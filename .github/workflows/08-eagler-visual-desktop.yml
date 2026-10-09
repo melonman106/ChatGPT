@@ -159,7 +159,7 @@ jobs:
               location = /upload/ { proxy_pass http://127.0.0.1:8090/; }
               location /upload-api/ { proxy_pass http://127.0.0.1:8090/; }
               location / {
-                  proxy_pass https://10.200.0.2:8444/;
+                  proxy_pass https://127.0.0.1:8444/;
                   proxy_http_version 1.1;
                   proxy_set_header Upgrade $http_upgrade;
                   proxy_set_header Connection "upgrade";
@@ -242,7 +242,7 @@ jobs:
             pixel_depth: 24
           network:
             protocol: http
-            interface: 10.200.0.2
+            interface: 127.0.0.1
             websocket_port: 8444
             use_ipv4: true
             use_ipv6: false
@@ -313,26 +313,16 @@ jobs:
           wait
           XSTART
           chmod +x "$HOME/.vnc/xstartup"
-          sudo ip netns del eagler-kasm >/dev/null 2>&1 || true
-          sudo ip netns add eagler-kasm
-          sudo ip link add ekhost type veth peer name ekpeer
-          sudo ip link set ekpeer netns eagler-kasm
-          sudo ip addr add 10.200.0.1/24 dev ekhost
-          sudo ip link set ekhost up
-          sudo ip netns exec eagler-kasm ip link set lo up
-          sudo ip netns exec eagler-kasm ip addr add 10.200.0.2/24 dev ekpeer
-          sudo ip netns exec eagler-kasm ip link set ekpeer up
           rm -f /tmp/.X2-lock /tmp/.X11-unix/X2 "$HOME/.vnc/"*":2.pid" "$HOME/.vnc/"*":2.pid.lock"
-          echo "Starting KasmVNC inside isolated network namespace eagler-kasm."
-          sg ssl-cert -c 'ip netns exec eagler-kasm vncserver :2 -geometry 1280x720 -depth 24 -localhost no -rfbport -1 -websocketPort 8444 -httpd /usr/share/kasmvnc/www -sslOnly -interface 10.200.0.2 -select-de manual'
+          echo "Starting KasmVNC on loopback (no privileged network namespace required)."
+          sg ssl-cert -c 'vncserver :2 -geometry 1280x720 -depth 24 -localhost yes -rfbport -1 -websocketPort 8444 -httpd /usr/share/kasmvnc/www -sslOnly -interface 127.0.0.1 -select-de manual'
           for i in $(seq 1 45); do
-            if curl --insecure --silent --output /dev/null https://10.200.0.2:8444/; then break; fi
+            if curl --insecure --silent --output /dev/null https://127.0.0.1:8444/; then break; fi
             sleep 2
           done
-          if ! curl --insecure --silent --output /dev/null https://10.200.0.2:8444/; then
-            sudo ip netns exec eagler-kasm cat "$HOME"/.vnc/*.log 2>/dev/null || true
+          if ! curl --insecure --silent --output /dev/null https://127.0.0.1:8444/; then
+            cat "$HOME"/.vnc/*.log 2>/dev/null || true
             ss -ltnp 2>/dev/null || true
-            sudo ip netns exec eagler-kasm ss -ltnp 2>/dev/null || true
             echo "::error::KasmVNC did not start its browser client on port 8444."
             exit 1
           fi
