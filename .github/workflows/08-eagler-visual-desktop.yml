@@ -50,7 +50,7 @@ jobs:
             openjdk-21-jre plasma-desktop plasma-workspace systemsettings kwin-x11 dolphin dolphin-plugins kio-extras konsole kate ark \
             breeze breeze-gtk-theme breeze-icon-theme oxygen-icon-theme hicolor-icon-theme kde-config-gtk-style kde-spectacle plasma-systemmonitor plasma-nm plasma-pa kscreen \
             xdg-utils desktop-file-utils shared-mime-info gvfs gvfs-backends policykit-1 polkit-kde-agent-1 \
-            xvfb x11vnc novnc websockify nginx apache2-utils dbus-x11 xauth fonts-dejavu-core curl zip python3 git ffmpeg xz-utils gnupg \
+            nginx apache2-utils dbus-x11 xauth fonts-dejavu-core curl zip python3 git ffmpeg xz-utils gnupg \
             mesa-utils mesa-utils-extra libgl1-mesa-dri libglx-mesa0 libegl1 mesa-vulkan-drivers flatpak \
             kdesdk-thumbnailers filelight fonts-noto-color-emoji fonts-hack \
             build-essential cmake ninja-build jq ripgrep tree okular gwenview kcalc xclip htop unzip p7zip-full
@@ -62,6 +62,12 @@ jobs:
           node --version 2>/dev/null || true
           sudo apt-get clean
           sudo rm -rf /var/lib/apt/lists/*
+          curl --fail --location --retry 3 \
+            https://github.com/kasmtech/KasmVNC/releases/download/v1.5.0/kasmvncserver_noble_1.5.0_amd64.deb \
+            --output /tmp/kasmvncserver.deb
+          sudo apt-get install -y /tmp/kasmvncserver.deb
+          command -v vncserver
+          command -v vncpasswd
           curl --fail --location --retry 3 \
             https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 \
             --output /tmp/cloudflared
@@ -189,13 +195,16 @@ jobs:
               location = /upload/ { proxy_pass http://127.0.0.1:8090/; }
               location /upload-api/ { proxy_pass http://127.0.0.1:8090/; }
               location / {
-                  proxy_pass http://127.0.0.1:6080/;
-                  proxy_http_version 1.1;
-                  proxy_set_header Upgrade $http_upgrade;
-                  proxy_set_header Connection "upgrade";
-                  proxy_set_header Host $host;
-                  proxy_read_timeout 3600s;
-              }
+              proxy_pass https://127.0.0.1:8444/;
+              proxy_http_version 1.1;
+              proxy_set_header Upgrade $http_upgrade;
+              proxy_set_header Connection "upgrade";
+              proxy_set_header Host $host;
+              proxy_set_header X-Forwarded-Proto https;
+              proxy_ssl_verify off;
+              proxy_buffering off;
+              proxy_read_timeout 3600s;
+              proxy_send_timeout 3600s;
           }
           NGINX
           sudo rm -f /etc/nginx/sites-enabled/default
@@ -284,73 +293,74 @@ jobs:
           EOF
           chmod +x "$HOME/Desktop/Finish and Save Session.desktop"
 
-      - name: Start virtual desktop and secure access tunnel
+      - name: Start KasmVNC desktop and secure access tunnel
         env:
-          DESKTOP_PASSWORD: ${{ secrets.DESKTOP_PASSWORD }}
+          DESKTOP_PASSWORD: \${{ secrets.DESKTOP_PASSWORD }}
         run: |
           set -euo pipefail
           export LANG=C.UTF-8
           export LC_ALL=C.UTF-8
-          export DISPLAY=:1
-          # Prefer Mesa CPU rendering so Chromium can create a WebGL context in this virtual display.
-          export LIBGL_ALWAYS_SOFTWARE=1
-          export MESA_LOADER_DRIVER_OVERRIDE=llvmpipe
-          export GALLIUM_DRIVER=llvmpipe
-          Xvfb "$DISPLAY" -screen 0 1280x720x24 -ac +extension GLX >/tmp/eagler-xvfb.log 2>&1 &
-          echo $! >/tmp/eagler-xvfb.pid
-          sleep 2
-          # Download wallpaper before starting KDE Plasma.
-          WALLPAPER="$HOME/eagler-visual-session/Rimuru.jpg"
-          curl --fail --location --retry 3 \
-            "https://raw.githubusercontent.com/melonman106/ChatGPT/main/Rimuru.jpg" \
-            --output "$WALLPAPER"
-          test -s "$WALLPAPER"
-
-          # Start KDE Plasma on X11. The runner uses Mesa software rendering.
-          export XDG_SESSION_TYPE=x11
-          export XDG_CURRENT_DESKTOP=KDE
-          export KDE_FULL_SESSION=true
-          export QT_QPA_PLATFORM=xcb
-          # Export the session-bus address into this workflow shell as well as Plasma.
-          # Starting dbus-launch only as a child process leaves gdbus unable to find PlasmaShell.
-          eval "$(dbus-launch --sh-syntax)"
-          startplasma-x11 >/tmp/eagler-plasma.log 2>&1 &
-          echo $! >/tmp/eagler-plasma.pid
-          for i in $(seq 1 30); do
-            if pgrep -x plasmashell >/dev/null 2>&1; then break; fi
-            sleep 2
-          done
-          if ! pgrep -x plasmashell >/dev/null 2>&1; then
-            cat /tmp/eagler-plasma.log
-            echo "::error::KDE Plasma did not start on the virtual display."
-            exit 1
-          fi
-
-          # Ensure KWin is running: it draws the title bars and close/minimize/maximize buttons.
-          # Some minimal Plasma installs start the shell but omit the X11 window manager.
-          for i in $(seq 1 20); do
-            if pgrep -x kwin_x11 >/dev/null 2>&1; then break; fi
-            sleep 1
-          done
-          if ! pgrep -x kwin_x11 >/dev/null 2>&1; then
-            kwin_x11 --replace >/tmp/eagler-kwin.log 2>&1 &
-            echo $! >/tmp/eagler-kwin.pid
-            for i in $(seq 1 15); do
-              if pgrep -x kwin_x11 >/dev/null 2>&1; then break; fi
-              sleep 1
-            done
-          fi
-          if ! pgrep -x kwin_x11 >/dev/null 2>&1; then
-            cat /tmp/eagler-plasma.log
-            cat /tmp/eagler-kwin.log 2>/dev/null || true
-            echo "::error::KWin did not start; application window title bars and close buttons may be missing."
-            exit 1
-          fi
-          echo "KWin is running; application window decorations are enabled."
-
-          # Set KDE Plasma and common KDE applications to dark mode by default.
-          # Plasma 6 uses the Breeze Dark color scheme; also set GTK apps to prefer dark.
-          mkdir -p "$HOME/.config"
+          mkdir -p "$HOME/.vnc" "$HOME/.config" "$HOME/Desktop"
+          # KasmVNC provides its own X server and browser-native client; no Xvfb/x11vnc/noVNC bridge.
+          sudo tee /etc/kasmvnc/kasmvnc.yaml >/dev/null <<'KASMVNC'
+          desktop:
+            resolution:
+              width: 1280
+              height: 720
+            allow_resize: true
+            pixel_depth: 24
+          network:
+            protocol: http
+            interface: 127.0.0.1
+            websocket_port: 8444
+            udp:
+              public_ip: 127.0.0.1
+            ssl:
+              require_ssl: true
+          encoding:
+            max_frame_rate: 30
+            rect_encoding_mode:
+              min_quality: 6
+              max_quality: 8
+              consider_lossless_quality: 9
+              rectangle_compress_threads: auto
+            video_encoding_mode:
+              enter_video_encoding_mode:
+                time_threshold: 2
+                area_threshold: 35%
+              exit_video_encoding_mode:
+                time_threshold: 2
+            video_streaming_mode:
+              codec: auto
+              quality: 17
+              gop: 24
+          command_line:
+            prompt: false
+          KASMVNC
+          # Create the browser-side KasmVNC account; Nginx also protects the public URL.
+          printf '%s\n%s\n' "$DESKTOP_PASSWORD" "$DESKTOP_PASSWORD" | vncpasswd -u eagler -w -r
+          cat > "$HOME/.config/kwalletrc" <<'KWALLET'
+          [Wallet]
+          Enabled=false
+          First Use=false
+          Launch Manager=false
+          KWALLET
+          cat > "$HOME/.config/kscreenlockerrc" <<'LOCKER'
+          [Daemon]
+          Autolock=false
+          LockOnResume=false
+          LockOnStartup=false
+          LOCKER
+          cat > "$HOME/.config/powerdevilrc" <<'POWER'
+          [AC][DPMSControl]
+          idleTime=0
+          [AC][SuspendAndShutdown]
+          AutoSuspendAction=0
+          POWER
+          cat > "$HOME/.config/ksmserverrc" <<'KSM'
+          [General]
+          loginMode=restorePreviousLogout
+          KSM
           cat > "$HOME/.config/kdeglobals" <<'KDEGLOBALS'
           [General]
           ColorScheme=BreezeDark
@@ -360,25 +370,31 @@ jobs:
           [Icons]
           Theme=breeze-dark
           KDEGLOBALS
-          cat > "$HOME/.config/gtk-3.0/settings.ini" <<'GTK3'
-          [Settings]
-          gtk-application-prefer-dark-theme=1
-          GTK3
-          cat > "$HOME/.config/gtk-4.0/settings.ini" <<'GTK4'
-          [Settings]
-          gtk-application-prefer-dark-theme=1
-          GTK4
-          # Apply the color scheme to the running Plasma session immediately.
-          if command -v qdbus6 >/dev/null 2>&1; then
-            qdbus6 org.kde.KWin /KWin reconfigure >/dev/null 2>&1 || true
-          elif command -v qdbus >/dev/null 2>&1; then
-            qdbus org.kde.KWin /KWin reconfigure >/dev/null 2>&1 || true
-          fi
-          gsettings set org.gnome.desktop.interface color-scheme 'prefer-dark' 2>/dev/null || true
-          echo "Configured KDE and GTK applications to prefer dark mode."
-
-          # Apply the repository's Rimuru.jpg through Plasma's own D-Bus scripting API.
-          # plasma-apply-wallpaperimage can return successfully without changing the Plasma 6 desktop.
+          mkdir -p "$HOME/.config/gtk-3.0" "$HOME/.config/gtk-4.0"
+          printf '[Settings]\ngtk-application-prefer-dark-theme=1\n' > "$HOME/.config/gtk-3.0/settings.ini"
+          printf '[Settings]\ngtk-application-prefer-dark-theme=1\n' > "$HOME/.config/gtk-4.0/settings.ini"
+          WALLPAPER="$HOME/eagler-visual-session/Rimuru.jpg"
+          curl --fail --location --retry 3 \
+            "https://raw.githubusercontent.com/melonman106/ChatGPT/main/Rimuru.jpg" \
+            --output "$WALLPAPER"
+          test -s "$WALLPAPER"
+          cat > "$HOME/.vnc/xstartup" <<'XSTART'
+          #!/usr/bin/env bash
+          set -e
+          export XDG_SESSION_TYPE=x11
+          export XDG_CURRENT_DESKTOP=KDE
+          export KDE_FULL_SESSION=true
+          export QT_QPA_PLATFORM=xcb
+          eval "$(dbus-launch --sh-syntax)"
+          startplasma-x11 >/tmp/eagler-plasma.log 2>&1 &
+          for i in $(seq 1 45); do
+            if pgrep -u "$USER" -x plasmashell >/dev/null 2>&1; then break; fi
+            sleep 2
+          done
+          if ! pgrep -u "$USER" -x plasmashell >/dev/null 2>&1; then cat /tmp/eagler-plasma.log; exit 1; fi
+          # Disable KWin compositing to reduce llvmpipe CPU use and improve input-to-frame latency.
+          qdbus6 org.kde.KWin /Compositor suspend >/dev/null 2>&1 || true
+          WALLPAPER="$HOME/eagler-visual-session/Rimuru.jpg"
           WALLPAPER_URI="file://$WALLPAPER"
           cat > /tmp/eagler-set-wallpaper.js <<EOF
           var allDesktops = desktops();
@@ -389,72 +405,54 @@ jobs:
               d.writeConfig("Image", "$WALLPAPER_URI");
           }
           EOF
-          WALLPAPER_SET=false
-          for i in $(seq 1 15); do
-            if gdbus call --session --dest org.kde.plasmashell --object-path /PlasmaShell \
-              --method org.kde.PlasmaShell.evaluateScript "$(cat /tmp/eagler-set-wallpaper.js)" \
-              >/tmp/eagler-wallpaper-result.log 2>&1; then
-              WALLPAPER_SET=true
-              break
-            fi
+          gdbus call --session --dest org.kde.plasmashell --object-path /PlasmaShell \
+            --method org.kde.PlasmaShell.evaluateScript "$(cat /tmp/eagler-set-wallpaper.js)" \
+            >/tmp/eagler-wallpaper-result.log 2>&1 || true
+          wait
+          XSTART
+          chmod +x "$HOME/.vnc/xstartup"
+          vncserver -kill :1 >/dev/null 2>&1 || true
+          vncserver :1 -geometry 1280x720 -depth 24 -localhost yes
+          for i in $(seq 1 45); do
+            if curl --insecure --silent --output /dev/null https://127.0.0.1:8444/; then break; fi
             sleep 2
           done
-          if [ "$WALLPAPER_SET" != true ]; then
-            cat /tmp/eagler-wallpaper-result.log
-            echo "::error::Could not set the KDE Plasma wallpaper using its D-Bus API."
+          if ! curl --insecure --silent --output /dev/null https://127.0.0.1:8444/; then
+            cat "$HOME"/.vnc/*.log 2>/dev/null || true
+            echo "::error::KasmVNC did not start its browser client on port 8444."
             exit 1
           fi
-          echo "KDE Plasma wallpaper configured to $WALLPAPER"
-          test -s "$WALLPAPER"
-
-          x11vnc -display "$DISPLAY" -rfbport 5901 -localhost -nopw -forever -shared -threads -defer 5 -wait 5 >/tmp/eagler-vnc.log 2>&1 &
-          echo $! >/tmp/eagler-vnc.pid
-          sleep 2
-          websockify --web=/usr/share/novnc/ 6080 localhost:5901 >/tmp/eagler-websockify.log 2>&1 &
-          echo $! >/tmp/eagler-websockify.pid
           python3 /tmp/eagler-upload-server.py >/tmp/eagler-upload.log 2>&1 &
           echo $! >/tmp/eagler-upload.pid
           cloudflared tunnel --no-autoupdate --url http://127.0.0.1:6081 >/tmp/eagler-cloudflared.log 2>&1 &
           echo $! >/tmp/eagler-cloudflared.pid
+          URL=""
           for i in $(seq 1 90); do
             URL=$(grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' /tmp/eagler-cloudflared.log | head -n1 || true)
             if [ -n "$URL" ]; then break; fi
             sleep 2
           done
-          if [ -z "${URL:-}" ]; then
-            cat /tmp/eagler-cloudflared.log
-            echo "::error::Could not establish the temporary desktop tunnel."
-            exit 1
-          fi
+          if [ -z "$URL" ]; then cat /tmp/eagler-cloudflared.log; echo "::error::Could not establish the temporary desktop tunnel."; exit 1; fi
           echo "::add-mask::$DESKTOP_PASSWORD"
           {
-            echo "## Eaglercraft visual desktop"
+            echo "## Eaglercraft visual desktop (KasmVNC)"
             echo
-            echo "**Desktop URL:** $URL/?autoconnect=true&resize=scale&quality=6&compression=1&path=websockify"
+            echo "**Desktop URL:** $URL/"
             echo
             echo "**Username:** eagler"
             echo
-            echo "Use the repository Actions secret DESKTOP_PASSWORD as the password."
+            echo "Use DESKTOP_PASSWORD at the gateway and KasmVNC login."
             echo
             echo "Upload a local client JAR at **$URL/upload**."
             echo
-            echo "In the desktop, double-click Launch Eaglercraft Setup. Choose the checked-out U1-Patcher folder as Patch Source, and save outputs under ~/eagler-visual-session/workspace."
+            echo "Save output under ~/eagler-visual-session/workspace; click Finish and Save Session to publish an artifact."
             echo
-            echo "Double-click **Open GitHub Folder** to clone/open melonman106/ChatGPT in the file manager. This is a local checkout; pushing changes requires GitHub write authentication."
-            echo
-            echo "When finished, double-click **Finish and Save Session**. The workflow will package your files and publish them as an artifact."
-            echo
-            echo "Keep this page private. The URL is temporary and expires when the job ends."
+            echo "KasmVNC replaces x11vnc/noVNC. The temporary URL expires when the job ends."
           } >> "$GITHUB_STEP_SUMMARY"
-          echo
-          echo "============================================================"
-          echo "EAGLERCRAFT VISUAL DESKTOP IS READY"
-          echo "Desktop URL: $URL/?autoconnect=true&resize=scale&quality=6&compression=1&path=websockify"
-          echo "Upload URL:  $URL/upload"
-          echo "Username:    eagler"
-          echo "Password:    use the DESKTOP_PASSWORD repository secret"
-          echo "============================================================"
-          echo "Keep this URL private. It expires when this Actions job ends."
+          echo "KasmVNC desktop: $URL/"
+          echo "Upload URL: $URL/upload"
+          echo "Username: eagler"
+          echo "Password: use the DESKTOP_PASSWORD repository secret"
 
       - name: Keep desktop running until finished or timeout
         run: |
