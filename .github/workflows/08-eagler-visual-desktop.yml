@@ -296,7 +296,7 @@ jobs:
           export LIBGL_ALWAYS_SOFTWARE=1
           export MESA_LOADER_DRIVER_OVERRIDE=llvmpipe
           export GALLIUM_DRIVER=llvmpipe
-          Xvfb "$DISPLAY" -screen 0 1517x852x24 -ac +extension GLX >/tmp/eagler-xvfb.log 2>&1 &
+          Xvfb "$DISPLAY" -screen 0 1280x720x24 -ac +extension GLX >/tmp/eagler-xvfb.log 2>&1 &
           echo $! >/tmp/eagler-xvfb.pid
           sleep 2
           # Download wallpaper before starting KDE Plasma.
@@ -407,7 +407,7 @@ jobs:
           echo "KDE Plasma wallpaper configured to $WALLPAPER"
           test -s "$WALLPAPER"
 
-          x11vnc -display "$DISPLAY" -rfbport 5901 -localhost -nopw -forever -shared >/tmp/eagler-vnc.log 2>&1 &
+          x11vnc -display "$DISPLAY" -rfbport 5901 -localhost -nopw -forever -shared -threads -defer 5 -wait 5 >/tmp/eagler-vnc.log 2>&1 &
           echo $! >/tmp/eagler-vnc.pid
           sleep 2
           websockify --web=/usr/share/novnc/ 6080 localhost:5901 >/tmp/eagler-websockify.log 2>&1 &
@@ -430,7 +430,7 @@ jobs:
           {
             echo "## Eaglercraft visual desktop"
             echo
-            echo "**Desktop URL:** $URL/?autoconnect=true&resize=scale&path=websockify"
+            echo "**Desktop URL:** $URL/?autoconnect=true&resize=scale&quality=6&compression=1&path=websockify"
             echo
             echo "**Username:** eagler"
             echo
@@ -449,7 +449,7 @@ jobs:
           echo
           echo "============================================================"
           echo "EAGLERCRAFT VISUAL DESKTOP IS READY"
-          echo "Desktop URL: $URL/?autoconnect=true&resize=scale&path=websockify"
+          echo "Desktop URL: $URL/?autoconnect=true&resize=scale&quality=6&compression=1&path=websockify"
           echo "Upload URL:  $URL/upload"
           echo "Username:    eagler"
           echo "Password:    use the DESKTOP_PASSWORD repository secret"
