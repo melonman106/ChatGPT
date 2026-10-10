@@ -65,16 +65,15 @@ restore() {
   if command -v apt-get >/dev/null 2>&1 && [[ -f "$HOME/.local/state/eagler-persist/packages.apt" ]]; then
     sudo apt-get update || warn "apt-get update failed; attempting package restoration anyway."
     local pkg
+    cp "$HOME/.local/state/eagler-persist/packages.apt" "$tmp/packages.apt"
     while IFS= read -r pkg; do
       [[ -z "$pkg" ]] && continue
-      if ! dpkg-query -W -f=''${Status}'' "$pkg" 2>/dev/null | grep -q 'install ok installed'; then
+      if ! dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q 'install ok installed'; then
         if ! sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "$pkg"; then
-          warn "Could not restore APT package: $pkg"
-          grep -Fxv "$pkg" "$HOME/.local/state/eagler-persist/packages.apt" > "$tmp/failed.apt" || true
-          printf '%s\n' "$pkg" >> "$tmp/failed.apt"; sort -u "$tmp/failed.apt" > "$HOME/.local/state/eagler-persist/packages.apt"
+          warn "Could not restore APT package: $pkg (kept in manifest for next run)"
         fi
       fi
-    done < "$HOME/.local/state/eagler-persist/packages.apt"
+    done < "$tmp/packages.apt"
   fi
   if command -v flatpak >/dev/null 2>&1 && [[ -f "$HOME/.local/state/eagler-persist/packages.flatpak" ]]; then
     while IFS=$'\t' read -r scope app origin; do
