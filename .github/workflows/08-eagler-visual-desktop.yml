@@ -2,9 +2,17 @@ name: Eaglercraft Visual Desktop
 
 on:
   workflow_dispatch:
+    inputs:
+      reset_profile:
+        description: "Ignore the saved desktop and start fresh (this session is still saved afterwards)"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
+  # Lets the job delete its own superseded profile caches so they do not fill the 10 GB cache quota.
+  actions: write
 
 concurrency:
   group: eagler-visual-desktop
@@ -32,18 +40,382 @@ jobs:
       - name: Check out the patch source
         uses: actions/checkout@v4
         with:
-          sparse-checkout: |
-            U1-Patcher
-            scripts/eagler-persist.sh
+          sparse-checkout: U1-Patcher
           sparse-checkout-cone-mode: true
 
+      # ------------------------------------------------------------------
+      # Persistence helper: saves/restores files, settings and installed
+      # apps. It is written out from this workflow, so this one file is the
+      # whole feature. It replaces scripts/eagler-persist.sh from the earlier
+      # version of this workflow; that file is no longer used (safe to delete),
+      # and saved profiles made by it are imported automatically.
+      # ------------------------------------------------------------------
+      - name: Install the persistence helper
+        run: |
+          sudo tee /usr/local/bin/eagler-persist >/dev/null <<'PERSIST_EOF'
+          #!/usr/bin/env bash
+          # eagler-persist - keep a throwaway CI desktop "persistent".
+          #
+          #   eagler-persist baseline            remember what the fresh runner already has
+          #   eagler-persist restore <archive>   decrypt + unpack saved profile, replay apt/Flatpak
+          #   eagler-persist quiesce             close apps cleanly so settings reach the disk
+          #   eagler-persist save <archive>      record new apt/Flatpak apps, archive, encrypt
+          #
+          # What is saved: your files (Desktop, Documents, ...), app/KDE settings (~/.config,
+          # ~/.local, ~/.var), the Sober runtime + login, plus *lists* of the apt packages and
+          # Flatpak apps you installed (they are re-installed on the next run instead of
+          # archiving gigabytes of runtime).
+          #
+          # Environment:
+          #   EAGLER_PERSIST_PASSPHRASE  required for save/restore (symmetric AES-256)
+          #   EAGLER_PERSIST_STATE       scratch dir      (default: ${RUNNER_TEMP:-/tmp}/eagler-persist)
+          #   EAGLER_APT_DIR             apt config dir   (default: /etc/apt)
+          #   EAGLER_PERSIST_MAX_MB      refuse bigger archives (default: 8000)
+          #   EAGLER_PERSIST_RESET=1     restore ignores the saved profile (start fresh)
+          #   EAGLER_PERSIST_VERIFY=0    skip the read-back check after saving
+
+          set -uo pipefail
+          export LC_ALL=C
+
+          STATE="${EAGLER_PERSIST_STATE:-${RUNNER_TEMP:-/tmp}/eagler-persist}"
+          APT_DIR="${EAGLER_APT_DIR:-/etc/apt}"
+          MAX_MB="${EAGLER_PERSIST_MAX_MB:-8000}"
+          META="$HOME/.eagler-persist"
+          SUDO="sudo"
+          [ "$(id -u)" -eq 0 ] && SUDO=""
+
+          log()  { echo "[persist] $*"; }
+          warn() { echo "[persist] WARNING: $*" >&2; [ -n "${GITHUB_ACTIONS:-}" ] && echo "::warning::[persist] $*"; return 0; }
+          die()  { local rc="${2:-1}"; echo "[persist] ERROR: $1" >&2; [ -n "${GITHUB_ACTIONS:-}" ] && echo "::error::[persist] $1"; exit "$rc"; }
+
+          # ---------------------------------------------------------------- what to keep
+          INCLUDE=(
+            .config .local .var .mozilla .pki .ssh .vscode .vscode-oss .thunderbird .kde .java
+            .gitconfig .zshrc .bash_aliases .npmrc .eagler-persist extra-paths.txt
+            Desktop Documents Downloads Music Pictures Videos Templates Public
+            eagler-visual-session/workspace eagler-visual-session/inbox eagler-visual-session/Rimuru.jpg
+          )
+          # GNU tar excludes are unanchored: a bare name matches at any depth.
+          EXCLUDES=(
+            --exclude='.cache'
+            --exclude='.local/share/Trash'
+            --exclude='.local/share/baloo'
+            --exclude='.local/share/flatpak/repo'
+            --exclude='.local/share/flatpak/app'
+            --exclude='.local/share/flatpak/runtime'
+            --exclude='.local/share/flatpak/exports'
+            --exclude='.local/share/flatpak/db'
+            --exclude='.local/share/flatpak/.changes'
+            --exclude='.local/share/flatpak/.removed'
+            --exclude='Cache' --exclude='Code Cache' --exclude='GPUCache' --exclude='DawnCache'
+            --exclude='GrShaderCache' --exclude='ShaderCache' --exclude='CacheStorage' --exclude='cache2'
+            --exclude='SingletonLock' --exclude='SingletonCookie' --exclude='SingletonSocket'
+            --exclude='.parentlock'
+          )
+
+          # --------------------------------------------------------------------- crypto
+          need_pass() { [ -n "${EAGLER_PERSIST_PASSPHRASE:-}" ] || die "EAGLER_PERSIST_PASSPHRASE is not set"; }
+
+          setup_gpg() {
+            mkdir -p "$STATE"
+            export GNUPGHOME="$STATE/gnupg"
+            mkdir -p "$GNUPGHOME" && chmod 700 "$GNUPGHOME"
+          }
+          cleanup() { [ -n "${GNUPGHOME:-}" ] && gpgconf --homedir "$GNUPGHOME" --kill gpg-agent >/dev/null 2>&1; return 0; }
+          trap cleanup EXIT
+
+          gpg_dec() { gpg --batch --yes --quiet --pinentry-mode loopback --passphrase-fd 3 "$@" 3<<<"$EAGLER_PERSIST_PASSPHRASE"; }
+          gpg_enc() { gpg --batch --yes --quiet --pinentry-mode loopback --passphrase-fd 3 --symmetric --cipher-algo AES256 --compress-algo none "$@" 3<<<"$EAGLER_PERSIST_PASSPHRASE"; }
+
+          if command -v zstd >/dev/null 2>&1; then
+            COMP=(zstd -T0 -3 -q); DECOMP=(zstd -dc -q)
+          else
+            COMP=(gzip -1);        DECOMP=(gzip -dc)
+          fi
+
+          # ------------------------------------------------------------ package helpers
+          flatpak_apps() {
+            command -v flatpak >/dev/null 2>&1 || return 0
+            flatpak list --app --columns=installation,origin,application 2>/dev/null \
+              | awk -F'\t' 'NF >= 3 && $3 ~ /^[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)+$/' | sort -u
+          }
+          apt_hashes() {
+            ( cd "$APT_DIR" 2>/dev/null \
+              && find sources.list.d keyrings trusted.gpg.d preferences.d -type f -exec sha256sum {} + 2>/dev/null \
+              | sort ) || true
+          }
+          apt_manual() { command -v apt-mark >/dev/null 2>&1 && apt-mark showmanual 2>/dev/null | sort -u; return 0; }
+
+          # ------------------------------------------------------------------- baseline
+          baseline() {
+            setup_gpg
+            rm -f "$STATE/apt-failed" "$STATE/flatpak-failed"
+            apt_manual      >"$STATE/apt-manual.base"
+            apt_hashes      >"$STATE/apt-files.base"
+            flatpak_apps    >"$STATE/flatpak.base"
+            log "baseline: $(wc -l <"$STATE/apt-manual.base") apt packages, $(wc -l <"$STATE/flatpak.base") Flatpak apps already present"
+          }
+
+          # -------------------------------------------------------------------- restore
+          replay_apt() {
+            local pk="$META/apt-packages.list" etc="$META/apt-etc" pkgs=() p refresh=0
+            if [ -d "$etc" ] && [ -n "$(find "$etc" -type f -print -quit 2>/dev/null)" ]; then
+              log "restoring extra apt sources / signing keys"
+              if ! { $SUDO mkdir -p "$APT_DIR" && $SUDO cp -a --no-preserve=ownership "$etc"/. "$APT_DIR"/; }; then
+                warn "could not copy apt sources back"
+              fi
+              refresh=1
+            fi
+            [ -f "$pk" ] && mapfile -t pkgs < <(grep -v '^[[:space:]]*\(#\|$\)' "$pk" || true)
+            [ "${#pkgs[@]}" -gt 0 ] && refresh=1
+            [ "$refresh" -eq 1 ] || return 0
+            $SUDO env DEBIAN_FRONTEND=noninteractive apt-get -qq update || warn "apt-get update failed"
+            [ "${#pkgs[@]}" -gt 0 ] || return 0
+            log "re-installing ${#pkgs[@]} apt package(s): ${pkgs[*]}"
+            if ! $SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y "${pkgs[@]}"; then
+              warn "bulk apt install failed; retrying one package at a time"
+              for p in "${pkgs[@]}"; do
+                if ! $SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y "$p"; then
+                  warn "could not install apt package: $p (kept in your list, will retry next run)"
+                  echo "$p" >>"$STATE/apt-failed"
+                fi
+              done
+            fi
+          }
+
+          replay_flatpak() {
+            local list="$META/flatpak-apps.list" have inst origin app
+            [ -s "$list" ] || return 0
+            command -v flatpak >/dev/null 2>&1 || { warn "flatpak is not installed; cannot restore Flatpak apps"; return 0; }
+            have="$(flatpak_apps)"
+            while IFS=$'\t' read -r inst origin app; do
+              [ -n "$app" ] || continue
+              if printf '%s\n' "$have" | awk -F'\t' -v i="$inst" -v a="$app" '$1==i && $3==a {f=1} END{exit !f}'; then
+                continue
+              fi
+              log "re-installing Flatpak app $app ($inst from $origin)"
+              if [ "$inst" = system ]; then
+                $SUDO flatpak install --noninteractive -y --system "$origin" "$app" || { warn "could not install Flatpak app $app"; printf '%s\t%s\t%s\n' "$inst" "$origin" "$app" >>"$STATE/flatpak-failed"; }
+              else
+                flatpak install --noninteractive -y --user "$origin" "$app" || { warn "could not install Flatpak app $app"; printf '%s\t%s\t%s\n' "$inst" "$origin" "$app" >>"$STATE/flatpak-failed"; }
+              fi
+            done <"$list"
+          }
+
+          # The repo's earlier helper kept its app lists in ~/.local/state/eagler-persist
+          # (packages.apt: one name per line; packages.flatpak: scope<TAB>app<TAB>origin).
+          # Import them once, then delete that folder so an app you later remove cannot return.
+          migrate_legacy() {
+            local old="$HOME/.local/state/eagler-persist" scope app origin
+            [ -d "$old" ] || return 0
+            mkdir -p "$META"
+            if [ -s "$old/packages.apt" ]; then
+              cat "$old/packages.apt" "$META/apt-packages.list" 2>/dev/null | grep -v '^[[:space:]]*$' | sort -u >"$META/apt-packages.list.new" || true
+              mv -f "$META/apt-packages.list.new" "$META/apt-packages.list"
+            fi
+            if [ -s "$old/packages.flatpak" ]; then
+              {
+                while IFS=$'\t' read -r scope app origin; do
+                  [ -n "$app" ] || continue
+                  if [ -z "$origin" ] || [ "$origin" = "-" ]; then origin=flathub; fi
+                  printf '%s\t%s\t%s\n' "$scope" "$origin" "$app"
+                done <"$old/packages.flatpak"
+                cat "$META/flatpak-apps.list" 2>/dev/null
+              } | sort -u >"$META/flatpak-apps.list.new"
+              mv -f "$META/flatpak-apps.list.new" "$META/flatpak-apps.list"
+            fi
+            rm -rf "$old"
+            log "imported app lists from the earlier persistence helper"
+          }
+
+          restore() {
+            local arch="${1:-}" tmp
+            [ -n "$arch" ] || die "usage: eagler-persist restore <archive>" 2
+            setup_gpg
+            if [ "${EAGLER_PERSIST_RESET:-0}" = 1 ]; then
+              log "RESET requested: ignoring any saved profile and starting fresh"
+              return 0
+            fi
+            if [ ! -s "$arch" ]; then
+              log "No saved profile found at $arch - starting with a fresh desktop."
+              return 0
+            fi
+            need_pass
+            tmp="$STATE/profile.tar"
+            rm -f "$tmp"
+            if ! gpg_dec --decrypt --output "$tmp" "$arch" 2>"$STATE/gpg.err"; then
+              cat "$STATE/gpg.err" >&2
+              rm -f "$tmp"
+              die "could not decrypt the saved profile (wrong DISCORD_PROFILE_PASSPHRASE, or the cache is damaged). Stopping so the saved profile is not overwritten. Run again with reset_profile=true to start fresh on purpose." 4
+            fi
+            log "unpacking saved profile ($(du -h "$tmp" | cut -f1))"
+            tar -C "$HOME" --no-same-owner "${EXCLUDES[@]}" -xf "$tmp" || warn "tar reported problems while unpacking; continuing with what was restored"
+            rm -f "$tmp"
+            migrate_legacy
+            replay_apt
+            replay_flatpak
+            log "restore finished"
+          }
+
+          # ----------------------------------------------------------------------- save
+          # Reads ~/.eagler-persist/extra-paths.txt and, for the earlier helper's sake, ~/extra-paths.txt.
+          extra_paths() {
+            local f line
+            for f in "$META/extra-paths.txt" "$HOME/extra-paths.txt"; do
+              [ -f "$f" ] || continue
+              while IFS= read -r line || [ -n "$line" ]; do
+                line="${line%%#*}"
+                line="$(printf '%s' "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+                [ -n "$line" ] || continue
+                case "$line" in
+                  /*|..|../*|*/..|*/../*) warn "ignoring unsafe entry in extra-paths.txt: $line"; continue ;;
+                esac
+                printf '%s\n' "$line"
+              done <"$f"
+            done
+          }
+
+          collect_manifests() {
+            mkdir -p "$META"
+            [ -f "$META/extra-paths.txt" ] || cat >"$META/extra-paths.txt" <<'EOF'
+          # Extra folders or files to keep between sessions, one per line,
+          # relative to your home folder (for example:  Projects  or  .wine ).
+          # Already kept: Desktop, Documents, Downloads, Pictures, Music, Videos,
+          # Templates, Public, app + KDE settings, Sober, and your installed apps list.
+          EOF
+
+            if [ -f "$STATE/apt-manual.base" ] && command -v apt-mark >/dev/null 2>&1; then
+              apt_manual >"$STATE/apt-manual.now"
+              { comm -13 "$STATE/apt-manual.base" "$STATE/apt-manual.now"; cat "$STATE/apt-failed" 2>/dev/null; } \
+                | sort -u | grep -v '^$' >"$META/apt-packages.list" || true
+              apt_hashes >"$STATE/apt-files.now"
+              rm -rf "$META/apt-etc"
+              mkdir -p "$META/apt-etc"
+              comm -13 "$STATE/apt-files.base" "$STATE/apt-files.now" | while read -r _ path; do
+                [ -n "$path" ] || continue
+                mkdir -p "$META/apt-etc/$(dirname "$path")"
+                cp -a "$APT_DIR/$path" "$META/apt-etc/$path" || warn "could not copy apt file $path"
+              done
+              log "apt packages to re-install next time: $(wc -l <"$META/apt-packages.list")"
+            else
+              log "no apt baseline recorded; keeping the previous apt package list"
+            fi
+
+            if [ -f "$STATE/flatpak.base" ] && command -v flatpak >/dev/null 2>&1; then
+              flatpak_apps >"$STATE/flatpak.now"
+              { comm -13 "$STATE/flatpak.base" "$STATE/flatpak.now"; cat "$STATE/flatpak-failed" 2>/dev/null; } \
+                | sort -u | grep -v '^$' >"$META/flatpak-apps.list" || true
+              log "Flatpak apps to re-install next time: $(wc -l <"$META/flatpak-apps.list")"
+            else
+              log "no Flatpak baseline recorded; keeping the previous Flatpak app list"
+            fi
+            date -u +%Y-%m-%dT%H:%M:%SZ >"$META/last-saved.txt"
+          }
+
+          save() {
+            local arch="${1:-}" tmp p size_mb st
+            [ -n "$arch" ] || die "usage: eagler-persist save <archive>" 2
+            need_pass
+            setup_gpg
+            collect_manifests
+
+            local paths=() extra=()
+            for p in "${INCLUDE[@]}"; do
+              if [ -e "$HOME/$p" ] || [ -L "$HOME/$p" ]; then paths+=("$p"); fi
+            done
+            mapfile -t extra < <(extra_paths)
+            for p in "${extra[@]}"; do
+              [ -n "$p" ] || continue
+              if [ -e "$HOME/$p" ] || [ -L "$HOME/$p" ]; then paths+=("$p"); else warn "extra path not found, skipping: $p"; fi
+            done
+
+            mkdir -p "$(dirname "$arch")"
+            tmp="$arch.partial"
+            rm -f "$tmp"
+            log "archiving ${#paths[@]} location(s)"
+            tar -C "$HOME" --ignore-failed-read --warning=no-file-changed --warning=no-file-removed \
+                "${EXCLUDES[@]}" -cf - -- "${paths[@]}" \
+              | "${COMP[@]}" \
+              | gpg_enc --output "$tmp"
+            st=("${PIPESTATUS[@]}")
+            if [ "${st[0]}" -gt 1 ] || [ "${st[1]}" -ne 0 ] || [ "${st[2]}" -ne 0 ]; then
+              rm -f "$tmp"
+              die "archiving failed (tar=${st[0]} compress=${st[1]} gpg=${st[2]})" 5
+            fi
+
+            size_mb=$(( $(stat -c %s "$tmp") / 1048576 ))
+            if [ "$size_mb" -gt "$MAX_MB" ]; then
+              rm -f "$tmp"
+              echo "[persist] Largest folders in your saved set:" >&2
+              ( cd "$HOME" && du -k -d 2 -- "${paths[@]}" 2>/dev/null | sort -nr | head -n 15 ) >&2
+              die "the saved profile is ${size_mb} MB which exceeds the ${MAX_MB} MB limit (GitHub caches are 10 GB per repository). Delete or move the big items listed above, then run again. Nothing was saved this time; your previous profile is untouched." 3
+            fi
+
+            if [ "${EAGLER_PERSIST_VERIFY:-1}" != 0 ]; then
+              gpg_dec --decrypt "$tmp" | "${DECOMP[@]}" | tar -tf - >/dev/null
+              st=("${PIPESTATUS[@]}")
+              if [ "${st[0]}" -ne 0 ] || [ "${st[1]}" -ne 0 ] || [ "${st[2]}" -ne 0 ]; then
+                rm -f "$tmp"
+                die "read-back check of the new archive failed; not saving a possibly broken profile" 6
+              fi
+            fi
+            mv -f "$tmp" "$arch"
+            log "saved ${size_mb} MB encrypted profile to $arch"
+          }
+
+          # -------------------------------------------------------------------- quiesce
+          quiesce() {
+            local pid i uid
+            uid="$(id -u)"
+            log "closing apps so settings are flushed to disk"
+            pid="$(pgrep -u "$uid" -x plasmashell 2>/dev/null | head -n1 || true)"
+            if [ -n "$pid" ] && [ -r "/proc/$pid/environ" ]; then
+              local kv
+              while IFS= read -r -d '' kv; do
+                # kv is a whole "NAME=value" string, so exporting "$kv" is intended.
+                # shellcheck disable=SC2163
+                case "$kv" in DBUS_SESSION_BUS_ADDRESS=*|DISPLAY=*|XDG_RUNTIME_DIR=*|XAUTHORITY=*) export "$kv" ;; esac
+              done <"/proc/$pid/environ"
+              # Plasma 5, then Plasma 6: ask the session manager for a clean logout.
+              timeout 8 gdbus call --session --dest org.kde.ksmserver --object-path /KSMServer \
+                --method org.kde.KSMServerInterface.logout 0 0 1 >/dev/null 2>&1 || true
+              timeout 8 gdbus call --session --dest org.kde.Shutdown --object-path /Shutdown \
+                --method org.kde.Shutdown.logout >/dev/null 2>&1 || true
+              for i in $(seq 1 30); do pgrep -u "$uid" -x plasmashell >/dev/null 2>&1 || break; sleep 1; done
+              if pgrep -u "$uid" -x plasmashell >/dev/null 2>&1; then
+                timeout 8 gdbus call --session --dest org.kde.plasmashell --object-path /MainApplication \
+                  --method org.qtproject.Qt.QCoreApplication.quit >/dev/null 2>&1 || true
+              fi
+            fi
+            if command -v flatpak >/dev/null 2>&1; then
+              flatpak ps --columns=application 2>/dev/null | while read -r app; do
+                [ -n "$app" ] && flatpak kill "$app" >/dev/null 2>&1
+              done
+            fi
+            for i in Discord discord sober; do pkill -TERM -u "$uid" -x "$i" 2>/dev/null || true; done
+            sleep 3
+            return 0
+          }
+
+          # ----------------------------------------------------------------------- main
+          case "${1:-}" in
+            baseline) baseline ;;
+            restore)  shift; restore "$@" ;;
+            save)     shift; save "$@" ;;
+            quiesce)  quiesce ;;
+            *) echo "usage: eagler-persist {baseline|restore <archive>|quiesce|save <archive>}" >&2; exit 2 ;;
+          esac
+          PERSIST_EOF
+          sudo chmod 0755 /usr/local/bin/eagler-persist
+          bash -n /usr/local/bin/eagler-persist
+
       - name: Restore encrypted desktop profile
+        id: profile-cache
         uses: actions/cache/restore@v4
         with:
           path: ${{ runner.temp }}/desktop-profile.tar.gpg
           key: desktop-profile-${{ github.run_id }}-${{ github.run_attempt }}
-          # First try the current archive name, then migrate the older encrypted
-          # Discord/Sober-only cache if this is the first run after the rename.
+          # The newest saved desktop wins. The second prefix is the older Discord/Sober-only cache.
           restore-keys: |
             desktop-profile-
             discord-profile-
@@ -58,14 +430,12 @@ jobs:
             nginx apache2-utils dbus-x11 xauth fonts-dejavu-core curl zip python3 git ffmpeg xz-utils gnupg openssl \
             mesa-utils mesa-utils-extra libgl1-mesa-dri libglx-mesa0 libegl1 mesa-vulkan-drivers vulkan-tools flatpak \
             kdesdk-thumbnailers filelight fonts-noto-color-emoji fonts-hack build-essential cmake ninja-build jq ripgrep tree \
-            okular gwenview kcalc xclip htop unzip p7zip-full iproute2
-          # Preconfigure Flathub as a system remote with administrator privileges so KDE Discover
-          # does not fail with: "Flatpak system operation ConfigureRemote not allowed for user".
-          sudo flatpak remote-add --system --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
-          # Install Sober in the runner user\x27s Flatpak installation.
-          flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
-          flatpak install --user --noninteractive -y flathub org.vinegarhq.Sober
-          flatpak update --user --noninteractive -y
+            okular gwenview kcalc xclip htop unzip p7zip-full iproute2 zstd
+          # Optional extras: desktop portals (Flatpak apps such as Sober use them to open links
+          # and file pickers) and the Discover app store. A failure here must not stop the desktop.
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            xdg-desktop-portal xdg-desktop-portal-kde xdg-desktop-portal-gtk plasma-discover plasma-discover-backend-flatpak \
+            || echo "::warning::Optional portal/Discover packages could not be installed; Sober link handling and the Discover app store may not work."
           curl --fail --location --retry 3 "https://discord.com/api/download?platform=linux&format=deb" --output /tmp/discord.deb
           sudo apt-get install -y /tmp/discord.deb
           curl --fail --location --retry 3 \
@@ -79,6 +449,36 @@ jobs:
             https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 \
             --output /tmp/cloudflared
           sudo install -m 0755 /tmp/cloudflared /usr/local/bin/cloudflared
+
+      - name: Prepare Flatpak, Discover permissions and Sober
+        run: |
+          set -euo pipefail
+          # Ubuntu 24.04 blocks unprivileged user namespaces with AppArmor. Flatpak's bubblewrap
+          # sandbox (Sober, Discord's Chromium sandbox) cannot start without them.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 \
+            || echo "::warning::Could not relax the AppArmor user-namespace restriction; Flatpak apps such as Sober may fail to start."
+          sudo sysctl -w kernel.unprivileged_userns_clone=1 2>/dev/null || true
+          unshare --user --map-root-user true \
+            && echo "User namespaces work." \
+            || echo "::warning::User namespaces are still blocked; Sober will not start."
+          # This runner is single-user and disposable, so let the desktop user approve admin actions
+          # (Discover installs, Flatpak system operations) without a password prompt.
+          sudo install -d -m 0755 /etc/polkit-1/rules.d
+          sudo tee /etc/polkit-1/rules.d/49-eagler-runner.rules >/dev/null <<POLKIT
+          polkit.addRule(function(action, subject) {
+              if (subject.user == "$USER") { return polkit.Result.YES; }
+          });
+          POLKIT
+          # Flathub as a system remote so KDE Discover does not fail with
+          # "Flatpak system operation ConfigureRemote not allowed for user".
+          sudo flatpak remote-add --system --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+          # Sober (the Roblox client for Linux) lives in the runner user's own Flatpak installation.
+          flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+          flatpak install --user --noninteractive -y flathub org.vinegarhq.Sober
+          flatpak update --user --noninteractive -y || echo "::warning::flatpak update failed; continuing with the installed versions."
+
+      - name: Record what the fresh runner already has
+        run: eagler-persist baseline
 
       - name: Diagnose graphics capabilities
         if: always()
@@ -99,41 +499,48 @@ jobs:
             echo "=== /dev/dri ==="
             ls -la /dev/dri 2>&1 || true
             echo "=== Mesa and Vulkan driver files ==="
-            find /usr/lib /usr/lib64 \\
-              \( -iname '*dri*' -o -iname '*vulkan*' \) -type f 2>/dev/null |
-              head -n 120 || true
+            find /usr/lib /usr/lib64 \( -iname '*dri*' -o -iname '*vulkan*' \) -type f 2>/dev/null | head -n 120 || true
           } > "$RUNNER_TEMP/desktop-graphics-devices.txt"
 
-      - name: Restore desktop, KDE, Discord, Sober, and working files
+      - name: Restore desktop, KDE settings, apps, Sober and personal files
+        id: restore-profile
         env:
-          DISCORD_PROFILE_PASSPHRASE: ${{ secrets.DISCORD_PROFILE_PASSPHRASE }}
+          EAGLER_PERSIST_PASSPHRASE: ${{ secrets.DISCORD_PROFILE_PASSPHRASE }}
+          EAGLER_PERSIST_RESET: ${{ inputs.reset_profile && '1' || '0' }}
         run: |
           set -euo pipefail
-          export EAGLER_PERSIST_ARCHIVE="${{ runner.temp }}/desktop-profile.tar.gpg"
-          export DISCORD_PROFILE_PASSPHRASE
-          bash scripts/eagler-persist.sh restore
-          # Preserve saved settings but force OpenGL and Mesa software rendering
-          # as a best-effort workaround for the virtual GPU in this runner.
+          echo "Cache hit: ${{ steps.profile-cache.outputs.cache-hit || 'false' }} (matched key: ${{ steps.profile-cache.outputs.cache-matched-key || 'none' }})"
+          eagler-persist restore "$RUNNER_TEMP/desktop-profile.tar.gpg"
+
+      - name: Apply Sober settings
+        run: |
+          set -euo pipefail
+          # The runner has no GPU. Sober needs OpenGL ES 3.0 at minimum; Mesa's llvmpipe
+          # software renderer provides that, so force Sober's OpenGL path and software GL.
           SOBER_CONFIG="$HOME/.var/app/org.vinegarhq.Sober/config/sober/config.json"
           mkdir -p "$(dirname "$SOBER_CONFIG")"
-          if [ ! -s "$SOBER_CONFIG" ]; then printf "{}\n" > "$SOBER_CONFIG"; fi
-          jq '.use_opengl = true' "$SOBER_CONFIG" > "$SOBER_CONFIG.tmp"
-          mv "$SOBER_CONFIG.tmp" "$SOBER_CONFIG"
+          if [ ! -s "$SOBER_CONFIG" ]; then printf '{}\n' > "$SOBER_CONFIG"; fi
+          if jq empty "$SOBER_CONFIG" 2>/dev/null; then
+            jq '.use_opengl = true' "$SOBER_CONFIG" > "$SOBER_CONFIG.tmp"
+            mv "$SOBER_CONFIG.tmp" "$SOBER_CONFIG"
+          else
+            echo "::warning::Sober config.json was not valid JSON; kept as config.json.broken and started a new one."
+            mv "$SOBER_CONFIG" "$SOBER_CONFIG.broken"
+            printf '{"use_opengl": true}\n' > "$SOBER_CONFIG"
+          fi
           flatpak override --user \
             --env=LIBGL_ALWAYS_SOFTWARE=1 \
             --env=GALLIUM_DRIVER=llvmpipe \
             --env=GDK_BACKEND=x11 \
             org.vinegarhq.Sober
-          # Record the renderer available to the runner; this helps distinguish a
-          # missing software renderer from a virtual-GPU/passthrough limitation.
-          (glxinfo -B || true) > "$RUNNER_TEMP/desktop-glxinfo.txt" 2>&1
+          echo "Sober needs SSE4.1 or newer. This CPU reports: $(grep -o -m1 -E 'sse4_[12]' /proc/cpuinfo | sort -u | tr '\n' ' ' || true)"
 
       - name: Prepare installer, upload inbox, and authenticated gateway
         env:
           DESKTOP_PASSWORD: ${{ secrets.DESKTOP_PASSWORD }}
         run: |
           set -euo pipefail
-          mkdir -p "$HOME/eagler-visual-session/workspace" "$HOME/eagler-visual-session/inbox" "$HOME/.vnc" "$HOME/Desktop" "$HOME/.config"
+          mkdir -p "$HOME/eagler-visual-session/workspace" "$HOME/eagler-visual-session/inbox" "$HOME/.vnc" "$HOME/Desktop" "$HOME/.config" "$HOME/.local/bin"
           cat > "$HOME/.config/kwalletrc" <<'EOF'
           [Wallet]
           Enabled=false
@@ -239,13 +646,49 @@ jobs:
           Patch source: checked-out repository folder U1-Patcher
           Upload files at the authenticated desktop URL plus /upload.
           Uploaded files appear in ~/eagler-visual-session/inbox.
-          Desktop settings, KDE options, Discord and Sober app data, Desktop shortcuts,
-          workspace files, and uploaded inbox files are encrypted and cached for the next run.
-          OpenGL software rendering (llvmpipe) is forced as a best-effort virtual-GPU workaround. Sober may still refuse to start if its runtime cannot use a supported graphics device.
-          Save files under ~/eagler-visual-session/workspace or inbox. Desktop settings,
-          application settings, shortcuts, workspace and inbox are persisted between runs.
-          Click Finish and Save Session to end the session.
+
+          WHAT IS SAVED BETWEEN SESSIONS (encrypted, in the GitHub Actions cache)
+            Files:     Desktop, Documents, Downloads, Pictures, Music, Videos, Templates, Public,
+                       ~/eagler-visual-session/workspace and /inbox
+            Settings:  KDE/Plasma (~/.config, ~/.local), Discord, Firefox/Thunderbird profiles,
+                       Flatpak app data and permissions (~/.var), SSH config
+            Apps:      apt packages you install (sudo apt install ...) and Flatpak apps you
+                       install (Discover or "flatpak install ...") are listed and re-installed
+                       automatically next session. Flatpak apps must come from Flathub.
+            Sober:     its downloaded Roblox runtime, login and config live in
+                       ~/.var/app/org.vinegarhq.Sober and are kept.
+            More:      list extra folders (one per line, relative to your home folder) in
+                       ~/.eagler-persist/extra-paths.txt
+          NOT SAVED: files outside your home folder, and the runner's own system files.
+
+          The save happens when the session ends: click "Finish and Save Session", or let the
+          time limit run out, or cancel the run (cancelling still saves). If the run is killed
+          by GitHub outright, that session's changes are lost.
+          If the saved profile ever gets broken, run the workflow with reset_profile ticked.
+
+          SOBER (Roblox)
+            The runner has no GPU, so Sober runs on the Mesa llvmpipe software renderer with its
+            OpenGL path forced (use_opengl=true). It needs SSE4.1+ and OpenGL ES 3.0.
+            Start it from the "Sober (Roblox)" shortcut. Log: ~/eagler-visual-session/sober-launch.log
+            "Sober Settings" opens Sober's own config tool.
+            First launch downloads the Roblox client (a few hundred MB); after that it is kept.
+          Save files under your home folder. Click Finish and Save Session to end the session.
           EOF
+
+          cat > "$HOME/.local/bin/eagler-sober" <<'SOBER'
+          #!/usr/bin/env bash
+          # Start Sober with software OpenGL (the runner has no GPU) and keep a log of what happened.
+          LOG="$HOME/eagler-visual-session/sober-launch.log"
+          mkdir -p "$(dirname "$LOG")"
+          {
+            echo "=== $(date -u +%Y-%m-%dT%H:%M:%SZ) starting Sober ==="
+            echo "CPU flags: $(grep -o -m1 -E 'sse4_[12]' /proc/cpuinfo | sort -u | tr '\n' ' ')"
+            glxinfo 2>/dev/null | grep -E 'OpenGL (renderer|version) string|OpenGL ES profile version' || echo "glxinfo unavailable"
+          } >>"$LOG" 2>&1
+          export LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe GDK_BACKEND=x11
+          exec flatpak run org.vinegarhq.Sober "$@" >>"$LOG" 2>&1
+          SOBER
+          chmod +x "$HOME/.local/bin/eagler-sober"
 
           cat > "$HOME/Desktop/Launch Eaglercraft Setup.desktop" <<EOF
           [Desktop Entry]
@@ -272,12 +715,22 @@ jobs:
           Version=1.0
           Type=Application
           Name=Sober (Roblox)
-          Comment=Launch Sober with software OpenGL fallback
-          Exec=env LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe GDK_BACKEND=x11 bash -lc 'flatpak run org.vinegarhq.Sober 2>&1 | tee -a "$HOME/eagler-visual-session/sober-launch.log"'
+          Comment=Launch Sober with software OpenGL (log: ~/eagler-visual-session/sober-launch.log)
+          Exec=$HOME/.local/bin/eagler-sober
           Terminal=false
           Categories=Game;
           EOF
           chmod +x "$HOME/Desktop/Sober.desktop"
+          cat > "$HOME/Desktop/Sober Settings.desktop" <<EOF
+          [Desktop Entry]
+          Version=1.0
+          Type=Application
+          Name=Sober Settings
+          Exec=env LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe GDK_BACKEND=x11 flatpak run org.vinegarhq.Sober config
+          Terminal=false
+          Categories=Game;Settings;
+          EOF
+          chmod +x "$HOME/Desktop/Sober Settings.desktop"
           cat > "$HOME/Desktop/Finish and Save Session.desktop" <<EOF
           [Desktop Entry]
           Version=1.0
@@ -363,6 +816,9 @@ jobs:
           unset DBUS_SESSION_BUS_ADDRESS
           export XDG_CURRENT_DESKTOP=KDE
           export KDE_FULL_SESSION=true
+          # Make Flatpak apps (Sober, Firefox, ...) show up in the menu and handle links such as roblox://.
+          export XDG_DATA_DIRS="$HOME/.local/share/flatpak/exports/share:/var/lib/flatpak/exports/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+          export PATH="$HOME/.local/bin:$PATH"
           startplasma-x11 >/tmp/eagler-plasma.log 2>&1 &
           for i in $(seq 1 45); do
             if pgrep -u "$USER" -x plasmashell >/dev/null 2>&1; then break; fi
@@ -370,9 +826,12 @@ jobs:
           done
           if ! pgrep -u "$USER" -x plasmashell >/dev/null 2>&1; then cat /tmp/eagler-plasma.log; exit 1; fi
           qdbus6 org.kde.KWin /Compositor suspend >/dev/null 2>&1 || true
+          # Set the default wallpaper once. After that the wallpaper you pick in Settings is kept.
+          WALLPAPER_MARK="$HOME/.eagler-persist/wallpaper-applied"
           WALLPAPER="$HOME/eagler-visual-session/Rimuru.jpg"
-          WALLPAPER_URI="file://$WALLPAPER"
-          cat > /tmp/eagler-set-wallpaper.js <<EOF
+          if [ ! -e "$WALLPAPER_MARK" ] && [ -f "$WALLPAPER" ]; then
+            WALLPAPER_URI="file://$WALLPAPER"
+            cat > /tmp/eagler-set-wallpaper.js <<EOF
           var allDesktops = desktops();
           for (var i = 0; i < allDesktops.length; i++) {
               var d = allDesktops[i];
@@ -381,8 +840,10 @@ jobs:
               d.writeConfig("Image", "$WALLPAPER_URI");
           }
           EOF
-          gdbus call --session --dest org.kde.plasmashell --object-path /PlasmaShell \
-            --method org.kde.PlasmaShell.evaluateScript "$(cat /tmp/eagler-set-wallpaper.js)" >/tmp/eagler-wallpaper-result.log 2>&1 || true
+            gdbus call --session --dest org.kde.plasmashell --object-path /PlasmaShell \
+              --method org.kde.PlasmaShell.evaluateScript "$(cat /tmp/eagler-set-wallpaper.js)" >/tmp/eagler-wallpaper-result.log 2>&1 || true
+            mkdir -p "$(dirname "$WALLPAPER_MARK")" && touch "$WALLPAPER_MARK"
+          fi
           wait
           XSTART
           chmod +x "$HOME/.vnc/xstartup"
@@ -422,9 +883,9 @@ jobs:
             echo
             echo "Upload a local client JAR at **$URL/upload**."
             echo
-            echo "Desktop settings and files in Desktop, workspace, and inbox are restored on future runs; the downloadable artifact is also available for 7 days."
+            echo "Your files, settings and installed apps are restored from the last session and saved again when it ends (click **Finish and Save Session** on the desktop, or cancel this run)."
             echo
-            echo "KasmVNC replaces x11vnc/noVNC. The temporary URL expires when the job ends."
+            echo "The temporary URL expires when the job ends."
           } >> "$GITHUB_STEP_SUMMARY"
           echo "KasmVNC desktop: $URL/"
           echo "Upload URL: $URL/upload"
@@ -442,27 +903,50 @@ jobs:
           done
           echo "Desktop session reached its planned time limit; packaging current files."
 
-      - name: Encrypt desktop settings and personal files for next session
-        if: always()
+      # Only save if the restore step succeeded. If it failed (for example a wrong passphrase),
+      # saving now would replace your real saved desktop with an empty one.
+      - name: Save desktop settings, files and installed apps
+        id: save-profile
+        if: always() && steps.restore-profile.outcome == 'success'
         env:
-          DISCORD_PROFILE_PASSPHRASE: ${{ secrets.DISCORD_PROFILE_PASSPHRASE }}
+          EAGLER_PERSIST_PASSPHRASE: ${{ secrets.DISCORD_PROFILE_PASSPHRASE }}
         run: |
-          set -euo pipefail
-          if [ -n "$DISCORD_PROFILE_PASSPHRASE" ]; then
-            export EAGLER_PERSIST_ARCHIVE="${{ runner.temp }}/desktop-profile.tar.gpg"
-            export DISCORD_PROFILE_PASSPHRASE
-            bash scripts/eagler-persist.sh quiesce
-            bash scripts/eagler-persist.sh save
-          else
-            echo "::warning::DISCORD_PROFILE_PASSPHRASE is unset; profile will not be saved."
-          fi
+          set -uo pipefail
+          eagler-persist quiesce || true
+          eagler-persist save "$RUNNER_TEMP/desktop-profile.tar.gpg"
+          {
+            echo "### Saved for the next session"
+            echo
+            echo "- Encrypted profile: $(du -h "$RUNNER_TEMP/desktop-profile.tar.gpg" | cut -f1)"
+            echo "- apt packages: $(paste -sd' ' "$HOME/.eagler-persist/apt-packages.list" 2>/dev/null | grep . || echo none)"
+            echo "- Flatpak apps: $(cut -f3 "$HOME/.eagler-persist/flatpak-apps.list" 2>/dev/null | paste -sd' ' | grep . || echo none)"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Save encrypted desktop profile
-        if: always()
+        id: cache-save
+        if: always() && steps.save-profile.outcome == 'success'
         uses: actions/cache/save@v4
         with:
           path: ${{ runner.temp }}/desktop-profile.tar.gpg
           key: desktop-profile-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Remove superseded profile caches
+        if: always() && steps.cache-save.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          key="desktop-profile-${{ github.run_id }}-${{ github.run_attempt }}"
+          found="$(gh cache list --repo "$GITHUB_REPOSITORY" --key "$key" --json id --jq 'length' 2>/dev/null || echo 0)"
+          if [ "${found:-0}" -lt 1 ]; then
+            echo "::warning::The new profile cache was not found, so the older ones are being kept."
+            exit 0
+          fi
+          for prefix in desktop-profile- discord-profile-; do
+            gh cache list --repo "$GITHUB_REPOSITORY" --key "$prefix" --limit 100 --json id,key \
+              --jq ".[] | select(.key != \"$key\") | .id" \
+              | xargs -r -n1 gh cache delete --repo "$GITHUB_REPOSITORY" || true
+          done
 
       - name: Package session files
         if: always()
@@ -477,6 +961,9 @@ jobs:
           cp -f "$RUNNER_TEMP/desktop-vulkaninfo.txt" "$GITHUB_WORKSPACE/session-output/" 2>/dev/null || true
           cp -f "$RUNNER_TEMP/desktop-graphics-devices.txt" "$GITHUB_WORKSPACE/session-output/" 2>/dev/null || true
           cp -f sober-launch.log "$GITHUB_WORKSPACE/session-output/" 2>/dev/null || true
+          mkdir -p "$GITHUB_WORKSPACE/session-output/saved-app-lists"
+          cp -f "$HOME/.eagler-persist/apt-packages.list" "$HOME/.eagler-persist/flatpak-apps.list" "$HOME/.eagler-persist/last-saved.txt" \
+            "$GITHUB_WORKSPACE/session-output/saved-app-lists/" 2>/dev/null || true
           cp -a workspace inbox "$GITHUB_WORKSPACE/session-output/" 2>/dev/null || true
 
       - name: Upload Eaglercraft session artifact
