@@ -35,13 +35,13 @@ jobs:
           sparse-checkout: U1-Patcher
           sparse-checkout-cone-mode: true
 
-      - name: Restore encrypted Discord profile
+      - name: Restore encrypted desktop profile
         uses: actions/cache/restore@v4
         with:
-          path: ${{ runner.temp }}/discord-profile.tar.gpg
-          key: discord-profile-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/desktop-profile.tar.gpg
+          key: desktop-profile-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            discord-profile-
+            desktop-profile-
 
       - name: Install desktop and web access dependencies
         run: |
@@ -75,12 +75,12 @@ jobs:
             --output /tmp/cloudflared
           sudo install -m 0755 /tmp/cloudflared /usr/local/bin/cloudflared
 
-      - name: Restore Discord and Sober profiles
+      - name: Restore desktop, KDE, Discord, Sober, and working files
         env:
           DISCORD_PROFILE_PASSPHRASE: ${{ secrets.DISCORD_PROFILE_PASSPHRASE }}
         run: |
           set -euo pipefail
-          PROFILE_ARCHIVE="${{ runner.temp }}/discord-profile.tar.gpg"
+          PROFILE_ARCHIVE="${{ runner.temp }}/desktop-profile.tar.gpg"
           if [ -f "$PROFILE_ARCHIVE" ]; then
             gpg --batch --yes --pinentry-mode loopback --passphrase "$DISCORD_PROFILE_PASSPHRASE" \
               --decrypt "$PROFILE_ARCHIVE" | tar -xzf - -C "$HOME"
@@ -205,10 +205,11 @@ jobs:
           Patch source: checked-out repository folder U1-Patcher
           Upload files at the authenticated desktop URL plus /upload.
           Uploaded files appear in ~/eagler-visual-session/inbox.
-          Sober (Roblox) is installed from Flathub; its settings and app data are
-          encrypted and cached for the next run using the existing profile passphrase.
+          Desktop settings, KDE options, Discord and Sober app data, Desktop shortcuts,
+          workspace files, and uploaded inbox files are encrypted and cached for the next run.
           OpenGL/software rendering is enabled as a best-effort virtual-GPU workaround.
-          Save output under ~/eagler-visual-session/workspace.
+          Save files under ~/eagler-visual-session/workspace or inbox. Desktop settings,
+          application settings, shortcuts, workspace and inbox are persisted between runs.
           Click Finish and Save Session to end the session.
           EOF
 
@@ -387,7 +388,7 @@ jobs:
             echo
             echo "Upload a local client JAR at **$URL/upload**."
             echo
-            echo "Save output under ~/eagler-visual-session/workspace; click Finish and Save Session to publish an artifact."
+            echo "Desktop settings and files in Desktop, workspace, and inbox are restored on future runs; the downloadable artifact is also available for 7 days."
             echo
             echo "KasmVNC replaces x11vnc/noVNC. The temporary URL expires when the job ends."
           } >> "$GITHUB_STEP_SUMMARY"
@@ -407,34 +408,38 @@ jobs:
           done
           echo "Desktop session reached its planned time limit; packaging current files."
 
-      - name: Encrypt Discord and Sober profiles for next session
+      - name: Encrypt desktop settings and personal files for next session
         if: always()
         env:
           DISCORD_PROFILE_PASSPHRASE: ${{ secrets.DISCORD_PROFILE_PASSPHRASE }}
         run: |
           set -euo pipefail
           if [ -n "$DISCORD_PROFILE_PASSPHRASE" ]; then
+            # Close apps before archiving their databases and preferences.
             pkill -TERM -x Discord 2>/dev/null || true
             pkill -TERM -x discord 2>/dev/null || true
             pkill -TERM -x sober 2>/dev/null || true
             sleep 3
+            mkdir -p "$HOME/eagler-visual-session/workspace" "$HOME/eagler-visual-session/inbox"
             PROFILE_PATHS=()
-            [ -d "$HOME/.config/discord" ] && PROFILE_PATHS+=(.config/discord)
-            [ -d "$HOME/.var/app/org.vinegarhq.Sober" ] && PROFILE_PATHS+=(.var/app/org.vinegarhq.Sober)
-            if [ "${#PROFILE_PATHS[@]}" -gt 0 ]; then
-              tar -czf - -C "$HOME" "${PROFILE_PATHS[@]}" |
-                gpg --batch --yes --symmetric --cipher-algo AES256 --pinentry-mode loopback \
-                  --passphrase "$DISCORD_PROFILE_PASSPHRASE" \
-                  --output "${{ runner.temp }}/discord-profile.tar.gpg"
-            fi
+            # KDE settings, desktop layout, shortcuts, app preferences and local app data.
+            for p in .config .local/share .local/state .var/app Desktop .mozilla; do
+              [ ! -e "$HOME/$p" ] || PROFILE_PATHS+=("$p")
+            done
+            # Persist user-created files independently of the short-lived runner.
+            PROFILE_PATHS+=(eagler-visual-session/workspace eagler-visual-session/inbox)
+            tar -czf - -C "$HOME" "${PROFILE_PATHS[@]}" |
+              gpg --batch --yes --symmetric --cipher-algo AES256 --pinentry-mode loopback \
+                --passphrase "$DISCORD_PROFILE_PASSPHRASE" \
+                --output "${{ runner.temp }}/desktop-profile.tar.gpg"
           fi
 
-      - name: Save encrypted Discord profile
+      - name: Save encrypted desktop profile
         if: always()
         uses: actions/cache/save@v4
         with:
-          path: ${{ runner.temp }}/discord-profile.tar.gpg
-          key: discord-profile-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/desktop-profile.tar.gpg
+          key: desktop-profile-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Package session files
         if: always()
