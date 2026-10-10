@@ -40,8 +40,11 @@ jobs:
         with:
           path: ${{ runner.temp }}/desktop-profile.tar.gpg
           key: desktop-profile-${{ github.run_id }}-${{ github.run_attempt }}
+          # First try the current archive name, then migrate the older encrypted
+          # Discord/Sober-only cache if this is the first run after the rename.
           restore-keys: |
             desktop-profile-
+            discord-profile-
 
       - name: Install desktop and web access dependencies
         run: |
@@ -93,10 +96,11 @@ jobs:
           jq '.use_opengl = true' "$SOBER_CONFIG" > "$SOBER_CONFIG.tmp"
           mv "$SOBER_CONFIG.tmp" "$SOBER_CONFIG"
           flatpak override --user \
-  --env=LIBGL_ALWAYS_SOFTWARE=1 \
-  --env=GALLIUM_DRIVER=llvmpipe \
-  --env=MESA_LOADER_DRIVER_OVERRIDE=llvmpipe \
-  org.vinegarhq.Sober
+            --env=LIBGL_ALWAYS_SOFTWARE=1 \
+            --env=GALLIUM_DRIVER=llvmpipe \
+            --env=MESA_LOADER_DRIVER_OVERRIDE=llvmpipe \
+            --env=GDK_BACKEND=x11 \
+            org.vinegarhq.Sober
           # Record the renderer available to the runner; this helps distinguish a
           # missing software renderer from a virtual-GPU/passthrough limitation.
           (glxinfo -B || true) > "$RUNNER_TEMP/desktop-glxinfo.txt" 2>&1
@@ -246,7 +250,7 @@ jobs:
           Type=Application
           Name=Sober (Roblox)
           Comment=Launch Sober with software OpenGL fallback
-          Exec=env LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe MESA_LOADER_DRIVER_OVERRIDE=llvmpipe flatpak run org.vinegarhq.Sober
+          Exec=env LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe MESA_LOADER_DRIVER_OVERRIDE=llvmpipe GDK_BACKEND=x11 bash -lc 'flatpak run org.vinegarhq.Sober 2>&1 | tee -a "$HOME/eagler-visual-session/sober-launch.log"'
           Terminal=false
           Categories=Game;
           EOF
@@ -456,6 +460,8 @@ jobs:
           mkdir -p "$GITHUB_WORKSPACE/session-output"
           cp -f eagler-session.zip "$GITHUB_WORKSPACE/session-output/" 2>/dev/null || true
           cp -f README-FIRST.txt "$GITHUB_WORKSPACE/session-output/" 2>/dev/null || true
+          cp -f "$RUNNER_TEMP/desktop-glxinfo.txt" "$GITHUB_WORKSPACE/session-output/" 2>/dev/null || true
+          cp -f sober-launch.log "$GITHUB_WORKSPACE/session-output/" 2>/dev/null || true
           cp -a workspace inbox "$GITHUB_WORKSPACE/session-output/" 2>/dev/null || true
 
       - name: Upload Eaglercraft session artifact
