@@ -92,7 +92,14 @@ jobs:
           if [ ! -s "$SOBER_CONFIG" ]; then printf "{}\n" > "$SOBER_CONFIG"; fi
           jq '.use_opengl = true' "$SOBER_CONFIG" > "$SOBER_CONFIG.tmp"
           mv "$SOBER_CONFIG.tmp" "$SOBER_CONFIG"
-          flatpak override --user --env=LIBGL_ALWAYS_SOFTWARE=1 org.vinegarhq.Sober
+          flatpak override --user \
+  --env=LIBGL_ALWAYS_SOFTWARE=1 \
+  --env=GALLIUM_DRIVER=llvmpipe \
+  --env=MESA_LOADER_DRIVER_OVERRIDE=llvmpipe \
+  org.vinegarhq.Sober
+          # Record the renderer available to the runner; this helps distinguish a
+          # missing software renderer from a virtual-GPU/passthrough limitation.
+          (glxinfo -B || true) > "$RUNNER_TEMP/desktop-glxinfo.txt" 2>&1
 
       - name: Prepare installer, upload inbox, and authenticated gateway
         env:
@@ -207,7 +214,7 @@ jobs:
           Uploaded files appear in ~/eagler-visual-session/inbox.
           Desktop settings, KDE options, Discord and Sober app data, Desktop shortcuts,
           workspace files, and uploaded inbox files are encrypted and cached for the next run.
-          OpenGL/software rendering is enabled as a best-effort virtual-GPU workaround.
+          OpenGL software rendering (llvmpipe) is forced as a best-effort virtual-GPU workaround. Sober may still refuse to start if its runtime cannot use a supported graphics device.
           Save files under ~/eagler-visual-session/workspace or inbox. Desktop settings,
           application settings, shortcuts, workspace and inbox are persisted between runs.
           Click Finish and Save Session to end the session.
@@ -239,7 +246,7 @@ jobs:
           Type=Application
           Name=Sober (Roblox)
           Comment=Launch Sober with software OpenGL fallback
-          Exec=env LIBGL_ALWAYS_SOFTWARE=1 flatpak run org.vinegarhq.Sober
+          Exec=env LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe MESA_LOADER_DRIVER_OVERRIDE=llvmpipe flatpak run org.vinegarhq.Sober
           Terminal=false
           Categories=Game;
           EOF
