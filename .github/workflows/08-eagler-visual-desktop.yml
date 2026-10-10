@@ -54,7 +54,7 @@ jobs:
             breeze breeze-gtk-theme breeze-icon-theme oxygen-icon-theme hicolor-icon-theme kde-config-gtk-style kde-spectacle plasma-systemmonitor plasma-nm plasma-pa kscreen \
             xdg-utils desktop-file-utils shared-mime-info gvfs gvfs-backends policykit-1 polkit-kde-agent-1 \
             nginx apache2-utils dbus-x11 xauth fonts-dejavu-core curl zip python3 git ffmpeg xz-utils gnupg openssl \
-            mesa-utils mesa-utils-extra libgl1-mesa-dri libglx-mesa0 libegl1 mesa-vulkan-drivers flatpak \
+            mesa-utils mesa-utils-extra libgl1-mesa-dri libglx-mesa0 libegl1 mesa-vulkan-drivers vulkan-tools flatpak \
             kdesdk-thumbnailers filelight fonts-noto-color-emoji fonts-hack build-essential cmake ninja-build jq ripgrep tree \
             okular gwenview kcalc xclip htop unzip p7zip-full iproute2
           # Preconfigure Flathub as a system remote with administrator privileges so KDE Discover
@@ -78,6 +78,30 @@ jobs:
             --output /tmp/cloudflared
           sudo install -m 0755 /tmp/cloudflared /usr/local/bin/cloudflared
 
+      - name: Diagnose graphics capabilities
+        if: always()
+        run: |
+          {
+            echo "=== OpenGL renderer ==="
+            glxinfo -B 2>&1 || true
+          } > "$RUNNER_TEMP/desktop-glxinfo.txt"
+          {
+            echo "=== EGL ==="
+            eglinfo 2>&1 | head -n 120 || true
+          } > "$RUNNER_TEMP/desktop-eglinfo.txt"
+          {
+            echo "=== Vulkan ==="
+            vulkaninfo --summary 2>&1 || true
+          } > "$RUNNER_TEMP/desktop-vulkaninfo.txt"
+          {
+            echo "=== /dev/dri ==="
+            ls -la /dev/dri 2>&1 || true
+            echo "=== Mesa and Vulkan driver files ==="
+            find /usr/lib /usr/lib64 \\
+              \( -iname '*dri*' -o -iname '*vulkan*' \) -type f 2>/dev/null |
+              head -n 120 || true
+          } > "$RUNNER_TEMP/desktop-graphics-devices.txt"
+
       - name: Restore desktop, KDE, Discord, Sober, and working files
         env:
           DISCORD_PROFILE_PASSPHRASE: ${{ secrets.DISCORD_PROFILE_PASSPHRASE }}
@@ -98,7 +122,6 @@ jobs:
           flatpak override --user \
             --env=LIBGL_ALWAYS_SOFTWARE=1 \
             --env=GALLIUM_DRIVER=llvmpipe \
-            --env=MESA_LOADER_DRIVER_OVERRIDE=llvmpipe \
             --env=GDK_BACKEND=x11 \
             org.vinegarhq.Sober
           # Record the renderer available to the runner; this helps distinguish a
@@ -250,7 +273,7 @@ jobs:
           Type=Application
           Name=Sober (Roblox)
           Comment=Launch Sober with software OpenGL fallback
-          Exec=env LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe MESA_LOADER_DRIVER_OVERRIDE=llvmpipe GDK_BACKEND=x11 bash -lc 'flatpak run org.vinegarhq.Sober 2>&1 | tee -a "$HOME/eagler-visual-session/sober-launch.log"'
+          Exec=env LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe GDK_BACKEND=x11 bash -lc 'flatpak run org.vinegarhq.Sober 2>&1 | tee -a "$HOME/eagler-visual-session/sober-launch.log"'
           Terminal=false
           Categories=Game;
           EOF
@@ -461,6 +484,9 @@ jobs:
           cp -f eagler-session.zip "$GITHUB_WORKSPACE/session-output/" 2>/dev/null || true
           cp -f README-FIRST.txt "$GITHUB_WORKSPACE/session-output/" 2>/dev/null || true
           cp -f "$RUNNER_TEMP/desktop-glxinfo.txt" "$GITHUB_WORKSPACE/session-output/" 2>/dev/null || true
+          cp -f "$RUNNER_TEMP/desktop-eglinfo.txt" "$GITHUB_WORKSPACE/session-output/" 2>/dev/null || true
+          cp -f "$RUNNER_TEMP/desktop-vulkaninfo.txt" "$GITHUB_WORKSPACE/session-output/" 2>/dev/null || true
+          cp -f "$RUNNER_TEMP/desktop-graphics-devices.txt" "$GITHUB_WORKSPACE/session-output/" 2>/dev/null || true
           cp -f sober-launch.log "$GITHUB_WORKSPACE/session-output/" 2>/dev/null || true
           cp -a workspace inbox "$GITHUB_WORKSPACE/session-output/" 2>/dev/null || true
 
