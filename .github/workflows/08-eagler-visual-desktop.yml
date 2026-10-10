@@ -32,7 +32,9 @@ jobs:
       - name: Check out the patch source
         uses: actions/checkout@v4
         with:
-          sparse-checkout: U1-Patcher
+          sparse-checkout: |
+            U1-Patcher
+            scripts/eagler-persist.sh
           sparse-checkout-cone-mode: true
 
       - name: Restore encrypted desktop profile
@@ -107,11 +109,9 @@ jobs:
           DISCORD_PROFILE_PASSPHRASE: ${{ secrets.DISCORD_PROFILE_PASSPHRASE }}
         run: |
           set -euo pipefail
-          PROFILE_ARCHIVE="${{ runner.temp }}/desktop-profile.tar.gpg"
-          if [ -f "$PROFILE_ARCHIVE" ]; then
-            gpg --batch --yes --pinentry-mode loopback --passphrase "$DISCORD_PROFILE_PASSPHRASE" \
-              --decrypt "$PROFILE_ARCHIVE" | tar -xzf - -C "$HOME"
-          fi
+          export EAGLER_PERSIST_ARCHIVE="${{ runner.temp }}/desktop-profile.tar.gpg"
+          export DISCORD_PROFILE_PASSPHRASE
+          bash scripts/eagler-persist.sh restore
           # Preserve saved settings but force OpenGL and Mesa software rendering
           # as a best-effort workaround for the virtual GPU in this runner.
           SOBER_CONFIG="$HOME/.var/app/org.vinegarhq.Sober/config/sober/config.json"
@@ -449,23 +449,12 @@ jobs:
         run: |
           set -euo pipefail
           if [ -n "$DISCORD_PROFILE_PASSPHRASE" ]; then
-            # Close apps before archiving their databases and preferences.
-            pkill -TERM -x Discord 2>/dev/null || true
-            pkill -TERM -x discord 2>/dev/null || true
-            pkill -TERM -x sober 2>/dev/null || true
-            sleep 3
-            mkdir -p "$HOME/eagler-visual-session/workspace" "$HOME/eagler-visual-session/inbox"
-            PROFILE_PATHS=()
-            # KDE settings, desktop layout, shortcuts, app preferences and local app data.
-            for p in .config .local/share .local/state .var/app Desktop .mozilla; do
-              [ ! -e "$HOME/$p" ] || PROFILE_PATHS+=("$p")
-            done
-            # Persist user-created files independently of the short-lived runner.
-            PROFILE_PATHS+=(eagler-visual-session/workspace eagler-visual-session/inbox)
-            tar -czf - -C "$HOME" "${PROFILE_PATHS[@]}" |
-              gpg --batch --yes --symmetric --cipher-algo AES256 --pinentry-mode loopback \
-                --passphrase "$DISCORD_PROFILE_PASSPHRASE" \
-                --output "${{ runner.temp }}/desktop-profile.tar.gpg"
+            export EAGLER_PERSIST_ARCHIVE="${{ runner.temp }}/desktop-profile.tar.gpg"
+            export DISCORD_PROFILE_PASSPHRASE
+            bash scripts/eagler-persist.sh quiesce
+            bash scripts/eagler-persist.sh save
+          else
+            echo "::warning::DISCORD_PROFILE_PASSPHRASE is unset; profile will not be saved."
           fi
 
       - name: Save encrypted desktop profile
