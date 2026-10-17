@@ -4,11 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       client_jar_url:
-        description: "Optional direct HTTPS URL for the authorized Minecraft 26.2 client JAR (used only if it is not found in the repository)"
+        description: "Optional override URL for the Minecraft client JAR; defaults to the Mojang URL pinned in this workflow"
         required: false
         type: string
       client_jar_sha256:
-        description: "SHA-256 for the client JAR; required only when client_jar_url is supplied"
+        description: "Optional SHA-256 override; otherwise verifies the SHA-1 hash embedded in the Mojang URL"
         required: false
         type: string
 
@@ -28,7 +28,7 @@ jobs:
         id: inputs
         shell: bash
         env:
-          CLIENT_JAR_URL: ${{ inputs.client_jar_url }}
+          CLIENT_JAR_URL: ${{ inputs.client_jar_url || 'https://piston-data.mojang.com/v1/objects/2dc72797acbc1b63fc16a11c4ac393605f453754/client.jar' }}
           CLIENT_JAR_SHA256: ${{ inputs.client_jar_sha256 }}
         run: |
           set -euo pipefail
@@ -48,14 +48,20 @@ jobs:
 
           jar="$(find . -type f \( -iname 'minecraft-26.2-client.jar' -o -iname 'eaglercraft-26.2-client.jar' \) -not -path './.git/*' -print -quit)"
           if [ -z "$jar" ]; then
-            if [ -z "$CLIENT_JAR_URL" ] || [ -z "$CLIENT_JAR_SHA256" ]; then
-              echo "::error::The repository does not contain the required Minecraft 26.2 client JAR. Add it to the repo as minecraft-26.2-client.jar, or supply its HTTPS URL and SHA-256 in this workflow's optional inputs."
-              exit 1
-            fi
             [[ "$CLIENT_JAR_URL" == https://* ]] || { echo "::error::Client JAR URL must use HTTPS"; exit 1; }
-            [[ "$CLIENT_JAR_SHA256" =~ ^[a-fA-F0-9]{64}$ ]] || { echo "::error::Client JAR SHA-256 must be 64 hexadecimal characters"; exit 1; }
             curl --fail --location --retry 3 "$CLIENT_JAR_URL" -o build-inputs/downloads/minecraft-26.2-client.jar
-            echo "$CLIENT_JAR_SHA256  build-inputs/downloads/minecraft-26.2-client.jar" | sha256sum --check
+            if [ -n "$CLIENT_JAR_SHA256" ]; then
+              [[ "$CLIENT_JAR_SHA256" =~ ^[a-fA-F0-9]{64}$ ]] || { echo "::error::Client JAR SHA-256 must be 64 hexadecimal characters"; exit 1; }
+              echo "$CLIENT_JAR_SHA256  build-inputs/downloads/minecraft-26.2-client.jar" | sha256sum --check
+            else
+              # Mojang's object URL contains the expected SHA-1 digest.
+              expected_sha1="$(echo "$CLIENT_JAR_URL" | sed -nE 's#https://piston-data\.mojang\.com/v1/objects/([a-fA-F0-9]{40})/client\.jar#\1#p')"
+              if [ -z "$expected_sha1" ]; then
+                echo "::error::For a non-Mojang URL, provide client_jar_sha256 so the download can be verified."
+                exit 1
+              fi
+              echo "$expected_sha1  build-inputs/downloads/minecraft-26.2-client.jar" | sha1sum --check
+            fi
             jar="$PWD/build-inputs/downloads/minecraft-26.2-client.jar"
           else
             jar="$(realpath "$jar")"
