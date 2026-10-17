@@ -1,4 +1,4 @@
-name: Check Herz compatibility
+name: Build and inspect Herz for Eagler compatibility
 
 on:
   workflow_dispatch:
@@ -7,12 +7,14 @@ permissions:
   contents: read
 
 jobs:
-  inspect:
+  build-herz:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
-      - name: Checkout VBV project
+      - name: Checkout client project
         uses: actions/checkout@v4
+        with:
+          path: client
 
       - name: Checkout Herz Core
         uses: actions/checkout@v4
@@ -26,59 +28,54 @@ jobs:
           repository: Admanatine/Herz-Compile
           path: .herz/Herz-Compile
 
-      - name: Inspect Herz and VBV architectures
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Build Herz Core and its Eagler platform package
         shell: bash
         run: |
           set -euo pipefail
-
-          echo "=== Herz Core ==="
-          git -C .herz/Herz-Core rev-parse HEAD
-          find .herz/Herz-Core/src -type f -print 2>/dev/null | sort | head -200 || true
-
-          echo "=== Herz Compile ==="
-          git -C .herz/Herz-Compile rev-parse HEAD
-          find .herz/Herz-Compile/src -type f -print 2>/dev/null | sort | head -200 || true
-
-          echo "=== VBV client ==="
-          find VBV -maxdepth 7 -type f \
-            \( -name '*.java' -o -name 'build.gradle*' -o -name 'settings.gradle*' -o -name '*.py' \) \
-            -print | sort | head -400
-
-          echo "=== Current Eagler build markers ==="
-          grep -RniE 'eagler-patcher|TeaVM|wasm|U1-Patcher|apply_vbv_patch' \
-            VBV .github/workflows \
-            --include='*.java' --include='*.py' --include='*.yml' --include='*.yaml' \
-            | head -300 || true
-
-      - name: Build Herz components as an isolated compatibility test
-        shell: bash
-        run: |
-          set -euo pipefail
+          cd .herz/Herz-Core
+          chmod +x gradlew
           java -version
+          ./gradlew build --no-daemon --stacktrace
+          ./gradlew -p eagler/1_8_8 compileHPCKG --no-daemon --stacktrace
+          echo "=== Herz Core outputs ==="
+          find build eagler/1_8_8/build -type f \( -name '*.jar' -o -name '*.hpckg' \) -print 2>/dev/null | sort || true
 
-          for project in .herz/Herz-Core .herz/Herz-Compile; do
-            echo "=== Building $project ==="
-            if [ -x "$project/gradlew" ]; then
-              (
-                cd "$project"
-                ./gradlew build --no-daemon --stacktrace
-              )
-            else
-              echo "No Gradle wrapper in $project; performing a non-building source inspection."
-              if [ -f "$project/build.gradle.kts" ] || [ -f "$project/build.gradle" ]; then
-                echo "Gradle build file found."
-              else
-                echo "No root Gradle build file found; skipping build checks."
-              fi
-              if [ -d "$project/src" ]; then
-                find "$project/src" -type f -print | sort | head -200
-              else
-                echo "No root src/ directory found; listing tracked project files instead."
-                git -C "$project" ls-files | head -200 || true
-              fi
-            fi
-          done
+      - name: Build Herz Compile tool
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd .herz/Herz-Compile
+          chmod +x gradlew
+          java -version
+          ./gradlew :compositer:shadowJar --no-daemon --stacktrace
+          echo "=== Herz Compile outputs ==="
+          find . -type f -path '*/build/libs/*.jar' -print | sort
 
-          echo "Herz compatibility check completed."
-          echo "This workflow intentionally does not replace the production Eagler 26.2 u1 build."
-          echo "Herz is currently treated as an experimental compatibility layer until its package/compiler model can target the 26.2 u1 client."
+      - name: Check target compatibility before client integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "=== Herz target metadata ==="
+          grep -RniE '1_8_8|u53|26\.2|u1|platformTarget|platformTargetVersion' \
+            .herz/Herz-Core .herz/Herz-Compile/manifest \
+            --include='*.json' --include='*.gradle.kts' --include='*.java' \
+            | head -200 || true
+          echo "::warning::The checked-in Herz platform currently targets Eaglercraft 1.8.8 u53, not Eaglercraft 26.2 u1. Successful compilation does not make its packages compatible with the 26.2 client; do not inject these outputs into the production client yet."
+
+      - name: Upload actual Herz build outputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: Herz-build-outputs-${{ github.run_id }}
+          path: |
+            .herz/Herz-Core/build/**/*.jar
+            .herz/Herz-Core/eagler/1_8_8/build/**/*.jar
+            .herz/Herz-Core/eagler/1_8_8/build/**/*.hpckg
+            .herz/Herz-Compile/compositer/build/libs/*.jar
+          if-no-files-found: warn
+          retention-days: 14
