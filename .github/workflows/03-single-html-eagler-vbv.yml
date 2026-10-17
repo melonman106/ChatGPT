@@ -1,12 +1,15 @@
-name: "03 - Package Eaglercraft 26.2 (Single HTML)"\n\nrun-name: "03 - Package single HTML from compile run ${{ inputs.compile_run_id }}"
+name: "03 - Package Eaglercraft 26.2 (Single HTML)"
+
+run-name: "03 - Package single HTML (manual)"
 
 on:
   workflow_dispatch:
     inputs:
       compile_run_id:
         description: "Run ID from successful workflow 02 - Compile Eaglercraft 26.2 u1 (VBV + Herz)"
-        required: true
+        required: false
         type: string
+        default: ""
       with_music:
         description: "Embed optional music into the single HTML"
         required: false
@@ -37,17 +40,40 @@ jobs:
         with:
           node-version: 24
 
-      - name: Download compiled VBV + Herz browser output
+      - name: Resolve compile workflow run
+        id: compile
         env:
-          RUN_ID: ${{ inputs.compile_run_id }}
+          REQUESTED_RUN_ID: ${{ inputs.compile_run_id }}
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
         run: |
           set -euo pipefail
-          artifact_id="$(gh api "repos/${{ github.repository }}/actions/runs/$RUN_ID/artifacts" --jq '.artifacts[] | select(.name == ("Eaglercraft-26.2-VBV-Herz-WASM-GC-" + env.RUN_ID)) | .id' | head -n1)"
-          if [ -z "$artifact_id" ]; then
-            echo "::error::No Eaglercraft-26.2-VBV-Herz-WASM-GC artifact found in run $RUN_ID."
+          run_id="$REQUESTED_RUN_ID"
+          if [ -z "$run_id" ]; then
+            run_id="$(gh api "repos/${{ github.repository }}/actions/workflows/02-compile-eagler-vbv.yml/runs?status=success&per_page=20" --jq '.workflow_runs | map(select(.conclusion == "success")) | .[0].id // empty')"
+          fi
+          if [ -z "$run_id" ]; then
+            echo "::error::No successful workflow 02 run found. Run workflow 02 first."
             exit 1
           fi
-          gh run download "$RUN_ID" --repo "${{ github.repository }}" --name "Eaglercraft-26.2-VBV-Herz-WASM-GC-$RUN_ID" --dir compiled-web
+          artifact_name="Eaglercraft-26.2-VBV-Herz-WASM-GC-$run_id"
+          artifact_id="$(gh api "repos/${{ github.repository }}/actions/runs/$run_id/artifacts?per_page=100" --jq --arg name "$artifact_name" '.artifacts[] | select(.name == $name and .expired == false) | .id' | head -n1)"
+          if [ -z "$artifact_id" ]; then
+            echo "::error::No unexpired $artifact_name artifact found in workflow run $run_id."
+            exit 1
+          fi
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          echo "artifact_name=$artifact_name" >> "$GITHUB_OUTPUT"
+          echo "Using workflow 02 run $run_id, artifact $artifact_name ($artifact_id)."
+
+      - name: Download compiled VBV + Herz browser output
+        env:
+          RUN_ID: ${{ steps.compile.outputs.run_id }}
+          ARTIFACT_NAME: ${{ steps.compile.outputs.artifact_name }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download "$RUN_ID" --repo "${{ github.repository }}" --name "$ARTIFACT_NAME" --dir compiled-web
           test -f compiled-web/classes.wasm
           test -f compiled-web/mesh-worker.wasm
           test -f compiled-web/server-worker.wasm
