@@ -2,10 +2,6 @@ name: Check Herz compatibility
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - ".github/workflows/herz-compatibility.yml"
-      - "ViaBackport26.2-ClientSide/**"
 
 permissions:
   contents: read
@@ -44,13 +40,13 @@ jobs:
           find .herz/Herz-Compile/src -type f -print 2>/dev/null | sort | head -200 || true
 
           echo "=== VBV client ==="
-          find ViaBackport26.2-ClientSide -maxdepth 5 -type f \
+          find VBV -maxdepth 7 -type f \
             \( -name '*.java' -o -name 'build.gradle*' -o -name 'settings.gradle*' -o -name '*.py' \) \
             -print | sort | head -400
 
           echo "=== Current Eagler build markers ==="
           grep -RniE 'eagler-patcher|TeaVM|wasm|U1-Patcher|apply_vbv_patch' \
-            ViaBackport26.2-ClientSide .github/workflows \
+            VBV .github/workflows \
             --include='*.java' --include='*.py' --include='*.yml' --include='*.yaml' \
             | head -300 || true
 
