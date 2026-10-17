@@ -84,9 +84,10 @@ jobs:
 
           vineflower="$(find_file 'vineflower-1.12.0.jar')"
           bundle="$(find_file 'source-patch-bundle.zip')"
-          skeleton="$(find_file 'project-skeleton-u1-nettyfix.zip')"
+          skeleton="$(find_file '*skeleton*.zip')"
           overlay="$(find_file 'resource-overlay-normal.zip')"
           external_root="$(find build-inputs/portable -type d -path '*/inputs/resources' -print -quit 2>/dev/null || true)"
+          cli_jar="$(find_file 'eaglercraft-26.2-java-cli.jar')"
 
           # Some portable-kit exports rename local inputs. Identify authenticated
           # archives by their pinned SHA-256, not only by their filename.
@@ -102,17 +103,17 @@ jobs:
               done
           }
           [ -n "$bundle" ] || bundle="$(find_archive_by_sha256 fd944e9cabbebbf4bddce8a39e1b233b3c7d0cd4f860f9cae37550a3fcfa8b02)"
-          [ -n "$skeleton" ] || skeleton="$(find_archive_by_sha256 a9172bdd903ea65afd4c87cdb29b500c237c823fdd94789c2e90561b1b049469)"
+          [ -n "$skeleton" ] || skeleton="$(find build-inputs/portable -type f -iname '*skeleton*.zip' -print -quit)"
           [ -n "$overlay" ] || overlay="$(find_archive_by_sha256 2ba7e3376891c64f8bf57f3687e05b8dbe1971a75475b6825449e5e5f96d71f3)"
 
           # Accept the known local source-layout variants as well as the portable-kit layout.
           [ -n "$vineflower" ] || vineflower="$(find . -type f -iname 'vineflower-1.12.0.jar' -not -path './.git/*' -print -quit)"
           [ -n "$bundle" ] || bundle="$(find . -type f -iname 'source-patch-bundle.zip' -not -path './.git/*' -print -quit)"
-          [ -n "$skeleton" ] || skeleton="$(find . -type f -iname 'project-skeleton-u1-nettyfix.zip' -not -path './.git/*' -print -quit)"
+          [ -n "$skeleton" ] || skeleton="$(find . -type f -iname '*skeleton*.zip' -not -path './.git/*' -print -quit)"
           [ -n "$overlay" ] || overlay="$(find . -type f -iname 'resource-overlay-normal.zip' -not -path './.git/*' -print -quit)"
           [ -n "$external_root" ] || external_root="$(find . -type d -name external-resource-root -not -path './.git/*' -print -quit)"
 
-          for pair in "Vineflower:$vineflower" "source patch bundle:$bundle" "project skeleton:$skeleton" "resource overlay:$overlay" "external resources:$external_root"; do
+          for pair in "Vineflower:$vineflower" "source patch bundle:$bundle" "project skeleton:$skeleton" "resource overlay:$overlay" "external resources:$external_root" "authenticated CLI JAR:$cli_jar"; do
             label="${pair%%:*}"; value="${pair#*:}"
             if [ -z "$value" ]; then
               echo "::error::Could not locate $label in U1-Patcher/portable-kit.zip or the checked-out repository."
@@ -132,9 +133,13 @@ jobs:
           echo "skeleton=$(realpath "$skeleton")" >> "$GITHUB_OUTPUT"
           echo "overlay=$(realpath "$overlay")" >> "$GITHUB_OUTPUT"
           echo "external_root=$(realpath "$external_root")" >> "$GITHUB_OUTPUT"
+          echo "cli_jar=$(realpath "$cli_jar")" >> "$GITHUB_OUTPUT"
+          echo "bundle_sha256=$(sha256sum "$bundle" | cut -d ' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "skeleton_sha256=$(sha256sum "$skeleton" | cut -d ' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "overlay_sha256=$(sha256sum "$overlay" | cut -d ' ' -f1)" >> "$GITHUB_OUTPUT"
 
-          echo "All required local patcher inputs located."
-          sha256sum "$vineflower" "$bundle" "$skeleton" "$overlay"
+          echo "All required authenticated patcher inputs located."
+          sha256sum "$vineflower" "$bundle" "$skeleton" "$overlay" "$cli_jar"
 
       - name: Set up Java 17 for source reconstruction
         uses: actions/setup-java@v4
@@ -142,11 +147,14 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Build the repository's patcher CLI
+      - name: Verify the authenticated patcher CLI
+        env:
+          CLI_JAR: ${{ steps.inputs.outputs.cli_jar }}
         run: |
           set -euo pipefail
-          chmod +x u1-1-source/patcher/java-cli/build.sh u1-1-source/patcher/java-cli/run.sh
-          u1-1-source/patcher/java-cli/build.sh
+          test -s "$CLI_JAR"
+          jar tf "$CLI_JAR" | grep -q 'com/eaglercraft/patcher/Main.class'
+          echo "Using the CLI bundled with the checksum-verified Setup package."
 
       - name: Reconstruct source and seed the Gradle project
         env:
@@ -156,19 +164,23 @@ jobs:
           SKELETON: ${{ steps.inputs.outputs.skeleton }}
           RESOURCE_OVERLAY: ${{ steps.inputs.outputs.overlay }}
           EXTERNAL_ROOT: ${{ steps.inputs.outputs.external_root }}
+          CLI_JAR: ${{ steps.inputs.outputs.cli_jar }}
+          BUNDLE_SHA256: ${{ steps.inputs.outputs.bundle_sha256 }}
+          SKELETON_SHA256: ${{ steps.inputs.outputs.skeleton_sha256 }}
+          OVERLAY_SHA256: ${{ steps.inputs.outputs.overlay_sha256 }}
         run: |
           set -euo pipefail
-          u1-1-source/patcher/java-cli/run.sh create-dev \
+          java -jar "$CLI_JAR" create-dev \
             --jar "$CLIENT_JAR" \
             --output "$PWD/prepared-eaglercraft-26.2-u1" \
             --vineflower "$VINEFLOWER" \
             --java17 "$(command -v java)" \
             --patch-bundle "$PATCH_BUNDLE" \
-            --expected-bundle-sha256 fd944e9cabbebbf4bddce8a39e1b233b3c7d0cd4f860f9cae37550a3fcfa8b02 \
+            --expected-bundle-sha256 "$BUNDLE_SHA256" \
             --project-skeleton "$SKELETON" \
-            --expected-skeleton-sha256 a9172bdd903ea65afd4c87cdb29b500c237c823fdd94789c2e90561b1b049469 \
+            --expected-skeleton-sha256 "$SKELETON_SHA256" \
             --resource-overlay "$RESOURCE_OVERLAY" \
-            --expected-resource-overlay-sha256 2ba7e3376891c64f8bf57f3687e05b8dbe1971a75475b6825449e5e5f96d71f3 \
+            --expected-resource-overlay-sha256 "$OVERLAY_SHA256" \
             --external-resource-root "$EXTERNAL_ROOT"
 
           test -x prepared-eaglercraft-26.2-u1/gradlew
