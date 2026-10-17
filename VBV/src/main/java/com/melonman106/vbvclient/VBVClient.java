@@ -79,7 +79,6 @@ public final class VBVClient {
             false
         ));
 
-
         registerMod(new VBVModInfo(
             "dark-ui",
             "Dark UI",
@@ -89,7 +88,6 @@ public final class VBVClient {
             "vbvclient/mods/dark-ui/pack.png",
             true
         ));
-
 
         registerMod(new VBVModInfo(
             "connected-glass",
@@ -102,10 +100,12 @@ public final class VBVClient {
         ));
 
         VBVGeneratedPackMods.register();
+        HerzVBVBridge.initialize();
     }
 
     public static void registerMod(VBVModInfo info) {
         MODS.put(info.id(), info);
+        HerzVBVBridge.register(info);
     }
 
     public static Collection<VBVModInfo> getMods() {
