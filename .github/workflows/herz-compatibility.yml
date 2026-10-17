@@ -64,9 +64,18 @@ jobs:
                 ./gradlew build --no-daemon --stacktrace
               )
             else
-              echo "No Gradle wrapper in $project; checking project sources only."
-              test -f "$project/build.gradle.kts"
-              test -d "$project/src"
+              echo "No Gradle wrapper in $project; performing a non-building source inspection."
+              if [ -f "$project/build.gradle.kts" ] || [ -f "$project/build.gradle" ]; then
+                echo "Gradle build file found."
+              else
+                echo "No root Gradle build file found; skipping build checks."
+              fi
+              if [ -d "$project/src" ]; then
+                find "$project/src" -type f -print | sort | head -200
+              else
+                echo "No root src/ directory found; listing tracked project files instead."
+                git -C "$project" ls-files | head -200 || true
+              fi
             fi
           done
 
