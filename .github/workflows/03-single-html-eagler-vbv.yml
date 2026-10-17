@@ -1,10 +1,10 @@
-name: Package Eaglercraft 26.2 VBV + Herz Client as Single HTML
+name: "03 - Package Eaglercraft 26.2 (Single HTML)"\n\nrun-name: "03 - Package single HTML from compile run ${{ inputs.compile_run_id }}"
 
 on:
   workflow_dispatch:
     inputs:
       compile_run_id:
-        description: "Successful 02-compile-eagler-vbv.yml run ID"
+        description: "Run ID from successful workflow 02 - Compile Eaglercraft 26.2 u1 (VBV + Herz)"
         required: true
         type: string
       with_music:
