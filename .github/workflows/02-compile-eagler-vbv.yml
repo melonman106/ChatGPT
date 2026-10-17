@@ -13,7 +13,7 @@ on:
         default: "11445140777"
   push:
     paths:
-      - "ViaBackport26.2-ClientSide/patch/inject_recovered_wasm_into_html.js"
+      - "VBV/patch/inject_recovered_wasm_into_html.js"
       - ".github/workflows/02-compile-eagler-vbv.yml"
 
 permissions:
@@ -84,7 +84,7 @@ jobs:
           print("Base payloads verified; only eag-inline-wasm-br will be replaced.")
           PY
 
-          node ViaBackport26.2-ClientSide/patch/inject_recovered_wasm_into_html.js \
+          node VBV/patch/inject_recovered_wasm_into_html.js \
             base-eaglercraft-26.2.html \
             recovered-wasm/extracted/client.wasm \
             eaglercraft-26.2-VBV-injected.html
