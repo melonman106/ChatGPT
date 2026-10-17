@@ -1,0 +1,170 @@
+name: "01 - Prepare Eaglercraft 26.2 u1 Source Project"
+
+on:
+  workflow_dispatch:
+    inputs:
+      client_jar_url:
+        description: "Direct HTTPS download URL for your authorized Minecraft 26.2 client JAR"
+        required: true
+        type: string
+      client_jar_sha256:
+        description: "SHA-256 of that exact client JAR"
+        required: true
+        type: string
+      vineflower_url:
+        description: "Direct HTTPS download URL for Vineflower 1.12.0 JAR"
+        required: true
+        type: string
+      vineflower_sha256:
+        description: "SHA-256 of the Vineflower JAR"
+        required: true
+        type: string
+      java17_url:
+        description: "Direct HTTPS download URL for a Linux x64 Java 17 runtime archive"
+        required: true
+        type: string
+      java17_sha256:
+        description: "SHA-256 of the Java 17 runtime archive"
+        required: true
+        type: string
+      patch_bundle_url:
+        description: "Direct HTTPS URL for the authenticated 26.2 Java source patch bundle"
+        required: true
+        type: string
+      patch_bundle_sha256:
+        description: "Expected patch bundle SHA-256 (known baseline: fd944e9cabbebbf4bddce8a39e1b233b3c7d0cd4f860f9cae37550a3fcfa8b02)"
+        required: true
+        type: string
+      skeleton_url:
+        description: "Direct HTTPS URL for the u1 Netty-fix project skeleton ZIP"
+        required: true
+        type: string
+      skeleton_sha256:
+        description: "Expected skeleton SHA-256"
+        required: true
+        default: "a9172bdd903ea65afd4c87cdb29b500c237c823fdd94789c2e90561b1b049469"
+        type: string
+      resource_overlay_url:
+        description: "Direct HTTPS URL for the resource-overlay-normal.zip"
+        required: true
+        type: string
+      resource_overlay_sha256:
+        description: "Expected overlay SHA-256"
+        required: true
+        default: "2ba7e3376891c64f8bf57f3687e05b8dbe1971a75475b6825449e5e5f96d71f3"
+        type: string
+      external_resource_zip_url:
+        description: "Direct HTTPS URL for the locally authorized external-resource-root ZIP required by the overlay"
+        required: true
+        type: string
+      external_resource_zip_sha256:
+        description: "SHA-256 of the external resource ZIP"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  prepare-source-project:
+    name: "Prepare verified 26.2 u1 source + Gradle project"
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout client mod project
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js and base Java
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Download and verify all supplied inputs
+        env:
+          CLIENT_JAR_URL: ${{ inputs.client_jar_url }}
+          CLIENT_JAR_SHA256: ${{ inputs.client_jar_sha256 }}
+          VINEFLOWER_URL: ${{ inputs.vineflower_url }}
+          VINEFLOWER_SHA256: ${{ inputs.vineflower_sha256 }}
+          JAVA17_URL: ${{ inputs.java17_url }}
+          JAVA17_SHA256: ${{ inputs.java17_sha256 }}
+          PATCH_BUNDLE_URL: ${{ inputs.patch_bundle_url }}
+          PATCH_BUNDLE_SHA256: ${{ inputs.patch_bundle_sha256 }}
+          SKELETON_URL: ${{ inputs.skeleton_url }}
+          SKELETON_SHA256: ${{ inputs.skeleton_sha256 }}
+          OVERLAY_URL: ${{ inputs.resource_overlay_url }}
+          OVERLAY_SHA256: ${{ inputs.resource_overlay_sha256 }}
+          EXTERNAL_URL: ${{ inputs.external_resource_zip_url }}
+          EXTERNAL_SHA256: ${{ inputs.external_resource_zip_sha256 }}
+        run: |
+          set -euo pipefail
+          mkdir -p inputs downloads
+          download() {
+            local url="$1" dest="$2" expected="$3"
+            [[ "$url" == https://* ]] || { echo "::error::Only HTTPS input URLs are accepted"; exit 1; }
+            [[ "$expected" =~ ^[a-fA-F0-9]{64}$ ]] || { echo "::error::Invalid SHA-256 for $dest"; exit 1; }
+            curl --fail --location --retry 3 --retry-delay 2 "$url" --output "$dest"
+            echo "$expected  $dest" | sha256sum --check --status || {
+              echo "::error::SHA-256 mismatch for $dest"; exit 1;
+            }
+          }
+          download "$CLIENT_JAR_URL" downloads/minecraft-26.2-client.jar "$CLIENT_JAR_SHA256"
+          download "$VINEFLOWER_URL" downloads/vineflower-1.12.0.jar "$VINEFLOWER_SHA256"
+          download "$JAVA17_URL" downloads/java17.tar.gz "$JAVA17_SHA256"
+          download "$PATCH_BUNDLE_URL" downloads/source-patch-bundle.zip "$PATCH_BUNDLE_SHA256"
+          download "$SKELETON_URL" downloads/project-skeleton-u1-nettyfix.zip "$SKELETON_SHA256"
+          download "$OVERLAY_URL" downloads/resource-overlay-normal.zip "$OVERLAY_SHA256"
+          download "$EXTERNAL_URL" downloads/external-resources.zip "$EXTERNAL_SHA256"
+          mkdir -p downloads/java17 downloads/external-resource-root
+          tar -xzf downloads/java17.tar.gz -C downloads/java17 --strip-components=1
+          test -x downloads/java17/bin/java
+          downloads/java17/bin/java -version
+          unzip -q downloads/external-resources.zip -d downloads/external-resource-root
+          test -d downloads/external-resource-root
+
+      - name: Set up Java 25 for the Gradle project
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: gradle
+
+      - name: Build the U1-Patcher CLI launcher
+        run: |
+          set -euo pipefail
+          chmod +x u1-1-source/patcher/java-cli/build.sh u1-1-source/patcher/java-cli/run.sh
+          u1-1-source/patcher/java-cli/build.sh
+
+      - name: Reconstruct and verify the 26.2 source project
+        env:
+          PATCH_BUNDLE_SHA256: ${{ inputs.patch_bundle_sha256 }}
+          SKELETON_SHA256: ${{ inputs.skeleton_sha256 }}
+          OVERLAY_SHA256: ${{ inputs.resource_overlay_sha256 }}
+        run: |
+          set -euo pipefail
+          u1-1-source/patcher/java-cli/run.sh create-dev \
+            --jar "$PWD/downloads/minecraft-26.2-client.jar" \
+            --output "$PWD/prepared-eaglercraft-26.2-u1" \
+            --vineflower "$PWD/downloads/vineflower-1.12.0.jar" \
+            --java17 "$PWD/downloads/java17/bin/java" \
+            --patch-bundle "$PWD/downloads/source-patch-bundle.zip" \
+            --expected-bundle-sha256 "$PATCH_BUNDLE_SHA256" \
+            --project-skeleton "$PWD/downloads/project-skeleton-u1-nettyfix.zip" \
+            --expected-skeleton-sha256 "$SKELETON_SHA256" \
+            --resource-overlay "$PWD/downloads/resource-overlay-normal.zip" \
+            --expected-resource-overlay-sha256 "$OVERLAY_SHA256" \
+            --external-resource-root "$PWD/downloads/external-resource-root"
+          test -x prepared-eaglercraft-26.2-u1/gradlew
+          test -d prepared-eaglercraft-26.2-u1/game/src/main/java
+          test -d prepared-eaglercraft-26.2-u1/target_teavm_wasm_gc
+          test -f prepared-eaglercraft-26.2-u1/build/receipt.json || {
+            echo "::warning::CLI did not place a receipt at the conventional location; checking project layout instead."
+          }
+
+      - name: Upload verified source project for workflow 02
+        uses: actions/upload-artifact@v4
+        with:
+          name: Eaglercraft-26.2-u1-Source-Project-${{ github.run_id }}
+          path: prepared-eaglercraft-26.2-u1/
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 1
