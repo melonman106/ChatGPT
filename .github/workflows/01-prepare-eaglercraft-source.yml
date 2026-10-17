@@ -74,6 +74,23 @@ jobs:
           overlay="$(find_file 'resource-overlay-normal.zip')"
           external_root="$(find build-inputs/portable -type d -path '*/inputs/resources' -print -quit 2>/dev/null || true)"
 
+          # Some portable-kit exports rename local inputs. Identify authenticated
+          # archives by their pinned SHA-256, not only by their filename.
+          find_archive_by_sha256() {
+            local expected="$1"
+            find build-inputs/portable u1-1-source U1-Patcher -type f -iname '*.zip' -not -path '*/.git/*' -print0 2>/dev/null |
+              while IFS= read -r -d '' candidate; do
+                actual="$(sha256sum "$candidate" | cut -d ' ' -f1)"
+                if [ "$actual" = "$expected" ]; then
+                  printf '%s\\n' "$candidate"
+                  break
+                fi
+              done
+          }
+          [ -n "$bundle" ] || bundle="$(find_archive_by_sha256 fd944e9cabbebbf4bddce8a39e1b233b3c7d0cd4f860f9cae37550a3fcfa8b02)"
+          [ -n "$skeleton" ] || skeleton="$(find_archive_by_sha256 a9172bdd903ea65afd4c87cdb29b500c237c823fdd94789c2e90561b1b049469)"
+          [ -n "$overlay" ] || overlay="$(find_archive_by_sha256 2ba7e3376891c64f8bf57f3687e05b8dbe1971a75475b6825449e5e5f96d71f3)"
+
           # Accept the known local source-layout variants as well as the portable-kit layout.
           [ -n "$vineflower" ] || vineflower="$(find . -type f -iname 'vineflower-1.12.0.jar' -not -path './.git/*' -print -quit)"
           [ -n "$bundle" ] || bundle="$(find . -type f -iname 'source-patch-bundle.zip' -not -path './.git/*' -print -quit)"
@@ -85,7 +102,10 @@ jobs:
             label="${pair%%:*}"; value="${pair#*:}"
             if [ -z "$value" ]; then
               echo "::error::Could not locate $label in U1-Patcher/portable-kit.zip or the checked-out repository."
-              echo "The workflow now auto-discovers local inputs; this particular file/directory is not present in the checked-out files."
+              if [ "$label" = "project skeleton" ]; then
+                echo "::error::The required skeleton must match SHA-256 a9172bdd903ea65afd4c87cdb29b500c237c823fdd94789c2e90561b1b049469. The workflow searched by both filename and pinned hash."
+              fi
+              echo "Add the missing authenticated input to the repository or to U1-Patcher/portable-kit.zip, then rerun workflow 01."
               exit 1
             fi
           done
