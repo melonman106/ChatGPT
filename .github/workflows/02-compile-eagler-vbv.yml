@@ -1,109 +1,127 @@
-name: Inject Eaglercraft 26.2 u1 Mods (No Rebuild)
+name: Compile Eaglercraft 26.2 u1 VBV + Herz
 
 on:
   workflow_dispatch:
     inputs:
-      reverse_run_id:
-        description: "Successful reverse-map workflow run containing the recovered modded WASM"
-        required: false
-        default: "37531655199"
-      reverse_artifact_id:
-        description: "Recovered WASM artifact ID"
-        required: false
-        default: "11445140777"
+      source_run_id:
+        description: "GitHub Actions run containing a generated Eaglercraft 26.2 source-project artifact"
+        required: true
+      source_artifact_id:
+        description: "Artifact ID containing the generated Eaglercraft source project"
+        required: true
 
 permissions:
   contents: read
   actions: read
 
 jobs:
-  inject:
+  compile:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download recovered modded client WASM
+      - name: Download generated Eaglercraft 26.2 source project
         uses: actions/download-artifact@v4
         with:
-          run-id: ${{ inputs.reverse_run_id || '37531655199' }}
-          artifact-ids: ${{ inputs.reverse_artifact_id || '11445140777' }}
+          run-id: ${{ inputs.source_run_id }}
+          artifact-ids: ${{ inputs.source_artifact_id }}
           github-token: ${{ github.token }}
-          path: recovered-wasm
+          path: generated-project-artifact
 
-      - name: Validate recovered mod payload
+      - name: Locate source project
+        id: locate
+        shell: bash
         run: |
           set -euo pipefail
-          client_wasm="$(find recovered-wasm -type f -name 'client.wasm' -size +0c -print -quit)"
-          mod_map="$(find recovered-wasm -type f -name 'mod-map.md' -size +0c -print -quit)"
-          test -n "$client_wasm"
-          test -n "$mod_map"
-          mkdir -p recovered-wasm/extracted
-          cp -f "$client_wasm" recovered-wasm/extracted/client.wasm
-          cp -f "$mod_map" recovered-wasm/extracted/mod-map.md
-          test -s recovered-wasm/extracted/client.wasm
-          test -s recovered-wasm/extracted/mod-map.md
-          for section in Litematica MaLiLib "Mod Menu"; do
-            grep -q "^## $section" recovered-wasm/extracted/mod-map.md
-          done
-          echo "Recovered WASM: $(stat -c%s recovered-wasm/extracted/client.wasm) bytes"
-          sha256sum recovered-wasm/extracted/client.wasm
+          project="$(find generated-project-artifact -type f -name gradlew -print -quit | xargs -r dirname)"
+          if [ -z "$project" ]; then
+            echo "::error::The supplied artifact does not contain a generated Eaglercraft Gradle project."
+            echo "Expected a directory containing gradlew, game/src/main/java and target_teavm_wasm_gc."
+            exit 1
+          fi
+          project="$(realpath "$project")"
+          test -d "$project/game/src/main/java"
+          test -d "$project/target_teavm_wasm_gc"
+          echo "project=$project" >> "$GITHUB_OUTPUT"
+          echo "Using source project: $project"
 
-      - name: Download the known-good working Eagler client
+      - name: Set up Java 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: gradle
+
+      - name: Make Gradle executable
+        run: chmod +x "${{ steps.locate.outputs.project }}/gradlew"
+
+      - name: Apply VBV + Herz 26.2 source patch
+        env:
+          PROJECT: ${{ steps.locate.outputs.project }}
         run: |
           set -euo pipefail
-          curl -fL --retry 5 --retry-all-errors \
-            "https://github.com/melonman106/ChatGPT/releases/download/1/eaglercraft-26.2-modded-2026-10-05-1523.html" \
-            -o base-eaglercraft-26.2.html
-          test -s base-eaglercraft-26.2.html
-          echo "Base HTML: $(stat -c%s base-eaglercraft-26.2.html) bytes"
-          echo "778f89bb91cbd3cd3b97341c7a63df5895fab70e1b8461017bffd2efd2f4fbbe  base-eaglercraft-26.2.html" | sha256sum -c -
+          python3 VBV/patch/apply_vbv_patch.py "$PROJECT"
 
-      - name: Inject only the recovered mod WASM
+          test -f "$PROJECT/game/src/main/java/com/melonman106/vbvclient/VBVClient.java"
+          test -f "$PROJECT/game/src/main/java/com/melonman106/vbvclient/HerzVBVBridge.java"
+          test -f "$PROJECT/game/src/main/java/com/melonman106/vbvclient/herz/HerzClient.java"
+          test -f "$PROJECT/game/src/main/java/com/melonman106/vbvclient/herz/HerzMod.java"
+          test -f "$PROJECT/game/src/main/java/com/melonman106/vbvclient/herz/HerzModRegistry.java"
+
+          grep -q 'HerzVBVBridge.initialize' "$PROJECT/game/src/main/java/com/melonman106/vbvclient/VBVClient.java"
+          grep -q 'HerzVBVBridge.register' "$PROJECT/game/src/main/java/com/melonman106/vbvclient/VBVClient.java"
+          grep -q 'class HerzClient' "$PROJECT/game/src/main/java/com/melonman106/vbvclient/herz/HerzClient.java"
+          grep -q 'class HerzModRegistry' "$PROJECT/game/src/main/java/com/melonman106/vbvclient/herz/HerzModRegistry.java"
+
+      - name: Compile game Java with current VBV + Herz sources
+        env:
+          PROJECT: ${{ steps.locate.outputs.project }}
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-          p = Path("base-eaglercraft-26.2.html")
-          text = p.read_text("utf-8", errors="strict")
-          required = [
-              'id="eag-inline-decoder"',
-              'id="eag-inline-wasm-br"',
-              'id="eag-inline-mesh-wasm-br"',
-              'id="eag-inline-server-wasm-br"',
-              'id="eag-inline-assets"',
-              'id="eag-inline-sounds"',
-          ]
-          for marker in required:
-              if marker not in text:
-                  raise SystemExit(f"Missing required base payload: {marker}")
-          print("Base payloads verified; only eag-inline-wasm-br will be replaced.")
-          PY
+          cd "$PROJECT"
+          ./gradlew :game:compileJava --console=plain --no-daemon --stacktrace
 
-          node VBV/patch/inject_recovered_wasm_into_html.js \
-            base-eaglercraft-26.2.html \
-            recovered-wasm/extracted/client.wasm \
-            eaglercraft-26.2-VBV-injected.html
+      - name: Build Eaglercraft 26.2 u1 browser client
+        env:
+          PROJECT: ${{ steps.locate.outputs.project }}
+        run: |
+          set -euo pipefail
+          cd "$PROJECT"
+          ./gradlew build --console=plain --no-daemon --stacktrace
 
-          test -s eaglercraft-26.2-VBV-injected.html
-          grep -q 'id="eag-inline-decoder"' eaglercraft-26.2-VBV-injected.html
-          grep -q 'id="eag-inline-wasm-br"' eaglercraft-26.2-VBV-injected.html
-          grep -q 'id="eag-inline-mesh-wasm-br"' eaglercraft-26.2-VBV-injected.html
-          grep -q 'id="eag-inline-server-wasm-br"' eaglercraft-26.2-VBV-injected.html
-          grep -q 'id="eag-inline-assets"' eaglercraft-26.2-VBV-injected.html
-          grep -q 'id="eag-inline-sounds"' eaglercraft-26.2-VBV-injected.html
+          test -f target_teavm_wasm_gc/build/web/classes.wasm
+          test -f target_teavm_wasm_gc/build/web/mesh-worker.wasm
+          test -f target_teavm_wasm_gc/build/web/server-worker.wasm
+          test -f target_teavm_wasm_gc/build/web/assets.epk
 
-          echo "=== Final injected client ==="
-          stat -c '%n %s bytes' eaglercraft-26.2-VBV-injected.html
-          sha256sum eaglercraft-26.2-VBV-injected.html
+          echo "=== Built VBV + Herz browser output ==="
+          find target_teavm_wasm_gc/build/web -maxdepth 1 -type f -printf '%f %s bytes\n' | sort
+          sha256sum target_teavm_wasm_gc/build/web/classes.wasm
 
-      - name: Save injected client and recovered mod map
+      - name: Verify the compiled output came from the new source tree
+        env:
+          PROJECT: ${{ steps.locate.outputs.project }}
+        run: |
+          set -euo pipefail
+          cd "$PROJECT"
+
+          # The source-side checks prove the build did not silently fall back to
+          # the old recovered-WASM injection workflow.
+          grep -R -q 'HerzClient' game/src/main/java/com/melonman106/vbvclient
+          grep -R -q 'HerzModRegistry' game/src/main/java/com/melonman106/vbvclient
+          grep -R -q 'VBVGeneratedPackMods' game/src/main/java/com/melonman106/vbvclient
+
+          echo "VBV + Herz source compilation checks passed."
+
+      - name: Upload compiled Eaglercraft 26.2 u1 client
         uses: actions/upload-artifact@v4
         with:
-          name: Eaglercraft-26.2-VBV-Injected-${{ github.run_id }}
+          name: Eaglercraft-26.2-VBV-Herz-WASM-GC-${{ github.run_id }}
           path: |
-            eaglercraft-26.2-VBV-injected.html
-            recovered-wasm/extracted/mod-map.md
+            ${{ steps.locate.outputs.project }}/target_teavm_wasm_gc/build/web/**
+            ${{ steps.locate.outputs.project }}/target_teavm_wasm_gc_server/build/web/**
+            ${{ steps.locate.outputs.project }}/target_teavm_wasm_gc_mesh/build/web/**
           if-no-files-found: error
           retention-days: 14
           compression-level: 0
