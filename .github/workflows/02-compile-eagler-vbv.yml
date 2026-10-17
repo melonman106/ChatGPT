@@ -11,10 +11,6 @@ on:
         description: "Recovered WASM artifact ID"
         required: false
         default: "11445140777"
-  push:
-    paths:
-      - "VBV/patch/inject_recovered_wasm_into_html.js"
-      - ".github/workflows/02-compile-eagler-vbv.yml"
 
 permissions:
   contents: read
