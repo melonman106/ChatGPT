@@ -1,0 +1,79 @@
+name: Check Herz compatibility
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/herz-compatibility.yml"
+      - "ViaBackport26.2-ClientSide/**"
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout VBV project
+        uses: actions/checkout@v4
+
+      - name: Checkout Herz Core
+        uses: actions/checkout@v4
+        with:
+          repository: Admanatine/Herz-Core
+          path: .herz/Herz-Core
+
+      - name: Checkout Herz Compile
+        uses: actions/checkout@v4
+        with:
+          repository: Admanatine/Herz-Compile
+          path: .herz/Herz-Compile
+
+      - name: Inspect Herz and VBV architectures
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "=== Herz Core ==="
+          git -C .herz/Herz-Core rev-parse HEAD
+          find .herz/Herz-Core/src -type f -print 2>/dev/null | sort | head -200 || true
+
+          echo "=== Herz Compile ==="
+          git -C .herz/Herz-Compile rev-parse HEAD
+          find .herz/Herz-Compile/src -type f -print 2>/dev/null | sort | head -200 || true
+
+          echo "=== VBV client ==="
+          find ViaBackport26.2-ClientSide -maxdepth 5 -type f \
+            \( -name '*.java' -o -name 'build.gradle*' -o -name 'settings.gradle*' -o -name '*.py' \) \
+            -print | sort | head -400
+
+          echo "=== Current Eagler build markers ==="
+          grep -RniE 'eagler-patcher|TeaVM|wasm|U1-Patcher|apply_vbv_patch' \
+            ViaBackport26.2-ClientSide .github/workflows \
+            --include='*.java' --include='*.py' --include='*.yml' --include='*.yaml' \
+            | head -300 || true
+
+      - name: Build Herz components as an isolated compatibility test
+        shell: bash
+        run: |
+          set -euo pipefail
+          java -version
+
+          for project in .herz/Herz-Core .herz/Herz-Compile; do
+            echo "=== Building $project ==="
+            if [ -x "$project/gradlew" ]; then
+              (
+                cd "$project"
+                ./gradlew build --no-daemon --stacktrace
+              )
+            else
+              echo "No Gradle wrapper in $project; checking project sources only."
+              test -f "$project/build.gradle.kts"
+              test -d "$project/src"
+            fi
+          done
+
+          echo "Herz compatibility check completed."
+          echo "This workflow intentionally does not replace the production Eagler 26.2 u1 build."
+          echo "Herz is currently treated as an experimental compatibility layer until its package/compiler model can target the 26.2 u1 client."
