@@ -22,6 +22,7 @@ public final class VBVWorldMap {
     private VBVWorldMap() {}
 
     public static void tick() {
+        HerzVBVBridge.tick();
         Minecraft minecraft = Minecraft.getInstance();
         if (!(minecraft.getCameraEntity() instanceof Player player) || minecraft.level == null) return;
 
