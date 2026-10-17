@@ -1,14 +1,18 @@
-name: "02 - Compile Eaglercraft 26.2 u1 (VBV + Herz)"\n\nrun-name: "02 - Compile VBV + Herz from source run ${{ inputs.source_run_id }}"
+name: "02 - Compile Eaglercraft 26.2 u1 (VBV + Herz)"
+
+run-name: "02 - Compile VBV + Herz (manual)"
 
 on:
   workflow_dispatch:
     inputs:
       source_run_id:
-        description: "Run ID from successful workflow 01 - Prepare Eaglercraft 26.2 u1 Source Project"
-        required: true
+        description: "Optional successful workflow 01 run ID (blank = use latest successful run)"
+        required: false
+        type: string
       source_artifact_id:
-        description: "Artifact ID for Eaglercraft-26.2-u1-Source-Project from workflow 01"
-        required: true
+        description: "Optional source artifact ID (blank = find it in the selected run)"
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -21,11 +25,40 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Resolve source workflow run and artifact
+        id: source
+        env:
+          REQUESTED_RUN_ID: ${{ inputs.source_run_id }}
+          REQUESTED_ARTIFACT_ID: ${{ inputs.source_artifact_id }}
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          run_id="$REQUESTED_RUN_ID"
+          if [ -z "$run_id" ]; then
+            run_id="$(gh api "repos/${{ github.repository }}/actions/workflows/01-prepare-eaglercraft-source.yml/runs?status=success&per_page=20" --jq '.workflow_runs | map(select(.conclusion == "success")) | .[0].id // empty')"
+          fi
+          if [ -z "$run_id" ]; then
+            echo "::error::No successful workflow 01 run found. Run workflow 01 first."
+            exit 1
+          fi
+          artifact_id="$REQUESTED_ARTIFACT_ID"
+          if [ -z "$artifact_id" ]; then
+            artifact_id="$(gh api "repos/${{ github.repository }}/actions/runs/$run_id/artifacts?per_page=100" --jq '.artifacts[] | select(.name == "Eaglercraft-26.2-u1-Source-Project" and .expired == false) | .id' | head -n1)"
+          fi
+          if [ -z "$artifact_id" ]; then
+            echo "::error::No unexpired Eaglercraft-26.2-u1-Source-Project artifact found in workflow run $run_id."
+            exit 1
+          fi
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          echo "artifact_id=$artifact_id" >> "$GITHUB_OUTPUT"
+          echo "Using workflow 01 run $run_id, artifact $artifact_id."
+
       - name: Download generated Eaglercraft 26.2 source project
         uses: actions/download-artifact@v4
         with:
-          run-id: ${{ inputs.source_run_id }}
-          artifact-ids: ${{ inputs.source_artifact_id }}
+          run-id: ${{ steps.source.outputs.run_id }}
+          artifact-ids: ${{ steps.source.outputs.artifact_id }}
           github-token: ${{ github.token }}
           path: generated-project-artifact
 
@@ -96,7 +129,8 @@ jobs:
           test -f target_teavm_wasm_gc/build/web/assets.epk
 
           echo "=== Built VBV + Herz browser output ==="
-          find target_teavm_wasm_gc/build/web -maxdepth 1 -type f -printf '%f %s bytes\n' | sort
+          find target_teavm_wasm_gc/build/web -maxdepth 1 -type f -printf '%f %s bytes
+' | sort
           sha256sum target_teavm_wasm_gc/build/web/classes.wasm
 
       - name: Verify the compiled output came from the new source tree
