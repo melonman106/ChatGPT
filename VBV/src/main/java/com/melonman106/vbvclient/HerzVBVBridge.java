@@ -1,10 +1,6 @@
 package com.melonman106.vbvclient;
 
-import com.melonman106.vbvclient.herz.HerzClient;
-import com.melonman106.vbvclient.herz.HerzMod;
-import com.melonman106.vbvclient.herz.HerzModRegistry;
-
-/** Bridges the existing VBV metadata/features into the 26.2 Herz adapter layer. */
+/** Bridges existing VBV metadata/features into the 26.2 Herz adapter layer. */
 public final class HerzVBVBridge {
     private HerzVBVBridge() {}
 
