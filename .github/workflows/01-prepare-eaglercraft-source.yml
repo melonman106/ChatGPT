@@ -33,14 +33,26 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p build-inputs/portable build-inputs/downloads
-          portable="$PWD/U1-Patcher/portable-kit.zip"
-          test -f "$portable" || { echo "::error::Missing U1-Patcher/portable-kit.zip"; exit 1; }
-          echo "Verifying the checked-in portable patcher kit..."
-          expected_kit="$(tr -d '[:space:]' < U1-Patcher/portable-kit.sha256)"
-          echo "$expected_kit  $portable" | sha256sum --check
+          # The source checkout intentionally omits the large authenticated inputs.
+          # The complete Setup JAR embeds the release kit containing them.
+          setup_jar="build-inputs/downloads/Eaglercraft-26.2-u1-Setup.jar"
+          setup_url="https://github.com/melonman106/Eagler-26.2-Client/releases/download/Modded/Eaglercraft-26.2-u1-Setup.jar"
+          expected_setup_sha256="57bfcacdf24310d48f462a9a508fe2a59acad8487a8de34bb40963c46183c1bd"
+          curl --fail --location --retry 3 "$setup_url" -o "$setup_jar"
+          echo "$expected_setup_sha256  $setup_jar" | sha256sum --check
 
-          unzip -q "$portable" -d build-inputs/portable
-          echo "Portable kit extracted; listing skeleton-related entries for diagnosis:"
+          embedded_kit="build-inputs/downloads/portable-kit.zip"
+          embedded_sum="build-inputs/downloads/portable-kit.sha256"
+          unzip -p "$setup_jar" portable-kit.zip > "$embedded_kit"
+          unzip -p "$setup_jar" portable-kit.sha256 > "$embedded_sum"
+          test -s "$embedded_kit" || { echo "::error::Setup JAR does not contain portable-kit.zip"; exit 1; }
+          test -s "$embedded_sum" || { echo "::error::Setup JAR does not contain portable-kit.sha256"; exit 1; }
+          expected_kit="$(tr -d '[:space:]' < "$embedded_sum")"
+          [[ "$expected_kit" =~ ^[a-fA-F0-9]{64}$ ]] || { echo "::error::Invalid embedded portable-kit checksum"; exit 1; }
+          echo "$expected_kit  $embedded_kit" | sha256sum --check
+
+          unzip -q "$embedded_kit" -d build-inputs/portable
+          echo "Authenticated Setup kit extracted; listing required input archives:"
           find build-inputs/portable -type f \( -iname '*skeleton*' -o -iname '*patch-bundle*' -o -iname '*resource-overlay*' \) -print | sort || true
 
           find_file() {
