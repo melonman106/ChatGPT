@@ -1,13 +1,13 @@
-name: Compile Eaglercraft 26.2 u1 VBV + Herz
+name: "02 - Compile Eaglercraft 26.2 u1 (VBV + Herz)"\n\nrun-name: "02 - Compile VBV + Herz from source run ${{ inputs.source_run_id }}"
 
 on:
   workflow_dispatch:
     inputs:
       source_run_id:
-        description: "GitHub Actions run containing a generated Eaglercraft 26.2 source-project artifact"
+        description: "Run ID from successful workflow 01 - Prepare Eaglercraft 26.2 u1 Source Project"
         required: true
       source_artifact_id:
-        description: "Artifact ID containing the generated Eaglercraft source project"
+        description: "Artifact ID for Eaglercraft-26.2-u1-Source-Project from workflow 01"
         required: true
 
 permissions:
