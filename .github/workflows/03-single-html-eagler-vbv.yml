@@ -57,7 +57,7 @@ jobs:
             exit 1
           fi
           artifact_name="Eaglercraft-26.2-VBV-Herz-WASM-GC-$run_id"
-          artifact_id="$(gh api "repos/${{ github.repository }}/actions/runs/$run_id/artifacts?per_page=100" --jq --arg name "$artifact_name" '.artifacts[] | select(.name == $name and .expired == false) | .id' | head -n1)"
+          artifact_id="$(gh api "repos/${{ github.repository }}/actions/runs/$run_id/artifacts?per_page=100" --jq ".artifacts[] | select(.name == \"$artifact_name\" and .expired == false) | .id" | head -n1)"
           if [ -z "$artifact_id" ]; then
             echo "::error::No unexpired $artifact_name artifact found in workflow run $run_id."
             exit 1
